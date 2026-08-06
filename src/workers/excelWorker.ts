@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx';
 interface SelectedChecks {
   missing: boolean;
   duplicate: boolean;
-  errorColumns: string[]; // 오류 검사할 열 이름 목록
+  errorColumns: string[];
 }
 
 let storedRows: unknown[][] = [];
@@ -56,10 +56,18 @@ function handleValidate(checks: SelectedChecks) {
   const dataRows = storedRows.slice(1);
   const total = dataRows.length;
 
-  let missingRows = 0;
-  let duplicateRows = 0;
+  // 열별 누락 카운터
+  const missingByColumn: Record<string, number> = {};
+  if (checks.missing) {
+    for (const { name } of storedHeaders) missingByColumn[name] = 0;
+  }
 
-  // 열별 오류 카운터 초기화
+  // 열별 빈도 맵 (중복 검사용)
+  const colFreqs: Map<string, number>[] = checks.duplicate
+    ? storedHeaders.map(() => new Map())
+    : [];
+
+  // 열별 오류 카운터
   const errorByColumn: Record<string, number> = {};
   const errorColMeta = checks.errorColumns
     .map((colName) => {
@@ -67,18 +75,8 @@ function handleValidate(checks: SelectedChecks) {
       return h ? { colName, idx: h.idx, type: detectColumnType(colName) } : null;
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
-
   for (const { colName } of errorColMeta) errorByColumn[colName] = 0;
 
-  // 중복 검사: 이름 컬럼 우선, 없으면 전체 행 해시
-  const keyColIdx = (() => {
-    for (const { name, idx } of storedHeaders) {
-      if (['이름', '성명', '이용자', '수혜자', '수급자'].some((p) => name.includes(p))) return idx;
-    }
-    return -1;
-  })();
-
-  const seenSet = new Set<string>();
   const CHUNK = 50_000;
 
   for (let i = 0; i < total; i += CHUNK) {
@@ -87,19 +85,24 @@ function handleValidate(checks: SelectedChecks) {
     for (let j = i; j < end; j++) {
       const arr = dataRows[j] as unknown[];
 
+      // 열별 누락 (빈 셀 수)
       if (checks.missing) {
-        if (arr.some((cell) => String(cell).trim() === '')) missingRows++;
+        for (let k = 0; k < storedHeaders.length; k++) {
+          if (String(arr[storedHeaders[k].idx] ?? '').trim() === '')
+            missingByColumn[storedHeaders[k].name]++;
+        }
       }
 
+      // 열별 빈도 누적 (중복 계산용)
       if (checks.duplicate) {
-        const key =
-          keyColIdx >= 0
-            ? String(arr[keyColIdx] ?? '')
-            : arr.slice(0, storedHeaders.length).map((c) => String(c)).join('\x00');
-        if (seenSet.has(key)) duplicateRows++;
-        else seenSet.add(key);
+        for (let k = 0; k < storedHeaders.length; k++) {
+          const val = String(arr[storedHeaders[k].idx] ?? '');
+          const freq = colFreqs[k];
+          freq.set(val, (freq.get(val) || 0) + 1);
+        }
       }
 
+      // 열별 형식 오류
       for (const { colName, idx, type } of errorColMeta) {
         const val = String(arr[idx] ?? '');
         if (!val) continue;
@@ -114,11 +117,23 @@ function handleValidate(checks: SelectedChecks) {
     self.postMessage({ type: 'validate-progress', progress: Math.round((end / total) * 100) });
   }
 
+  // 빈도 맵 → 열별 중복 카운트 (값이 2회 이상 등장한 셀 합계)
+  const duplicateByColumn: Record<string, number> = {};
+  if (checks.duplicate) {
+    for (let k = 0; k < storedHeaders.length; k++) {
+      let dupCount = 0;
+      for (const cnt of colFreqs[k].values()) {
+        if (cnt > 1) dupCount += cnt;
+      }
+      duplicateByColumn[storedHeaders[k].name] = dupCount;
+    }
+  }
+
   self.postMessage({
     type: 'validate-done',
     totalRows: total,
-    missingRows: checks.missing ? missingRows : null,
-    duplicateRows: checks.duplicate ? duplicateRows : null,
+    missingByColumn: checks.missing ? missingByColumn : null,
+    duplicateByColumn: checks.duplicate ? duplicateByColumn : null,
     errorByColumn: errorColMeta.length > 0 ? errorByColumn : null,
   });
 }

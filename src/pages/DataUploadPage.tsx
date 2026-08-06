@@ -19,9 +19,9 @@ interface SelectedChecks {
 
 interface ValidationResult {
   totalRows: number;
-  missingRows: number | null;
-  duplicateRows: number | null;
-  errorByColumn: Record<string, number> | null; // 열 이름 → 오류 건수
+  missingByColumn: Record<string, number> | null;   // 열 이름 → 빈 셀 수
+  duplicateByColumn: Record<string, number> | null; // 열 이름 → 중복 값 포함 행 수
+  errorByColumn: Record<string, number> | null;     // 열 이름 → 형식 오류 수
 }
 
 type ColType = 'date' | 'phone' | 'number' | 'text';
@@ -100,8 +100,8 @@ export default function DataUploadPage() {
         case 'validate-done':
           setValidationResult({
             totalRows: msg.totalRows,
-            missingRows: msg.missingRows,
-            duplicateRows: msg.duplicateRows,
+            missingByColumn: msg.missingByColumn,
+            duplicateByColumn: msg.duplicateByColumn,
             errorByColumn: msg.errorByColumn,
           });
           setIsValidating(false);
@@ -509,61 +509,69 @@ export default function DataUploadPage() {
             </div>
           )}
 
-          {validationResult && (
+          {validationResult && preview && (
             <>
               <p className="text-sm text-slate-500">
                 총 <strong className="text-slate-800">{validationResult.totalRows.toLocaleString()}행</strong> 분석 완료
               </p>
 
-              {/* 누락·중복 카드 */}
-              {(validationResult.missingRows !== null || validationResult.duplicateRows !== null) && (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {validationResult.missingRows !== null && (
-                    <div className={`rounded-lg border p-4 ${validationResult.missingRows > 0 ? 'border-amber-100 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
-                      <p className={`text-2xl font-bold tabular-nums ${validationResult.missingRows > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
-                        {validationResult.missingRows.toLocaleString()}
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-slate-700">누락 행</p>
-                      <p className="text-xs text-slate-400">빈 셀이 있는 행</p>
-                    </div>
-                  )}
-                  {validationResult.duplicateRows !== null && (
-                    <div className={`rounded-lg border p-4 ${validationResult.duplicateRows > 0 ? 'border-orange-100 bg-orange-50' : 'border-slate-200 bg-slate-50'}`}>
-                      <p className={`text-2xl font-bold tabular-nums ${validationResult.duplicateRows > 0 ? 'text-orange-600' : 'text-slate-400'}`}>
-                        {validationResult.duplicateRows.toLocaleString()}
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-slate-700">중복 행</p>
-                      <p className="text-xs text-slate-400">동일한 행</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 오류 검사 — 열별 결과 */}
-              {validationResult.errorByColumn && (
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-700">오류 검사 결과 (열별)</h4>
-                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                    {Object.entries(validationResult.errorByColumn).map(([col, count]) => {
-                      const type = detectColumnType(col);
+              {/* 열별 검사 결과 테이블 */}
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">열 이름</th>
+                      {validationResult.missingByColumn && (
+                        <th className="px-4 py-2.5 text-center text-xs font-medium text-amber-600">누락 검사</th>
+                      )}
+                      {validationResult.duplicateByColumn && (
+                        <th className="px-4 py-2.5 text-center text-xs font-medium text-orange-600">중복 검사</th>
+                      )}
+                      {validationResult.errorByColumn && (
+                        <th className="px-4 py-2.5 text-center text-xs font-medium text-red-600">오류 검사</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {preview.columns.map((col) => {
+                      const missing = validationResult.missingByColumn?.[col] ?? null;
+                      const duplicate = validationResult.duplicateByColumn?.[col] ?? null;
+                      const error = validationResult.errorByColumn
+                        ? (col in validationResult.errorByColumn ? validationResult.errorByColumn[col] : null)
+                        : null;
+                      const hasAnyIssue =
+                        (missing !== null && missing > 0) ||
+                        (duplicate !== null && duplicate > 0) ||
+                        (error !== null && error > 0);
                       return (
-                        <div
-                          key={col}
-                          className={`rounded-lg border p-3 ${count > 0 ? 'border-red-100 bg-red-50' : 'border-slate-200 bg-slate-50'}`}
-                        >
-                          <p className={`text-xl font-bold tabular-nums ${count > 0 ? 'text-red-600' : 'text-slate-400'}`}>
-                            {count.toLocaleString()}
-                          </p>
-                          <p className="mt-0.5 truncate text-sm font-medium text-slate-700">{col}</p>
-                          <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${COL_TYPE_COLOR[type]}`}>
-                            {COL_TYPE_LABEL[type]}
-                          </span>
-                        </div>
+                        <tr key={col} className={hasAnyIssue ? 'bg-slate-50/60' : ''}>
+                          <td className="whitespace-nowrap px-4 py-2.5 font-medium text-slate-700">
+                            {col}
+                            <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium ${COL_TYPE_COLOR[detectColumnType(col)]}`}>
+                              {COL_TYPE_LABEL[detectColumnType(col)]}
+                            </span>
+                          </td>
+                          {validationResult.missingByColumn && (
+                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${missing! > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
+                              {missing!.toLocaleString()}
+                            </td>
+                          )}
+                          {validationResult.duplicateByColumn && (
+                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${duplicate! > 0 ? 'text-orange-600' : 'text-slate-300'}`}>
+                              {duplicate!.toLocaleString()}
+                            </td>
+                          )}
+                          {validationResult.errorByColumn && (
+                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${error === null ? 'text-slate-200' : error > 0 ? 'text-red-600' : 'text-slate-300'}`}>
+                              {error === null ? '–' : error.toLocaleString()}
+                            </td>
+                          )}
+                        </tr>
                       );
                     })}
-                  </div>
-                </div>
-              )}
+                  </tbody>
+                </table>
+              </div>
 
               <div className="flex items-center gap-3 pt-1">
                 <button
