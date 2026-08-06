@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, ArrowRight, CheckCircle2, FileSpreadsheet, RotateCcw, Upload } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  FileSpreadsheet,
+  RotateCcw,
+  Upload,
+} from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import UploadStepper, { type UploadStep } from '../components/upload/UploadStepper';
 
@@ -11,17 +19,14 @@ interface ExcelPreview {
   totalRows: number;
 }
 
-interface SelectedChecks {
-  missing: boolean;
-  duplicate: boolean;
-  errorColumns: string[]; // 오류 검사할 열 이름 목록
-}
+// 열 이름 → { missing, duplicate, error } 온오프
+type SelectedChecks = Record<string, { missing: boolean; duplicate: boolean; error: boolean }>;
 
 interface ValidationResult {
   totalRows: number;
-  missingByColumn: Record<string, number> | null;   // 열 이름 → 빈 셀 수
-  duplicateByColumn: Record<string, number> | null; // 열 이름 → 중복 값 포함 행 수
-  errorByColumn: Record<string, number> | null;     // 열 이름 → 형식 오류 수
+  missingByColumn: Record<string, number> | null;
+  duplicateByColumn: Record<string, number> | null;
+  errorByColumn: Record<string, number> | null;
 }
 
 type ColType = 'date' | 'phone' | 'number' | 'text';
@@ -33,18 +38,18 @@ function detectColumnType(name: string): ColType {
   return 'text';
 }
 
-const COL_TYPE_LABEL: Record<ColType, string> = {
+const TYPE_LABEL: Record<ColType, string> = {
   date: '날짜',
   phone: '전화번호',
   number: '숫자',
   text: '텍스트',
 };
 
-const COL_TYPE_COLOR: Record<ColType, string> = {
+const TYPE_COLOR: Record<ColType, string> = {
   date: 'bg-blue-50 text-blue-600',
   phone: 'bg-purple-50 text-purple-600',
   number: 'bg-green-50 text-green-600',
-  text: 'bg-slate-100 text-slate-500',
+  text: 'bg-slate-100 text-slate-400',
 };
 
 export default function DataUploadPage() {
@@ -54,11 +59,7 @@ export default function DataUploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isParsing, setIsParsing] = useState(false);
-  const [selectedChecks, setSelectedChecks] = useState<SelectedChecks>({
-    missing: true,
-    duplicate: true,
-    errorColumns: [],
-  });
+  const [selectedChecks, setSelectedChecks] = useState<SelectedChecks>({});
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [validationProgress, setValidationProgress] = useState(0);
   const [isValidating, setIsValidating] = useState(false);
@@ -78,6 +79,13 @@ export default function DataUploadPage() {
       switch (msg.type) {
         case 'parse-done': {
           const cols = msg.columns as string[];
+          // 열 타입에 따라 초기 선택 상태 설정
+          const initChecks: SelectedChecks = {};
+          for (const col of cols) {
+            const type = detectColumnType(col);
+            initChecks[col] = { missing: true, duplicate: true, error: type !== 'text' };
+          }
+          setSelectedChecks(initChecks);
           setPreview({
             fileName: fileNameRef.current,
             sheetName: msg.sheetName,
@@ -85,11 +93,6 @@ export default function DataUploadPage() {
             rows: msg.previewRows,
             totalRows: msg.totalRows,
           });
-          // 날짜·전화번호·숫자 열을 자동 선택
-          setSelectedChecks((prev) => ({
-            ...prev,
-            errorColumns: cols.filter((c) => detectColumnType(c) !== 'text'),
-          }));
           setIsParsing(false);
           setStep('columns');
           break;
@@ -130,7 +133,13 @@ export default function DataUploadPage() {
     if (step === 'validation' && !isValidating && !validationResult) {
       setIsValidating(true);
       setValidationProgress(0);
-      workerRef.current?.postMessage({ type: 'validate', checks: selectedChecks });
+      const entries = Object.entries(selectedChecks);
+      const workerChecks = {
+        missingColumns: entries.filter(([, v]) => v.missing).map(([k]) => k),
+        duplicateColumns: entries.filter(([, v]) => v.duplicate).map(([k]) => k),
+        errorColumns: entries.filter(([, v]) => v.error).map(([k]) => k),
+      };
+      workerRef.current?.postMessage({ type: 'validate', checks: workerChecks });
     }
   }, [step, isValidating, validationResult, selectedChecks]);
 
@@ -144,7 +153,6 @@ export default function DataUploadPage() {
       setError('.xlsx 또는 .xls 파일만 업로드할 수 있습니다.');
       return;
     }
-
     setError(null);
     setUploadProgress(0);
     setIsParsing(false);
@@ -153,23 +161,19 @@ export default function DataUploadPage() {
     fileNameRef.current = file.name;
 
     const reader = new FileReader();
-
     reader.onprogress = (e) => {
       if (e.lengthComputable) setUploadProgress((e.loaded / e.total) * 100);
     };
-
     reader.onload = (e) => {
       setUploadProgress(100);
       setIsParsing(true);
       const buffer = e.target?.result as ArrayBuffer;
       workerRef.current!.postMessage({ type: 'parse', buffer }, [buffer]);
     };
-
     reader.onerror = () => {
       setError('파일을 읽는 중 오류가 발생했습니다. 다시 시도해 주세요.');
       setStep('select');
     };
-
     reader.readAsArrayBuffer(file);
   }
 
@@ -194,7 +198,7 @@ export default function DataUploadPage() {
     setValidationResult(null);
     setValidationProgress(0);
     setIsValidating(false);
-    setSelectedChecks({ missing: true, duplicate: true, errorColumns: [] });
+    setSelectedChecks({});
     setStep('select');
   }
 
@@ -205,19 +209,30 @@ export default function DataUploadPage() {
     setStep('columns');
   }
 
-  function toggleErrorColumn(col: string) {
+  // 열 × 검사항목 단일 토글
+  function toggleCell(col: string, type: 'missing' | 'duplicate' | 'error') {
     setSelectedChecks((prev) => ({
       ...prev,
-      errorColumns: prev.errorColumns.includes(col)
-        ? prev.errorColumns.filter((c) => c !== col)
-        : [...prev.errorColumns, col],
+      [col]: { ...prev[col], [type]: !prev[col]?.[type] },
     }));
   }
 
+  // 검사항목 열 전체 토글 (헤더 체크박스)
+  function toggleAllOfType(type: 'missing' | 'duplicate' | 'error') {
+    if (!preview) return;
+    const allOn = preview.columns.every((c) => selectedChecks[c]?.[type]);
+    setSelectedChecks((prev) => {
+      const next = { ...prev };
+      for (const col of preview.columns) {
+        next[col] = { ...next[col], [type]: !allOn };
+      }
+      return next;
+    });
+  }
+
   const noChecksSelected =
-    !selectedChecks.missing &&
-    !selectedChecks.duplicate &&
-    selectedChecks.errorColumns.length === 0;
+    !preview ||
+    !Object.values(selectedChecks).some((v) => v.missing || v.duplicate || v.error);
 
   return (
     <div className="space-y-6">
@@ -256,7 +271,9 @@ export default function DataUploadPage() {
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             className={`mt-4 flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed p-10 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-              isDragging ? 'border-teal-400 bg-teal-50' : 'border-slate-200 hover:border-teal-300 hover:bg-teal-50/30'
+              isDragging
+                ? 'border-teal-400 bg-teal-50'
+                : 'border-slate-200 hover:border-teal-300 hover:bg-teal-50/30'
             }`}
           >
             <Upload size={32} className="text-teal-500" />
@@ -312,6 +329,7 @@ export default function DataUploadPage() {
       {/* ── 열 인식 결과 ── */}
       {step === 'columns' && preview && (
         <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
+          {/* 파일 정보 */}
           <div className="flex items-center gap-3">
             <FileSpreadsheet size={24} className="shrink-0 text-teal-600" />
             <div>
@@ -322,21 +340,7 @@ export default function DataUploadPage() {
             </div>
           </div>
 
-          {/* 감지된 열 */}
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700">
-              감지된 열 <span className="font-normal text-slate-400">({preview.columns.length}개)</span>
-            </h3>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {preview.columns.map((col) => (
-                <span key={col} className="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-700">
-                  {col}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          {/* 미리보기 */}
+          {/* 데이터 미리보기 */}
           <div>
             <h3 className="text-sm font-semibold text-slate-700">
               데이터 미리보기 <span className="font-normal text-slate-400">(최대 10행)</span>
@@ -349,7 +353,10 @@ export default function DataUploadPage() {
                   <thead className="bg-slate-50">
                     <tr>
                       {preview.columns.map((col) => (
-                        <th key={col} className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500">
+                        <th
+                          key={col}
+                          className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500"
+                        >
                           {col}
                         </th>
                       ))}
@@ -359,7 +366,9 @@ export default function DataUploadPage() {
                     {preview.rows.map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50">
                         {preview.columns.map((col) => (
-                          <td key={col} className="whitespace-nowrap px-4 py-2 text-slate-700">{row[col]}</td>
+                          <td key={col} className="whitespace-nowrap px-4 py-2 text-slate-700">
+                            {row[col]}
+                          </td>
                         ))}
                       </tr>
                     ))}
@@ -369,100 +378,106 @@ export default function DataUploadPage() {
             )}
           </div>
 
-          {/* 검사 항목 선택 */}
+          {/* 검사 항목 선택 — 열 × 검사항목 테이블 */}
           <div>
             <h3 className="text-sm font-semibold text-slate-700">검사 항목 선택</h3>
-            <p className="mt-0.5 text-xs text-slate-400">다음 단계에서 실행할 검사를 선택하세요.</p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              각 열마다 실행할 검사를 켜고 끄세요. 헤더 체크박스로 열 전체를 한 번에 선택할 수 있습니다.
+            </p>
 
-            <div className="mt-3 space-y-2">
-              {/* 누락 검사 */}
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 hover:bg-slate-50">
-                <input
-                  type="checkbox"
-                  checked={selectedChecks.missing}
-                  onChange={() => setSelectedChecks((p) => ({ ...p, missing: !p.missing }))}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-teal-600"
-                />
-                <div>
-                  <p className="text-sm font-medium text-slate-800">누락 검사</p>
-                  <p className="text-xs text-slate-400">빈 셀이 있는 행을 찾습니다</p>
-                </div>
-              </label>
+            <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">열 이름</th>
 
-              {/* 중복 검사 */}
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 hover:bg-slate-50">
-                <input
-                  type="checkbox"
-                  checked={selectedChecks.duplicate}
-                  onChange={() => setSelectedChecks((p) => ({ ...p, duplicate: !p.duplicate }))}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-teal-600"
-                />
-                <div>
-                  <p className="text-sm font-medium text-slate-800">중복 검사</p>
-                  <p className="text-xs text-slate-400">동일한 행을 찾습니다</p>
-                </div>
-              </label>
-
-              {/* 오류 검사 — 열별 선택 */}
-              <div className="rounded-lg border border-slate-200 px-4 py-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">오류 검사</p>
-                    <p className="text-xs text-slate-400">검사할 열을 선택하세요 (날짜·전화번호·숫자 형식 오류를 찾습니다)</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectedChecks((prev) => ({
-                        ...prev,
-                        errorColumns:
-                          prev.errorColumns.length === preview.columns.length
-                            ? []
-                            : [...preview.columns],
-                      }))
-                    }
-                    className="shrink-0 text-xs text-teal-600 hover:underline"
-                  >
-                    {selectedChecks.errorColumns.length === preview.columns.length ? '전체 해제' : '전체 선택'}
-                  </button>
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {preview.columns.map((col) => {
-                    const type = detectColumnType(col);
-                    const checked = selectedChecks.errorColumns.includes(col);
-                    return (
-                      <label
-                        key={col}
-                        className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 transition-colors ${
-                          checked
-                            ? 'border-teal-200 bg-teal-50'
-                            : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
+                    {/* 누락 검사 헤더 */}
+                    <th className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-xs font-medium text-amber-600">누락 검사</span>
                         <input
                           type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleErrorColumn(col)}
-                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 accent-teal-600"
+                          checked={preview.columns.every((c) => selectedChecks[c]?.missing)}
+                          onChange={() => toggleAllOfType('missing')}
+                          className="h-4 w-4 rounded border-slate-300 accent-amber-500"
+                          title="전체 선택/해제"
                         />
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-medium text-slate-800">{col}</p>
-                          <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${COL_TYPE_COLOR[type]}`}>
-                            {COL_TYPE_LABEL[type]}
+                      </div>
+                    </th>
+
+                    {/* 중복 검사 헤더 */}
+                    <th className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-xs font-medium text-orange-600">중복 검사</span>
+                        <input
+                          type="checkbox"
+                          checked={preview.columns.every((c) => selectedChecks[c]?.duplicate)}
+                          onChange={() => toggleAllOfType('duplicate')}
+                          className="h-4 w-4 rounded border-slate-300 accent-orange-500"
+                          title="전체 선택/해제"
+                        />
+                      </div>
+                    </th>
+
+                    {/* 오류 검사 헤더 */}
+                    <th className="px-4 py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-xs font-medium text-red-600">오류 검사</span>
+                        <input
+                          type="checkbox"
+                          checked={preview.columns.every((c) => selectedChecks[c]?.error)}
+                          onChange={() => toggleAllOfType('error')}
+                          className="h-4 w-4 rounded border-slate-300 accent-red-500"
+                          title="전체 선택/해제"
+                        />
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {preview.columns.map((col) => {
+                    const type = detectColumnType(col);
+                    const checks = selectedChecks[col] ?? { missing: false, duplicate: false, error: false };
+                    return (
+                      <tr key={col} className="hover:bg-slate-50">
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <span className="font-medium text-slate-700">{col}</span>
+                          <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium ${TYPE_COLOR[type]}`}>
+                            {TYPE_LABEL[type]}
                           </span>
-                        </div>
-                      </label>
+                        </td>
+
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={checks.missing}
+                            onChange={() => toggleCell(col, 'missing')}
+                            className="h-4 w-4 rounded border-slate-300 accent-amber-500"
+                          />
+                        </td>
+
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={checks.duplicate}
+                            onChange={() => toggleCell(col, 'duplicate')}
+                            className="h-4 w-4 rounded border-slate-300 accent-orange-500"
+                          />
+                        </td>
+
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={checks.error}
+                            onChange={() => toggleCell(col, 'error')}
+                            className="h-4 w-4 rounded border-slate-300 accent-red-500"
+                          />
+                        </td>
+                      </tr>
                     );
                   })}
-                </div>
-
-                {selectedChecks.errorColumns.length > 0 && (
-                  <p className="mt-2 text-xs text-teal-600">
-                    {selectedChecks.errorColumns.length}개 열 선택됨
-                  </p>
-                )}
-              </div>
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -504,7 +519,7 @@ export default function DataUploadPage() {
                 />
               </div>
               <p className="text-xs text-slate-400">
-                전체 {preview?.totalRows.toLocaleString()}행을 분석 중입니다. 대용량 파일은 시간이 걸릴 수 있습니다.
+                전체 {preview?.totalRows.toLocaleString()}행을 분석 중입니다.
               </p>
             </div>
           )}
@@ -515,7 +530,7 @@ export default function DataUploadPage() {
                 총 <strong className="text-slate-800">{validationResult.totalRows.toLocaleString()}행</strong> 분석 완료
               </p>
 
-              {/* 열별 검사 결과 테이블 */}
+              {/* 열별 결과 테이블 */}
               <div className="overflow-x-auto rounded-lg border border-slate-200">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
@@ -536,34 +551,55 @@ export default function DataUploadPage() {
                     {preview.columns.map((col) => {
                       const missing = validationResult.missingByColumn?.[col] ?? null;
                       const duplicate = validationResult.duplicateByColumn?.[col] ?? null;
-                      const error = validationResult.errorByColumn
-                        ? (col in validationResult.errorByColumn ? validationResult.errorByColumn[col] : null)
+                      const errorVal = validationResult.errorByColumn
+                        ? col in validationResult.errorByColumn
+                          ? validationResult.errorByColumn[col]
+                          : null
                         : null;
-                      const hasAnyIssue =
+                      const hasIssue =
                         (missing !== null && missing > 0) ||
                         (duplicate !== null && duplicate > 0) ||
-                        (error !== null && error > 0);
+                        (errorVal !== null && errorVal > 0);
+                      const type = detectColumnType(col);
                       return (
-                        <tr key={col} className={hasAnyIssue ? 'bg-slate-50/60' : ''}>
-                          <td className="whitespace-nowrap px-4 py-2.5 font-medium text-slate-700">
-                            {col}
-                            <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium ${COL_TYPE_COLOR[detectColumnType(col)]}`}>
-                              {COL_TYPE_LABEL[detectColumnType(col)]}
+                        <tr key={col} className={hasIssue ? 'bg-red-50/30' : ''}>
+                          <td className="whitespace-nowrap px-4 py-2.5">
+                            <span className="font-medium text-slate-700">{col}</span>
+                            <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium ${TYPE_COLOR[type]}`}>
+                              {TYPE_LABEL[type]}
                             </span>
                           </td>
                           {validationResult.missingByColumn && (
-                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${missing! > 0 ? 'text-amber-600' : 'text-slate-300'}`}>
-                              {missing!.toLocaleString()}
+                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${
+                              missing === null
+                                ? 'text-slate-200'
+                                : missing > 0
+                                  ? 'text-amber-600'
+                                  : 'text-slate-300'
+                            }`}>
+                              {missing === null ? '–' : missing.toLocaleString()}
                             </td>
                           )}
                           {validationResult.duplicateByColumn && (
-                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${duplicate! > 0 ? 'text-orange-600' : 'text-slate-300'}`}>
-                              {duplicate!.toLocaleString()}
+                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${
+                              duplicate === null
+                                ? 'text-slate-200'
+                                : duplicate > 0
+                                  ? 'text-orange-600'
+                                  : 'text-slate-300'
+                            }`}>
+                              {duplicate === null ? '–' : duplicate.toLocaleString()}
                             </td>
                           )}
                           {validationResult.errorByColumn && (
-                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${error === null ? 'text-slate-200' : error > 0 ? 'text-red-600' : 'text-slate-300'}`}>
-                              {error === null ? '–' : error.toLocaleString()}
+                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${
+                              errorVal === null
+                                ? 'text-slate-200'
+                                : errorVal > 0
+                                  ? 'text-red-600'
+                                  : 'text-slate-300'
+                            }`}>
+                              {errorVal === null ? '–' : errorVal.toLocaleString()}
                             </td>
                           )}
                         </tr>

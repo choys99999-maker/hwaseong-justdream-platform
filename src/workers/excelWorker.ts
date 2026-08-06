@@ -1,9 +1,9 @@
 /// <reference lib="webworker" />
 import * as XLSX from 'xlsx';
 
-interface SelectedChecks {
-  missing: boolean;
-  duplicate: boolean;
+interface WorkerChecks {
+  missingColumns: string[];
+  duplicateColumns: string[];
   errorColumns: string[];
 }
 
@@ -52,29 +52,25 @@ function handleParse(buffer: ArrayBuffer) {
   });
 }
 
-function handleValidate(checks: SelectedChecks) {
+function handleValidate(checks: WorkerChecks) {
   const dataRows = storedRows.slice(1);
   const total = dataRows.length;
 
-  // 열별 누락 카운터
+  const missingSet = new Set(checks.missingColumns);
   const missingByColumn: Record<string, number> = {};
-  if (checks.missing) {
-    for (const { name } of storedHeaders) missingByColumn[name] = 0;
-  }
+  for (const col of checks.missingColumns) missingByColumn[col] = 0;
 
-  // 열별 빈도 맵 (중복 검사용)
-  const colFreqs: Map<string, number>[] = checks.duplicate
-    ? storedHeaders.map(() => new Map())
-    : [];
+  const dupSet = new Set(checks.duplicateColumns);
+  const dupHeadersMeta = storedHeaders.filter((h) => dupSet.has(h.name));
+  const colFreqs: Map<string, number>[] = dupHeadersMeta.map(() => new Map());
 
-  // 열별 오류 카운터
-  const errorByColumn: Record<string, number> = {};
   const errorColMeta = checks.errorColumns
     .map((colName) => {
       const h = storedHeaders.find((s) => s.name === colName);
       return h ? { colName, idx: h.idx, type: detectColumnType(colName) } : null;
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
+  const errorByColumn: Record<string, number> = {};
   for (const { colName } of errorColMeta) errorByColumn[colName] = 0;
 
   const CHUNK = 50_000;
@@ -85,24 +81,17 @@ function handleValidate(checks: SelectedChecks) {
     for (let j = i; j < end; j++) {
       const arr = dataRows[j] as unknown[];
 
-      // 열별 누락 (빈 셀 수)
-      if (checks.missing) {
-        for (let k = 0; k < storedHeaders.length; k++) {
-          if (String(arr[storedHeaders[k].idx] ?? '').trim() === '')
-            missingByColumn[storedHeaders[k].name]++;
-        }
+      for (const { name, idx } of storedHeaders) {
+        if (missingSet.has(name) && String(arr[idx] ?? '').trim() === '')
+          missingByColumn[name]++;
       }
 
-      // 열별 빈도 누적 (중복 계산용)
-      if (checks.duplicate) {
-        for (let k = 0; k < storedHeaders.length; k++) {
-          const val = String(arr[storedHeaders[k].idx] ?? '');
-          const freq = colFreqs[k];
-          freq.set(val, (freq.get(val) || 0) + 1);
-        }
+      for (let k = 0; k < dupHeadersMeta.length; k++) {
+        const val = String(arr[dupHeadersMeta[k].idx] ?? '');
+        const freq = colFreqs[k];
+        freq.set(val, (freq.get(val) || 0) + 1);
       }
 
-      // 열별 형식 오류
       for (const { colName, idx, type } of errorColMeta) {
         const val = String(arr[idx] ?? '');
         if (!val) continue;
@@ -117,29 +106,26 @@ function handleValidate(checks: SelectedChecks) {
     self.postMessage({ type: 'validate-progress', progress: Math.round((end / total) * 100) });
   }
 
-  // 빈도 맵 → 열별 중복 카운트 (값이 2회 이상 등장한 셀 합계)
   const duplicateByColumn: Record<string, number> = {};
-  if (checks.duplicate) {
-    for (let k = 0; k < storedHeaders.length; k++) {
-      let dupCount = 0;
-      for (const cnt of colFreqs[k].values()) {
-        if (cnt > 1) dupCount += cnt;
-      }
-      duplicateByColumn[storedHeaders[k].name] = dupCount;
+  for (let k = 0; k < dupHeadersMeta.length; k++) {
+    let dupCount = 0;
+    for (const cnt of colFreqs[k].values()) {
+      if (cnt > 1) dupCount += cnt;
     }
+    duplicateByColumn[dupHeadersMeta[k].name] = dupCount;
   }
 
   self.postMessage({
     type: 'validate-done',
     totalRows: total,
-    missingByColumn: checks.missing ? missingByColumn : null,
-    duplicateByColumn: checks.duplicate ? duplicateByColumn : null,
+    missingByColumn: checks.missingColumns.length > 0 ? missingByColumn : null,
+    duplicateByColumn: checks.duplicateColumns.length > 0 ? duplicateByColumn : null,
     errorByColumn: errorColMeta.length > 0 ? errorByColumn : null,
   });
 }
 
 self.onmessage = (e: MessageEvent) => {
-  const msg = e.data as { type: string; buffer?: ArrayBuffer; checks?: SelectedChecks };
+  const msg = e.data as { type: string; buffer?: ArrayBuffer; checks?: WorkerChecks };
   try {
     if (msg.type === 'parse' && msg.buffer) handleParse(msg.buffer);
     else if (msg.type === 'validate' && msg.checks) handleValidate(msg.checks);
