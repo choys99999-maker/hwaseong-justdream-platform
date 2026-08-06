@@ -10,7 +10,7 @@ import { useDataStore, findCol } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 export default function DashboardPage() {
-  const { dataset } = useDataStore();
+  const { dataset, isLoading } = useDataStore();
 
   const stats = useMemo(() => {
     if (!dataset) return null;
@@ -83,7 +83,7 @@ export default function DashboardPage() {
     };
   }, [dataset]);
 
-  if (!dataset || !stats) {
+  if (!isLoading && (!dataset || !stats)) {
     return (
       <div className="space-y-6">
         <PageHeader title="통합 대시보드" description="화성시 전체 그냥드림 운영 현황을 한눈에 확인합니다." />

@@ -7,7 +7,7 @@ import { useDataStore, findCol } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 export default function RegionListPage() {
-  const { dataset } = useDataStore();
+  const { dataset, isLoading } = useDataStore();
 
   const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
   const nameCol = dataset ? findCol(dataset.columns, /이용자|수혜자|이름|성명/) : null;
@@ -30,7 +30,7 @@ export default function RegionListPage() {
     );
   }, [dataset, regionCol, nameCol, itemCol]);
 
-  if (!dataset) {
+  if (!isLoading && !dataset) {
     return (
       <div className="space-y-6">
         <PageHeader title="지역별 현황" description="읍면동별 지원 현황을 확인합니다." />

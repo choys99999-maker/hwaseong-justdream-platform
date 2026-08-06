@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { dbGetAll, dbPut, dbDelete } from './db';
 
 export interface UploadedDataset {
   id: string;
@@ -9,77 +10,69 @@ export interface UploadedDataset {
 }
 
 interface DataStoreValue {
-  datasets: UploadedDataset[];       // 업로드된 파일 전체 목록
-  activeId: string | null;           // 현재 선택된 파일 ID
-  dataset: UploadedDataset | null;   // activeId에 해당하는 파일
+  datasets: UploadedDataset[];
+  activeId: string | null;
+  dataset: UploadedDataset | null;
+  isLoading: boolean;
   addDataset: (data: Omit<UploadedDataset, 'id'>) => void;
   removeDataset: (id: string) => void;
   setActiveId: (id: string) => void;
 }
 
-const STORAGE_KEY = 'jd-datasets';
 const ACTIVE_KEY = 'jd-active-id';
-
-function loadFromStorage(): { datasets: UploadedDataset[]; activeId: string | null } {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const datasets: UploadedDataset[] = raw ? JSON.parse(raw) : [];
-    const storedActive = localStorage.getItem(ACTIVE_KEY);
-    const activeId = datasets.some((d) => d.id === storedActive)
-      ? storedActive
-      : (datasets[0]?.id ?? null);
-    return { datasets, activeId };
-  } catch {
-    return { datasets: [], activeId: null };
-  }
-}
-
-function persistToStorage(datasets: UploadedDataset[], activeId: string | null) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(datasets));
-    localStorage.setItem(ACTIVE_KEY, activeId ?? '');
-  } catch {
-    // 용량 초과 시 무시 (대용량 파일은 새로고침 후 재업로드 필요)
-  }
-}
 
 const DataStoreContext = createContext<DataStoreValue | null>(null);
 
 export function DataStoreProvider({ children }: { children: ReactNode }) {
-  const init = loadFromStorage();
-  const [datasets, setDatasets] = useState<UploadedDataset[]>(init.datasets);
-  const [activeId, setActiveIdState] = useState<string | null>(init.activeId);
-
-  const dataset = datasets.find((d) => d.id === activeId) ?? datasets[0] ?? null;
+  const [datasets, setDatasets] = useState<UploadedDataset[]>([]);
+  const [activeId, setActiveIdState] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    persistToStorage(datasets, activeId);
-  }, [datasets, activeId]);
+    dbGetAll()
+      .then((loaded) => {
+        const sorted = [...loaded].sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt));
+        setDatasets(sorted);
+        const storedActive = localStorage.getItem(ACTIVE_KEY);
+        const valid = sorted.find((d) => d.id === storedActive)?.id ?? sorted[0]?.id ?? null;
+        setActiveIdState(valid);
+      })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const dataset = datasets.find((d) => d.id === activeId) ?? datasets[0] ?? null;
 
   function addDataset(data: Omit<UploadedDataset, 'id'>) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const next: UploadedDataset = { ...data, id };
     setDatasets((prev) => [...prev, next]);
     setActiveIdState(id);
+    localStorage.setItem(ACTIVE_KEY, id);
+    dbPut(next).catch(() => {});
   }
 
   function removeDataset(id: string) {
     setDatasets((prev) => {
       const next = prev.filter((d) => d.id !== id);
       if (activeId === id) {
-        setActiveIdState(next[0]?.id ?? null);
+        const newActive = next[0]?.id ?? null;
+        setActiveIdState(newActive);
+        localStorage.setItem(ACTIVE_KEY, newActive ?? '');
       }
       return next;
     });
+    dbDelete(id).catch(() => {});
   }
 
   function setActiveId(id: string) {
     setActiveIdState(id);
+    localStorage.setItem(ACTIVE_KEY, id);
   }
 
   return (
     <DataStoreContext.Provider
-      value={{ datasets, activeId, dataset, addDataset, removeDataset, setActiveId }}
+      value={{ datasets, activeId, dataset, isLoading, addDataset, removeDataset, setActiveId }}
     >
       {children}
     </DataStoreContext.Provider>

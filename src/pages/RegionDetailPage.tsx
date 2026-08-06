@@ -12,7 +12,7 @@ const PAGE_SIZE = 20;
 
 export default function RegionDetailPage() {
   const { regionId } = useParams<{ regionId: string }>();
-  const { dataset } = useDataStore();
+  const { dataset, isLoading } = useDataStore();
   const regionName = regionId ? decodeURIComponent(regionId) : '';
 
   const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
@@ -48,7 +48,7 @@ export default function RegionDetailPage() {
     return { regionRecords: sorted, monthlyData: monthly };
   }, [dataset, regionCol, dateCol, regionName]);
 
-  if (!dataset) {
+  if (!isLoading && !dataset) {
     return (
       <div className="space-y-6">
         <Link to="/regions" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-teal-600">

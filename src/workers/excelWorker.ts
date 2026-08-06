@@ -4,18 +4,11 @@ import * as XLSX from 'xlsx';
 interface WorkerChecks {
   missingColumns: string[];
   duplicateColumns: string[];
-  errorColumns: string[];
+  listColumns: string[];
 }
 
 let storedRows: unknown[][] = [];
 let storedHeaders: Array<{ name: string; idx: number }> = [];
-
-function detectColumnType(name: string): 'date' | 'phone' | 'number' | 'text' {
-  if (/일$|날짜|생년/.test(name)) return 'date';
-  if (/연락|전화|핸드폰/.test(name)) return 'phone';
-  if (/수량|개수|금액|합계/.test(name)) return 'number';
-  return 'text';
-}
 
 function handleParse(buffer: ArrayBuffer) {
   const wb = XLSX.read(buffer, { type: 'array' });
@@ -64,14 +57,14 @@ function handleValidate(checks: WorkerChecks) {
   const dupHeadersMeta = storedHeaders.filter((h) => dupSet.has(h.name));
   const colFreqs: Map<string, number>[] = dupHeadersMeta.map(() => new Map());
 
-  const errorColMeta = checks.errorColumns
+  const listHeadersMeta = checks.listColumns
     .map((colName) => {
       const h = storedHeaders.find((s) => s.name === colName);
-      return h ? { colName, idx: h.idx, type: detectColumnType(colName) } : null;
+      return h ? { colName, idx: h.idx } : null;
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
-  const errorByColumn: Record<string, number> = {};
-  for (const { colName } of errorColMeta) errorByColumn[colName] = 0;
+  const listUniques: Map<string, Set<string>> = new Map();
+  for (const { colName } of listHeadersMeta) listUniques.set(colName, new Set());
 
   const CHUNK = 50_000;
 
@@ -89,17 +82,12 @@ function handleValidate(checks: WorkerChecks) {
       for (let k = 0; k < dupHeadersMeta.length; k++) {
         const val = String(arr[dupHeadersMeta[k].idx] ?? '');
         const freq = colFreqs[k];
-        freq.set(val, (freq.get(val) || 0) + 1);
+        freq.set(val, (freq.get(val) ?? 0) + 1);
       }
 
-      for (const { colName, idx, type } of errorColMeta) {
-        const val = String(arr[idx] ?? '');
-        if (!val) continue;
-        let hasError = false;
-        if (type === 'date' && !/^\d{4}[-./]\d{1,2}[-./]\d{1,2}/.test(val)) hasError = true;
-        if (type === 'phone' && !/^[\d\s\-+().]{7,20}$/.test(val)) hasError = true;
-        if (type === 'number' && !/^\d+(\.\d+)?$/.test(val)) hasError = true;
-        if (hasError) errorByColumn[colName]++;
+      for (const { colName, idx } of listHeadersMeta) {
+        const val = String(arr[idx] ?? '').trim();
+        if (val) listUniques.get(colName)!.add(val);
       }
     }
 
@@ -115,24 +103,39 @@ function handleValidate(checks: WorkerChecks) {
     duplicateByColumn[dupHeadersMeta[k].name] = dupCount;
   }
 
+  const listByColumn: Record<string, number> = {};
+  for (const [colName, uniqSet] of listUniques) {
+    listByColumn[colName] = uniqSet.size;
+  }
+
   self.postMessage({
     type: 'validate-done',
     totalRows: total,
     missingByColumn: checks.missingColumns.length > 0 ? missingByColumn : null,
     duplicateByColumn: checks.duplicateColumns.length > 0 ? duplicateByColumn : null,
-    errorByColumn: errorColMeta.length > 0 ? errorByColumn : null,
+    listByColumn: listHeadersMeta.length > 0 ? listByColumn : null,
   });
 }
 
 function handleGetAll() {
+  const CHUNK = 20_000;
   const dataRows = storedRows.slice(1);
-  const records = dataRows.map((row) => {
-    const arr = row as unknown[];
-    return Object.fromEntries(
-      storedHeaders.map(({ name, idx }) => [name, String(arr[idx] ?? '')]),
-    );
-  });
-  self.postMessage({ type: 'all-data', records });
+  const total = dataRows.length;
+
+  for (let i = 0; i < total; i += CHUNK) {
+    const end = Math.min(i + CHUNK, total);
+    const chunk: Record<string, string>[] = [];
+    for (let j = i; j < end; j++) {
+      const arr = dataRows[j] as unknown[];
+      chunk.push(
+        Object.fromEntries(
+          storedHeaders.map(({ name, idx }) => [name, String(arr[idx] ?? '')]),
+        ),
+      );
+    }
+    self.postMessage({ type: 'all-data-chunk', chunk, offset: i, total });
+  }
+  self.postMessage({ type: 'all-data-done', total });
 }
 
 self.onmessage = (e: MessageEvent) => {

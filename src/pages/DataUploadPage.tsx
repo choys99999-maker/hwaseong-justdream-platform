@@ -6,6 +6,7 @@ import {
   ArrowRight,
   CheckCircle2,
   FileSpreadsheet,
+  FolderOpen,
   RotateCcw,
   Trash2,
   Upload,
@@ -22,38 +23,15 @@ interface ExcelPreview {
   totalRows: number;
 }
 
-// 열 이름 → { missing, duplicate, error } 온오프
-type SelectedChecks = Record<string, { missing: boolean; duplicate: boolean; error: boolean }>;
+// 열 이름 → { missing, duplicate, list } 온오프
+type SelectedChecks = Record<string, { missing: boolean; duplicate: boolean; list: boolean }>;
 
 interface ValidationResult {
   totalRows: number;
   missingByColumn: Record<string, number> | null;
   duplicateByColumn: Record<string, number> | null;
-  errorByColumn: Record<string, number> | null;
+  listByColumn: Record<string, number> | null;
 }
-
-type ColType = 'date' | 'phone' | 'number' | 'text';
-
-function detectColumnType(name: string): ColType {
-  if (/일$|날짜|생년/.test(name)) return 'date';
-  if (/연락|전화|핸드폰/.test(name)) return 'phone';
-  if (/수량|개수|금액|합계/.test(name)) return 'number';
-  return 'text';
-}
-
-const TYPE_LABEL: Record<ColType, string> = {
-  date: '날짜',
-  phone: '전화번호',
-  number: '숫자',
-  text: '텍스트',
-};
-
-const TYPE_COLOR: Record<ColType, string> = {
-  date: 'bg-blue-50 text-blue-600',
-  phone: 'bg-purple-50 text-purple-600',
-  number: 'bg-green-50 text-green-600',
-  text: 'bg-slate-100 text-slate-400',
-};
 
 export default function DataUploadPage() {
   const { datasets, activeId, addDataset, removeDataset, setActiveId } = useDataStore();
@@ -77,6 +55,7 @@ export default function DataUploadPage() {
   const columnsRef = useRef<string[]>([]);
   const addDatasetRef = useRef(addDataset);
   addDatasetRef.current = addDataset;
+  const chunkedRecordsRef = useRef<Record<string, string>[]>([]);
 
   useEffect(() => {
     const worker = new Worker(
@@ -92,8 +71,7 @@ export default function DataUploadPage() {
           columnsRef.current = cols;
           const initChecks: SelectedChecks = {};
           for (const col of cols) {
-            const type = detectColumnType(col);
-            initChecks[col] = { missing: true, duplicate: true, error: type !== 'text' };
+            initChecks[col] = { missing: true, duplicate: true, list: true };
           }
           setSelectedChecks(initChecks);
           setPreview({
@@ -107,8 +85,16 @@ export default function DataUploadPage() {
           setStep('columns');
           break;
         }
-        case 'all-data': {
-          const records = msg.records as Record<string, string>[];
+        case 'all-data-chunk': {
+          Array.prototype.push.apply(
+            chunkedRecordsRef.current,
+            msg.chunk as Record<string, string>[],
+          );
+          break;
+        }
+        case 'all-data-done': {
+          const records = chunkedRecordsRef.current;
+          chunkedRecordsRef.current = [];
           addDatasetRef.current({
             records,
             columns: columnsRef.current,
@@ -127,7 +113,7 @@ export default function DataUploadPage() {
             totalRows: msg.totalRows,
             missingByColumn: msg.missingByColumn,
             duplicateByColumn: msg.duplicateByColumn,
-            errorByColumn: msg.errorByColumn,
+            listByColumn: msg.listByColumn,
           });
           setIsValidating(false);
           break;
@@ -159,7 +145,7 @@ export default function DataUploadPage() {
       const workerChecks = {
         missingColumns: entries.filter(([, v]) => v.missing).map(([k]) => k),
         duplicateColumns: entries.filter(([, v]) => v.duplicate).map(([k]) => k),
-        errorColumns: entries.filter(([, v]) => v.error).map(([k]) => k),
+        listColumns: entries.filter(([, v]) => v.list).map(([k]) => k),
       };
       workerRef.current?.postMessage({ type: 'validate', checks: workerChecks });
     }
@@ -223,11 +209,13 @@ export default function DataUploadPage() {
     setSelectedChecks({});
     setIsApplying(false);
     setAppliedCount(null);
+    chunkedRecordsRef.current = [];
     setStep('select');
   }
 
   function handleApply() {
     setIsApplying(true);
+    chunkedRecordsRef.current = [];
     workerRef.current?.postMessage({ type: 'get-all' });
   }
 
@@ -238,16 +226,14 @@ export default function DataUploadPage() {
     setStep('columns');
   }
 
-  // 열 × 검사항목 단일 토글
-  function toggleCell(col: string, type: 'missing' | 'duplicate' | 'error') {
+  function toggleCell(col: string, type: 'missing' | 'duplicate' | 'list') {
     setSelectedChecks((prev) => ({
       ...prev,
       [col]: { ...prev[col], [type]: !prev[col]?.[type] },
     }));
   }
 
-  // 검사항목 열 전체 토글 (헤더 체크박스)
-  function toggleAllOfType(type: 'missing' | 'duplicate' | 'error') {
+  function toggleAllOfType(type: 'missing' | 'duplicate' | 'list') {
     if (!preview) return;
     const allOn = preview.columns.every((c) => selectedChecks[c]?.[type]);
     setSelectedChecks((prev) => {
@@ -261,7 +247,7 @@ export default function DataUploadPage() {
 
   const noChecksSelected =
     !preview ||
-    !Object.values(selectedChecks).some((v) => v.missing || v.duplicate || v.error);
+    !Object.values(selectedChecks).some((v) => v.missing || v.duplicate || v.list);
 
   return (
     <div className="space-y-6">
@@ -305,9 +291,12 @@ export default function DataUploadPage() {
                 : 'border-slate-200 hover:border-teal-300 hover:bg-teal-50/30'
             }`}
           >
-            <Upload size={32} className="text-teal-500" />
+            <FolderOpen size={40} className="text-teal-500" />
             <div>
-              <p className="text-sm font-medium text-slate-700">파일을 끌어다 놓거나 클릭하여 선택</p>
+              <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-slate-700">
+                <Upload size={14} className="text-slate-400" />
+                파일을 끌어다 놓거나 클릭하여 선택
+              </p>
               <p className="mt-1 text-xs text-slate-400">지원 형식: .xlsx, .xls</p>
             </div>
           </div>
@@ -407,7 +396,7 @@ export default function DataUploadPage() {
             )}
           </div>
 
-          {/* 검사 항목 선택 — 열 × 검사항목 테이블 */}
+          {/* 검사 항목 선택 */}
           <div>
             <h3 className="text-sm font-semibold text-slate-700">검사 항목 선택</h3>
             <p className="mt-0.5 text-xs text-slate-400">
@@ -420,7 +409,6 @@ export default function DataUploadPage() {
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">열 이름</th>
 
-                    {/* 누락 검사 헤더 */}
                     <th className="px-4 py-3 text-center">
                       <div className="flex flex-col items-center gap-1">
                         <span className="text-xs font-medium text-amber-600">누락 검사</span>
@@ -434,7 +422,6 @@ export default function DataUploadPage() {
                       </div>
                     </th>
 
-                    {/* 중복 검사 헤더 */}
                     <th className="px-4 py-3 text-center">
                       <div className="flex flex-col items-center gap-1">
                         <span className="text-xs font-medium text-orange-600">중복 검사</span>
@@ -448,15 +435,14 @@ export default function DataUploadPage() {
                       </div>
                     </th>
 
-                    {/* 오류 검사 헤더 */}
                     <th className="px-4 py-3 text-center">
                       <div className="flex flex-col items-center gap-1">
-                        <span className="text-xs font-medium text-red-600">오류 검사</span>
+                        <span className="text-xs font-medium text-blue-600">목록 검사</span>
                         <input
                           type="checkbox"
-                          checked={preview.columns.every((c) => selectedChecks[c]?.error)}
-                          onChange={() => toggleAllOfType('error')}
-                          className="h-4 w-4 rounded border-slate-300 accent-red-500"
+                          checked={preview.columns.every((c) => selectedChecks[c]?.list)}
+                          onChange={() => toggleAllOfType('list')}
+                          className="h-4 w-4 rounded border-slate-300 accent-blue-500"
                           title="전체 선택/해제"
                         />
                       </div>
@@ -465,15 +451,11 @@ export default function DataUploadPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {preview.columns.map((col) => {
-                    const type = detectColumnType(col);
-                    const checks = selectedChecks[col] ?? { missing: false, duplicate: false, error: false };
+                    const checks = selectedChecks[col] ?? { missing: false, duplicate: false, list: false };
                     return (
                       <tr key={col} className="hover:bg-slate-50">
                         <td className="whitespace-nowrap px-4 py-3">
                           <span className="font-medium text-slate-700">{col}</span>
-                          <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium ${TYPE_COLOR[type]}`}>
-                            {TYPE_LABEL[type]}
-                          </span>
                         </td>
 
                         <td className="px-4 py-3 text-center">
@@ -497,9 +479,9 @@ export default function DataUploadPage() {
                         <td className="px-4 py-3 text-center">
                           <input
                             type="checkbox"
-                            checked={checks.error}
-                            onChange={() => toggleCell(col, 'error')}
-                            className="h-4 w-4 rounded border-slate-300 accent-red-500"
+                            checked={checks.list}
+                            onChange={() => toggleCell(col, 'list')}
+                            className="h-4 w-4 rounded border-slate-300 accent-blue-500"
                           />
                         </td>
                       </tr>
@@ -559,7 +541,6 @@ export default function DataUploadPage() {
                 총 <strong className="text-slate-800">{validationResult.totalRows.toLocaleString()}행</strong> 분석 완료
               </p>
 
-              {/* 열별 결과 테이블 */}
               <div className="overflow-x-auto rounded-lg border border-slate-200">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
@@ -571,8 +552,8 @@ export default function DataUploadPage() {
                       {validationResult.duplicateByColumn && (
                         <th className="px-4 py-2.5 text-center text-xs font-medium text-orange-600">중복 검사</th>
                       )}
-                      {validationResult.errorByColumn && (
-                        <th className="px-4 py-2.5 text-center text-xs font-medium text-red-600">오류 검사</th>
+                      {validationResult.listByColumn && (
+                        <th className="px-4 py-2.5 text-center text-xs font-medium text-blue-600">목록 검사</th>
                       )}
                     </tr>
                   </thead>
@@ -580,23 +561,18 @@ export default function DataUploadPage() {
                     {preview.columns.map((col) => {
                       const missing = validationResult.missingByColumn?.[col] ?? null;
                       const duplicate = validationResult.duplicateByColumn?.[col] ?? null;
-                      const errorVal = validationResult.errorByColumn
-                        ? col in validationResult.errorByColumn
-                          ? validationResult.errorByColumn[col]
+                      const listCount = validationResult.listByColumn
+                        ? col in validationResult.listByColumn
+                          ? validationResult.listByColumn[col]
                           : null
                         : null;
                       const hasIssue =
                         (missing !== null && missing > 0) ||
-                        (duplicate !== null && duplicate > 0) ||
-                        (errorVal !== null && errorVal > 0);
-                      const type = detectColumnType(col);
+                        (duplicate !== null && duplicate > 0);
                       return (
-                        <tr key={col} className={hasIssue ? 'bg-red-50/30' : ''}>
+                        <tr key={col} className={hasIssue ? 'bg-amber-50/30' : ''}>
                           <td className="whitespace-nowrap px-4 py-2.5">
                             <span className="font-medium text-slate-700">{col}</span>
-                            <span className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-medium ${TYPE_COLOR[type]}`}>
-                              {TYPE_LABEL[type]}
-                            </span>
                           </td>
                           {validationResult.missingByColumn && (
                             <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${
@@ -620,15 +596,9 @@ export default function DataUploadPage() {
                               {duplicate === null ? '–' : duplicate.toLocaleString()}
                             </td>
                           )}
-                          {validationResult.errorByColumn && (
-                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${
-                              errorVal === null
-                                ? 'text-slate-200'
-                                : errorVal > 0
-                                  ? 'text-red-600'
-                                  : 'text-slate-300'
-                            }`}>
-                              {errorVal === null ? '–' : errorVal.toLocaleString()}
+                          {validationResult.listByColumn && (
+                            <td className="px-4 py-2.5 text-center tabular-nums font-semibold text-blue-600">
+                              {listCount === null ? '–' : `${listCount.toLocaleString()}종`}
                             </td>
                           )}
                         </tr>
@@ -717,6 +687,7 @@ export default function DataUploadPage() {
           </button>
         </section>
       )}
+
       {/* ── 업로드된 파일 목록 ── */}
       {datasets.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">

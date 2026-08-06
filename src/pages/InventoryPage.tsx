@@ -7,7 +7,7 @@ import { useDataStore, findCol } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 export default function InventoryPage() {
-  const { dataset } = useDataStore();
+  const { dataset, isLoading } = useDataStore();
   const [keyword, setKeyword] = useState('');
 
   const itemCol = dataset ? findCol(dataset.columns, /지원품목|품목|물품/) : null;
@@ -36,7 +36,7 @@ export default function InventoryPage() {
     return kw ? itemStats.filter((i) => i.name.toLowerCase().includes(kw)) : itemStats;
   }, [itemStats, keyword]);
 
-  if (!dataset) {
+  if (!isLoading && !dataset) {
     return (
       <div className="space-y-6">
         <PageHeader title="지원품목 현황" description="지원 물품별 배부 현황을 확인합니다." />

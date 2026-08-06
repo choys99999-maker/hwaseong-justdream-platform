@@ -1,4 +1,4 @@
-import { FileSpreadsheet } from 'lucide-react';
+import { Folder } from 'lucide-react';
 import { useDataStore } from '../../store/dataStore';
 
 interface HeaderProps {
@@ -14,7 +14,7 @@ export default function Header({ title }: HeaderProps) {
 
       {datasets.length >= 2 && (
         <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:border-slate-300 focus-within:ring-2 focus-within:ring-teal-500">
-          <FileSpreadsheet size={16} className="text-teal-500" />
+          <Folder size={16} className="text-teal-500" />
           <select
             value={activeId ?? ''}
             onChange={(e) => setActiveId(e.target.value)}
