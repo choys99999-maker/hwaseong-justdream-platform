@@ -1,75 +1,85 @@
-import { AlertTriangle, ClipboardCheck, PackageSearch, TimerReset, Users } from 'lucide-react';
+import { Boxes, MapPin, PackageSearch, Repeat2, TimerReset } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
 import StatusBadge from '../components/common/StatusBadge';
 import EmptyState from '../components/common/EmptyState';
-import RegionOverviewSection from '../components/dashboard/RegionOverviewSection';
-import MonthlySupportChart from '../components/charts/MonthlySupportChart';
-import RegionUserChart from '../components/charts/RegionUserChart';
-import { mockRegions } from '../data/mockRegions';
-import { mockSupportRecords } from '../data/mockSupportRecords';
+import OperationMapSection from '../components/dashboard/OperationMapSection';
+import MonthlyFlowChart from '../components/charts/MonthlyFlowChart';
+import DistrictRiskChart from '../components/charts/DistrictRiskChart';
 import { mockInventoryItems } from '../data/mockInventory';
 import { mockDataIssues } from '../data/mockDataIssues';
+import { mockRedistributionRecords } from '../data/mockRedistributions';
+import { citySummary } from '../data/operationSummary';
 import { formatDate, formatNumber } from '../utils/format';
 
-const totalUsers = mockRegions.reduce((sum, region) => sum + region.userCount, 0);
-const monthlySupportCount = mockSupportRecords.filter((record) => record.supportDate.startsWith('2026-08')).length;
-const totalInventoryItems = mockInventoryItems.length;
 const expiringItems = mockInventoryItems
   .filter((item) => item.status === '임박')
   .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
-const recentSupportRecords = [...mockSupportRecords]
-  .sort((a, b) => b.supportDate.localeCompare(a.supportDate))
+const recentRedistributions = [...mockRedistributionRecords]
+  .sort((a, b) => b.date.localeCompare(a.date))
   .slice(0, 5);
 
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
-      <PageHeader title="통합 대시보드" description="화성시 전체 그냥드림 운영 현황을 한눈에 확인합니다." />
+      <PageHeader
+        title="통합 대시보드"
+        description="거점별 재고 불균형을 확인하고 재배분 여부를 판단합니다."
+      />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <StatCard label="전체 이용자 수" value={`${formatNumber(totalUsers)}명`} icon={Users} />
-        <StatCard label="이번 달 지원 건수" value={`${formatNumber(monthlySupportCount)}건`} icon={ClipboardCheck} />
-        <StatCard label="관리 중인 물품 수" value={`${formatNumber(totalInventoryItems)}종`} icon={PackageSearch} />
+        <StatCard label="운영 거점 수" value={`${formatNumber(citySummary.siteCount)}개소`} icon={MapPin} />
+        <StatCard label="전체 재고 수량" value={`${formatNumber(citySummary.inventoryTotal)}개`} icon={Boxes} />
         <StatCard
-          label="유통기한 임박 건수"
-          value={`${formatNumber(expiringItems.length)}건`}
+          label="7일 내 부족 예상"
+          value={`${formatNumber(citySummary.shortageSiteCount)}개소`}
+          icon={PackageSearch}
+          description={`예상 부족 ${formatNumber(citySummary.shortageQuantity)}개`}
+          tone="danger"
+        />
+        <StatCard
+          label="유통기한 임박"
+          value={`${formatNumber(citySummary.expiringQuantity)}개`}
           icon={TimerReset}
           tone="warning"
         />
-        <StatCard
-          label="데이터 확인 필요 건수"
-          value={`${formatNumber(mockDataIssues.length)}건`}
-          icon={AlertTriangle}
-          tone="danger"
-        />
+        <StatCard label="재배분 필요 건수" value={`${formatNumber(citySummary.recommendationCount)}건`} icon={Repeat2} />
       </div>
 
-      <RegionOverviewSection />
+      <OperationMapSection />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <MonthlySupportChart />
-        <RegionUserChart />
+        <MonthlyFlowChart />
+        <DistrictRiskChart />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-1">
-          <h3 className="text-base font-semibold text-slate-900">최근 지원 내역</h3>
+          <h3 className="text-base font-semibold text-slate-900">최근 재배분 내역</h3>
           <div className="mt-3 space-y-2">
-            {recentSupportRecords.map((record) => (
-              <div key={record.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm">
-                <div>
-                  <p className="font-medium text-slate-800">{record.userName}</p>
-                  <p className="text-xs text-slate-400">
-                    {record.regionName} · {formatDate(record.supportDate)}
-                  </p>
+            {recentRedistributions.length === 0 ? (
+              <EmptyState message="최근 재배분 내역이 없습니다." />
+            ) : (
+              recentRedistributions.map((record) => (
+                <div
+                  key={record.id}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-800">
+                      {record.fromSiteName} → {record.toSiteName}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {record.districtName} · {formatDate(record.date)}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right text-xs text-slate-500">
+                    <p>{record.item}</p>
+                    <p>{formatNumber(record.quantity)}개</p>
+                  </div>
                 </div>
-                <div className="text-right text-xs text-slate-500">
-                  <p>{record.item}</p>
-                  <p>{record.quantity}개</p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
 

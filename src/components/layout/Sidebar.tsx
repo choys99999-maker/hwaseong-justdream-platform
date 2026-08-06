@@ -5,15 +5,29 @@ import { NAV_ITEMS } from '../../config/navigation';
 import hwaseongLogo from '../../assets/hwaseong-signature.png';
 
 const STORAGE_KEY = 'sidebar-collapsed';
+/** 이 폭 아래에서는 본문 공간이 부족해 사이드바를 자동으로 접는다. */
+const NARROW_QUERY = '(max-width: 767px)';
 
 export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(
+  const [userCollapsed, setUserCollapsed] = useState(
     () => localStorage.getItem(STORAGE_KEY) === 'true'
   );
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, String(collapsed));
-  }, [collapsed]);
+    localStorage.setItem(STORAGE_KEY, String(userCollapsed));
+  }, [userCollapsed]);
+
+  useEffect(() => {
+    const media = window.matchMedia(NARROW_QUERY);
+    const onChange = (event: MediaQueryListEvent) => setIsNarrow(event.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+
+  // 좁은 화면에서는 강제로 접되, 사용자가 선택한 상태는 그대로 보존한다.
+  const collapsed = userCollapsed || isNarrow;
+  const setCollapsed = setUserCollapsed;
 
   return (
     <aside
@@ -46,15 +60,18 @@ export default function Sidebar() {
         </Link>
 
         {/* Toggle button — sits centered on the right edge of the brand section */}
-        <button
-          onClick={() => setCollapsed((v) => !v)}
-          aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
-          aria-expanded={!collapsed}
-          className="absolute right-0 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm text-slate-400 hover:text-slate-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-          style={{ transition: 'box-shadow 150ms ease-in-out' }}
-        >
-          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-        </button>
+        {/* 좁은 화면에서는 항상 접힌 상태이므로 토글을 숨긴다. */}
+        {!isNarrow && (
+          <button
+            onClick={() => setCollapsed((v) => !v)}
+            aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+            aria-expanded={!collapsed}
+            className="absolute right-0 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm text-slate-400 hover:text-slate-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            style={{ transition: 'box-shadow 150ms ease-in-out' }}
+          >
+            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+        )}
       </div>
 
       {/* Nav */}

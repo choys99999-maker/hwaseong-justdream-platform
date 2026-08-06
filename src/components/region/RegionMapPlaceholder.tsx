@@ -1,14 +1,7 @@
 import type { Region, RegionId } from '../../types';
-import StatusBadge from '../common/StatusBadge';
+import SiteStatusBadge from '../common/SiteStatusBadge';
+import { districtRiskLevels } from '../../data/operationSummary';
 import { formatNumber } from '../../utils/format';
-
-const GRID_AREA: Record<RegionId, string> = {
-  seobu: 'seobu',
-  jungbu: 'jungbu',
-  dongbu: 'dongbu',
-  nambu: 'nambu',
-  dongtan: 'dongtan',
-};
 
 interface RegionMapPlaceholderProps {
   regions: Region[];
@@ -16,15 +9,14 @@ interface RegionMapPlaceholderProps {
   onSelect: (id: RegionId) => void;
 }
 
+/**
+ * 구 선택용 카드 그리드.
+ * 통합 대시보드가 실제 카카오맵으로 바뀌면서 이 UI는 '지역별 현황' 페이지에서 재사용한다.
+ * 상태 배지는 지도 폴리곤과 같은 재고 위험도 기준을 쓴다.
+ */
 export default function RegionMapPlaceholder({ regions, selectedId, onSelect }: RegionMapPlaceholderProps) {
   return (
-    <div
-      className="grid gap-3"
-      style={{
-        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-        gridTemplateAreas: '"seobu jungbu dongbu" ". nambu dongtan"',
-      }}
-    >
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {regions.map((region) => {
         const isSelected = region.id === selectedId;
         return (
@@ -32,18 +24,20 @@ export default function RegionMapPlaceholder({ regions, selectedId, onSelect }: 
             key={region.id}
             type="button"
             onClick={() => onSelect(region.id)}
-            style={{ gridArea: GRID_AREA[region.id] }}
+            aria-pressed={isSelected}
             className={`flex flex-col gap-2 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
               isSelected
                 ? 'border-teal-500 bg-teal-50/60 ring-1 ring-teal-500'
                 : 'border-slate-200 bg-white hover:border-teal-300 hover:bg-teal-50/30'
             }`}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <span className="font-medium text-slate-900">{region.name}</span>
-              <StatusBadge status={region.status} />
+              <SiteStatusBadge status={districtRiskLevels[region.id]} />
             </div>
-            <p className="text-xs text-slate-500">이용자 {formatNumber(region.userCount)}명</p>
+            <p className="text-xs text-slate-500">
+              운영 거점 {formatNumber(region.orgCount)}개소 · 이용자 {formatNumber(region.userCount)}명
+            </p>
           </button>
         );
       })}

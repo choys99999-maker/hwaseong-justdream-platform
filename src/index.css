@@ -13,3 +13,57 @@ body,
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
+
+/*
+ * 카카오맵 CustomOverlay 로 그리는 거점 마커.
+ * React 트리 밖에서 생성하는 DOM 이라 유틸리티 클래스 대신 여기서 스타일을 정의한다.
+ */
+.gj-marker {
+  position: relative;
+  display: block;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: 2px solid #ffffff;
+  border-radius: 9999px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.35);
+  transition:
+    width 120ms ease-in-out,
+    height 120ms ease-in-out;
+}
+
+.gj-marker:focus-visible {
+  outline: 2px solid #0d9488;
+  outline-offset: 2px;
+}
+
+.gj-marker[data-selected='true'] {
+  width: 21px;
+  height: 21px;
+  border-width: 3px;
+  box-shadow: 0 0 0 3px rgb(13 148 136 / 0.45);
+}
+
+.gj-marker-label {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #1e293b;
+  color: #ffffff;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-in-out;
+}
+
+.gj-marker:hover .gj-marker-label,
+.gj-marker:focus-visible .gj-marker-label,
+.gj-marker[data-selected='true'] .gj-marker-label {
+  opacity: 1;
+}

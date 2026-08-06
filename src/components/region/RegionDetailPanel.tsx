@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Boxes, CalendarClock, ClipboardList, PackageOpen, Users } from 'lucide-react';
 import type { Region } from '../../types';
-import StatusBadge from '../common/StatusBadge';
+import SiteStatusBadge from '../common/SiteStatusBadge';
 import EmptyState from '../common/EmptyState';
+import { districtRiskLevels } from '../../data/operationSummary';
 import { formatDateTime, formatNumber } from '../../utils/format';
 
 interface RegionDetailPanelProps {
@@ -10,7 +11,7 @@ interface RegionDetailPanelProps {
 }
 
 const METRICS = [
-  { key: 'orgCount', label: '운영 기관 수', icon: Boxes, unit: '개소' },
+  { key: 'orgCount', label: '운영 거점 수', icon: Boxes, unit: '개소' },
   { key: 'userCount', label: '이용자 수', icon: Users, unit: '명' },
   { key: 'monthlySupportCount', label: '이번 달 지원 건수', icon: ClipboardList, unit: '건' },
   { key: 'inventoryCount', label: '현재 재고 품목', icon: PackageOpen, unit: '종' },
@@ -18,14 +19,14 @@ const METRICS = [
 
 export default function RegionDetailPanel({ region }: RegionDetailPanelProps) {
   if (!region) {
-    return <EmptyState message="좌측에서 권역을 선택하면 상세 정보가 표시됩니다." />;
+    return <EmptyState message="좌측에서 구를 선택하면 상세 정보가 표시됩니다." />;
   }
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold text-slate-900">{region.name}</h3>
-        <StatusBadge status={region.status} />
+        <SiteStatusBadge status={districtRiskLevels[region.id]} />
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3">

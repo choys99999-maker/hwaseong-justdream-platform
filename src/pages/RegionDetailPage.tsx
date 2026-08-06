@@ -3,10 +3,12 @@ import { ArrowLeft, Boxes, ClipboardList, TimerReset, Users } from 'lucide-react
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
 import StatusBadge from '../components/common/StatusBadge';
+import SiteStatusBadge from '../components/common/SiteStatusBadge';
 import DataTable from '../components/common/DataTable';
 import EmptyState from '../components/common/EmptyState';
 import RegionTrendChart from '../components/charts/RegionTrendChart';
 import { getRegionById } from '../data/mockRegions';
+import { districtRiskLevels } from '../data/operationSummary';
 import { mockSupportRecords } from '../data/mockSupportRecords';
 import { mockInventoryItems } from '../data/mockInventory';
 import { formatDate, formatNumber } from '../utils/format';
@@ -42,8 +44,8 @@ export default function RegionDetailPage() {
 
       <PageHeader
         title={region.name}
-        description={`운영 기관 ${formatNumber(region.orgCount)}개소 · 최근 업데이트 ${formatDate(region.lastUpdated)}`}
-        actions={<StatusBadge status={region.status} />}
+        description={`운영 거점 ${formatNumber(region.orgCount)}개소 · 최근 업데이트 ${formatDate(region.lastUpdated)}`}
+        actions={<SiteStatusBadge status={districtRiskLevels[region.id]} />}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">

@@ -1,24 +1,25 @@
-import type { MonthlyTrendPoint, OperationStatus, Region, RegionId } from '../types';
+import type { MonthlyTrendPoint, Region, RegionId } from '../types';
 import { REGION_NAMES, REGION_ORDER } from './regionMeta';
 import { mockSupportRecords } from './mockSupportRecords';
 import { mockInventoryItems } from './mockInventory';
+import { mockSites } from './mockSites';
 
 interface RegionBase {
   id: RegionId;
-  status: OperationStatus;
-  orgCount: number;
   userCount: number;
-  lastUpdated: string;
   monthlyTrend: MonthlyTrendPoint[];
 }
 
+/**
+ * 구별 이용자 수와 월별 추이는 합성 데이터다.
+ * 거점 수·최근 업데이트 시각은 거점 데이터(`mockSites`)에서 계산하고,
+ * 운영 상태는 `operationSummary` 의 재고 위험도를 쓴다.
+ * 지도와 지역 카드가 다른 값을 보여주지 않도록 계산 위치를 한 곳으로 모았다.
+ */
 const regionBases: RegionBase[] = [
   {
-    id: 'seobu',
-    status: '정상',
-    orgCount: 9,
+    id: 'manse',
     userCount: 1580,
-    lastUpdated: '2026-08-05T18:20:00',
     monthlyTrend: [
       { month: '3월', count: 52 },
       { month: '4월', count: 58 },
@@ -29,11 +30,8 @@ const regionBases: RegionBase[] = [
     ],
   },
   {
-    id: 'jungbu',
-    status: '주의',
-    orgCount: 7,
+    id: 'hyohaeng',
     userCount: 1320,
-    lastUpdated: '2026-08-06T09:10:00',
     monthlyTrend: [
       { month: '3월', count: 40 },
       { month: '4월', count: 46 },
@@ -44,26 +42,8 @@ const regionBases: RegionBase[] = [
     ],
   },
   {
-    id: 'nambu',
-    status: '정상',
-    orgCount: 6,
-    userCount: 980,
-    lastUpdated: '2026-08-04T15:40:00',
-    monthlyTrend: [
-      { month: '3월', count: 30 },
-      { month: '4월', count: 33 },
-      { month: '5월', count: 35 },
-      { month: '6월', count: 31 },
-      { month: '7월', count: 38 },
-      { month: '8월', count: 16 },
-    ],
-  },
-  {
-    id: 'dongbu',
-    status: '확인 필요',
-    orgCount: 8,
+    id: 'byeongjeom',
     userCount: 1150,
-    lastUpdated: '2026-08-03T11:05:00',
     monthlyTrend: [
       { month: '3월', count: 37 },
       { month: '4월', count: 41 },
@@ -75,10 +55,7 @@ const regionBases: RegionBase[] = [
   },
   {
     id: 'dongtan',
-    status: '주의',
-    orgCount: 11,
     userCount: 2040,
-    lastUpdated: '2026-08-06T08:30:00',
     monthlyTrend: [
       { month: '3월', count: 60 },
       { month: '4월', count: 66 },
@@ -98,16 +75,23 @@ function computeAggregates(regionId: RegionId) {
   return { monthlySupportCount, inventoryCount, expiringSoonCount };
 }
 
+function computeSiteAggregates(regionId: RegionId) {
+  const sites = mockSites.filter((site) => site.district === regionId);
+  const lastUpdated = sites.reduce(
+    (latest, site) => (site.lastUpdatedAt > latest ? site.lastUpdatedAt : latest),
+    sites[0]?.lastUpdatedAt ?? '',
+  );
+  return { orgCount: sites.length, lastUpdated };
+}
+
 export const mockRegions: Region[] = REGION_ORDER.map((id) => {
   const base = regionBases.find((region) => region.id === id)!;
   return {
     id: base.id,
     name: REGION_NAMES[base.id],
-    status: base.status,
-    orgCount: base.orgCount,
     userCount: base.userCount,
-    lastUpdated: base.lastUpdated,
     monthlyTrend: base.monthlyTrend,
+    ...computeSiteAggregates(base.id),
     ...computeAggregates(base.id),
   };
 });

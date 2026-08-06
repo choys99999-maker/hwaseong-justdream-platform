@@ -6,9 +6,9 @@ export interface SampleUploadFile {
 }
 
 export const SAMPLE_UPLOAD_FILES: SampleUploadFile[] = [
-  { id: 'file-1', name: '서부동_그냥드림_2026년8월.xlsx', region: '서부권역', size: '128KB' },
-  { id: 'file-2', name: '동탄2동_지원현황_2026년8월.xlsx', region: '동탄권역', size: '156KB' },
-  { id: 'file-3', name: '남양읍_재고현황_2026년8월.xlsx', region: '남부권역', size: '94KB' },
+  { id: 'file-1', name: '향남읍_그냥드림_2026년8월.xlsx', region: '만세구', size: '128KB' },
+  { id: 'file-2', name: '동탄2동_지원현황_2026년8월.xlsx', region: '동탄구', size: '156KB' },
+  { id: 'file-3', name: '봉담읍_재고현황_2026년8월.xlsx', region: '효행구', size: '94KB' },
 ];
 
 export interface ColumnMapping {
@@ -35,5 +35,5 @@ export interface ValidationFinding {
 export const VALIDATION_FINDINGS: ValidationFinding[] = [
   { id: 'vf-1', type: '중복', message: '동일 이용자·지원일 데이터 3건이 중복 등록되어 있습니다.' },
   { id: 'vf-2', type: '누락', message: '지원일자가 비어있는 행이 2건 있습니다.' },
-  { id: 'vf-3', type: '오류', message: '읍면동 값이 지역 목록과 일치하지 않는 행이 1건 있습니다. (반월동 → 서부권역 자동 매핑)' },
+  { id: 'vf-3', type: '오류', message: '읍면동 값이 지역 목록과 일치하지 않는 행이 1건 있습니다. (반월동 → 병점구 자동 매핑)' },
 ];
