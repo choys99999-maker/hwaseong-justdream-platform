@@ -16,6 +16,7 @@ interface DataStoreValue {
   isLoading: boolean;
   addDataset: (data: Omit<UploadedDataset, 'id'>) => void;
   removeDataset: (id: string) => void;
+  clearAll: () => void;
   setActiveId: (id: string) => void;
 }
 
@@ -65,6 +66,15 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     dbDelete(id).catch(() => {});
   }
 
+  function clearAll() {
+    for (const d of datasets) {
+      dbDelete(d.id).catch(() => {});
+    }
+    setDatasets([]);
+    setActiveIdState(null);
+    localStorage.removeItem(ACTIVE_KEY);
+  }
+
   function setActiveId(id: string) {
     setActiveIdState(id);
     localStorage.setItem(ACTIVE_KEY, id);
@@ -72,7 +82,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <DataStoreContext.Provider
-      value={{ datasets, activeId, dataset, isLoading, addDataset, removeDataset, setActiveId }}
+      value={{ datasets, activeId, dataset, isLoading, addDataset, removeDataset, clearAll, setActiveId }}
     >
       {children}
     </DataStoreContext.Provider>

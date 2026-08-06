@@ -30,7 +30,8 @@ export default function RegionListPage() {
     );
   }, [dataset, regionCol, nameCol, itemCol]);
 
-  if (!isLoading && !dataset) {
+  if (isLoading) return null;
+  if (!dataset) {
     return (
       <div className="space-y-6">
         <PageHeader title="지역별 현황" description="읍면동별 지원 현황을 확인합니다." />

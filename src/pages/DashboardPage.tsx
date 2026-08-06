@@ -83,7 +83,8 @@ export default function DashboardPage() {
     };
   }, [dataset]);
 
-  if (!isLoading && (!dataset || !stats)) {
+  if (isLoading) return null;
+  if (!dataset || !stats) {
     return (
       <div className="space-y-6">
         <PageHeader title="통합 대시보드" description="화성시 전체 그냥드림 운영 현황을 한눈에 확인합니다." />

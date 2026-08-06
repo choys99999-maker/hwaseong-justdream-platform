@@ -48,7 +48,8 @@ export default function RegionDetailPage() {
     return { regionRecords: sorted, monthlyData: monthly };
   }, [dataset, regionCol, dateCol, regionName]);
 
-  if (!isLoading && !dataset) {
+  if (isLoading) return null;
+  if (!dataset) {
     return (
       <div className="space-y-6">
         <Link to="/regions" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-teal-600">

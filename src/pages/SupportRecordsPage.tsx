@@ -38,7 +38,8 @@ export default function SupportRecordsPage() {
     [filtered, page],
   );
 
-  if (!isLoading && !dataset) {
+  if (isLoading) return null;
+  if (!dataset) {
     return (
       <div className="space-y-6">
         <PageHeader title="이용·지원 내역" description="이용자별 지원 물품과 지원 현황을 확인합니다." />

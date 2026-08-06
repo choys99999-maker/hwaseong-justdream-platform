@@ -36,7 +36,8 @@ export default function InventoryPage() {
     return kw ? itemStats.filter((i) => i.name.toLowerCase().includes(kw)) : itemStats;
   }, [itemStats, keyword]);
 
-  if (!isLoading && !dataset) {
+  if (isLoading) return null;
+  if (!dataset) {
     return (
       <div className="space-y-6">
         <PageHeader title="지원품목 현황" description="지원 물품별 배부 현황을 확인합니다." />

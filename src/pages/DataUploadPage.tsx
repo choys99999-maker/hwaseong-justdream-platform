@@ -34,7 +34,7 @@ interface ValidationResult {
 }
 
 export default function DataUploadPage() {
-  const { datasets, activeId, addDataset, removeDataset, setActiveId } = useDataStore();
+  const { datasets, activeId, addDataset, removeDataset, clearAll, setActiveId, isLoading } = useDataStore();
 
   const [step, setStep] = useState<UploadStep>('select');
   const [preview, setPreview] = useState<ExcelPreview | null>(null);
@@ -689,12 +689,34 @@ export default function DataUploadPage() {
       )}
 
       {/* ── 업로드된 파일 목록 ── */}
-      {datasets.length > 0 && (
+      {(isLoading || datasets.length > 0) && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h3 className="text-sm font-semibold text-slate-700">
-            업로드된 파일
-            <span className="ml-2 font-normal text-slate-400">({datasets.length}개)</span>
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-700">
+              저장된 파일
+              {!isLoading && (
+                <span className="ml-2 font-normal text-slate-400">({datasets.length}개)</span>
+              )}
+            </h3>
+            {!isLoading && datasets.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('저장된 모든 파일을 삭제하시겠습니까?')) clearAll();
+                }}
+                className="text-xs font-medium text-red-400 hover:text-red-600"
+              >
+                전체 삭제
+              </button>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-slate-500" />
+              저장된 데이터 불러오는 중...
+            </div>
+          ) : (
           <div className="mt-3 space-y-2">
             {[...datasets].reverse().map((d) => {
               const isActive = d.id === activeId;
@@ -750,6 +772,7 @@ export default function DataUploadPage() {
               );
             })}
           </div>
+          )}
         </section>
       )}
     </div>
