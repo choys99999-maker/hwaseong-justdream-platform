@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   FileSpreadsheet,
   RotateCcw,
+  Trash2,
   Upload,
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
@@ -55,7 +56,7 @@ const TYPE_COLOR: Record<ColType, string> = {
 };
 
 export default function DataUploadPage() {
-  const { setDataset } = useDataStore();
+  const { datasets, activeId, addDataset, removeDataset, setActiveId } = useDataStore();
 
   const [step, setStep] = useState<UploadStep>('select');
   const [preview, setPreview] = useState<ExcelPreview | null>(null);
@@ -74,8 +75,8 @@ export default function DataUploadPage() {
   const workerRef = useRef<Worker | null>(null);
   const fileNameRef = useRef('');
   const columnsRef = useRef<string[]>([]);
-  const setDatasetRef = useRef(setDataset);
-  setDatasetRef.current = setDataset;
+  const addDatasetRef = useRef(addDataset);
+  addDatasetRef.current = addDataset;
 
   useEffect(() => {
     const worker = new Worker(
@@ -108,7 +109,7 @@ export default function DataUploadPage() {
         }
         case 'all-data': {
           const records = msg.records as Record<string, string>[];
-          setDatasetRef.current({
+          addDatasetRef.current({
             records,
             columns: columnsRef.current,
             fileName: fileNameRef.current,
@@ -714,6 +715,70 @@ export default function DataUploadPage() {
           >
             <RotateCcw size={13} /> 새 파일 선택
           </button>
+        </section>
+      )}
+      {/* ── 업로드된 파일 목록 ── */}
+      {datasets.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h3 className="text-sm font-semibold text-slate-700">
+            업로드된 파일
+            <span className="ml-2 font-normal text-slate-400">({datasets.length}개)</span>
+          </h3>
+          <div className="mt-3 space-y-2">
+            {[...datasets].reverse().map((d) => {
+              const isActive = d.id === activeId;
+              const uploadedDate = new Date(d.uploadedAt).toLocaleString('ko-KR', {
+                month: 'numeric',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+              });
+              return (
+                <div
+                  key={d.id}
+                  className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
+                    isActive ? 'border-teal-200 bg-teal-50' : 'border-slate-200 bg-slate-50'
+                  }`}
+                >
+                  <FileSpreadsheet size={18} className={isActive ? 'text-teal-500' : 'text-slate-400'} />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-slate-800">{d.fileName}</p>
+                      {isActive && (
+                        <span className="shrink-0 rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
+                          활성
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      {d.records.length.toLocaleString()}건 · {uploadedDate}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!isActive && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveId(d.id)}
+                        className="rounded-md px-2.5 py-1 text-xs font-medium text-teal-600 hover:bg-teal-100"
+                      >
+                        선택
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeDataset(d.id)}
+                      className="rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                      title="파일 삭제"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </section>
       )}
     </div>
