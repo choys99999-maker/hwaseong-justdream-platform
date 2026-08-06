@@ -124,11 +124,23 @@ function handleValidate(checks: WorkerChecks) {
   });
 }
 
+function handleGetAll() {
+  const dataRows = storedRows.slice(1);
+  const records = dataRows.map((row) => {
+    const arr = row as unknown[];
+    return Object.fromEntries(
+      storedHeaders.map(({ name, idx }) => [name, String(arr[idx] ?? '')]),
+    );
+  });
+  self.postMessage({ type: 'all-data', records });
+}
+
 self.onmessage = (e: MessageEvent) => {
   const msg = e.data as { type: string; buffer?: ArrayBuffer; checks?: WorkerChecks };
   try {
     if (msg.type === 'parse' && msg.buffer) handleParse(msg.buffer);
     else if (msg.type === 'validate' && msg.checks) handleValidate(msg.checks);
+    else if (msg.type === 'get-all') handleGetAll();
   } catch (err) {
     self.postMessage({
       type: 'error',

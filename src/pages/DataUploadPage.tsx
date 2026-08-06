@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -10,6 +11,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import UploadStepper, { type UploadStep } from '../components/upload/UploadStepper';
+import { useDataStore } from '../store/dataStore';
 
 interface ExcelPreview {
   fileName: string;
@@ -53,6 +55,8 @@ const TYPE_COLOR: Record<ColType, string> = {
 };
 
 export default function DataUploadPage() {
+  const { setDataset } = useDataStore();
+
   const [step, setStep] = useState<UploadStep>('select');
   const [preview, setPreview] = useState<ExcelPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,10 +67,15 @@ export default function DataUploadPage() {
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [validationProgress, setValidationProgress] = useState(0);
   const [isValidating, setIsValidating] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [appliedCount, setAppliedCount] = useState<number | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const fileNameRef = useRef('');
+  const columnsRef = useRef<string[]>([]);
+  const setDatasetRef = useRef(setDataset);
+  setDatasetRef.current = setDataset;
 
   useEffect(() => {
     const worker = new Worker(
@@ -79,7 +88,7 @@ export default function DataUploadPage() {
       switch (msg.type) {
         case 'parse-done': {
           const cols = msg.columns as string[];
-          // 열 타입에 따라 초기 선택 상태 설정
+          columnsRef.current = cols;
           const initChecks: SelectedChecks = {};
           for (const col of cols) {
             const type = detectColumnType(col);
@@ -95,6 +104,18 @@ export default function DataUploadPage() {
           });
           setIsParsing(false);
           setStep('columns');
+          break;
+        }
+        case 'all-data': {
+          const records = msg.records as Record<string, string>[];
+          setDatasetRef.current({
+            records,
+            columns: columnsRef.current,
+            fileName: fileNameRef.current,
+            uploadedAt: new Date().toISOString(),
+          });
+          setIsApplying(false);
+          setAppliedCount(records.length);
           break;
         }
         case 'validate-progress':
@@ -199,7 +220,14 @@ export default function DataUploadPage() {
     setValidationProgress(0);
     setIsValidating(false);
     setSelectedChecks({});
+    setIsApplying(false);
+    setAppliedCount(null);
     setStep('select');
+  }
+
+  function handleApply() {
+    setIsApplying(true);
+    workerRef.current?.postMessage({ type: 'get-all' });
   }
 
   function goBackToColumns() {
@@ -632,15 +660,59 @@ export default function DataUploadPage() {
 
       {/* ── 완료 ── */}
       {step === 'done' && (
-        <section className="flex flex-col items-center gap-3 rounded-xl border border-slate-200 bg-white p-10 text-center">
+        <section className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-white p-10 text-center">
           <CheckCircle2 size={40} className="text-teal-500" />
-          <p className="text-base font-semibold text-slate-900">검증이 완료되었습니다</p>
+          <div>
+            <p className="text-base font-semibold text-slate-900">검증이 완료되었습니다</p>
+            <p className="mt-1 text-sm text-slate-500">
+              {preview?.totalRows.toLocaleString()}건의 데이터를 시스템에 반영할 수 있습니다.
+            </p>
+          </div>
+
+          {appliedCount === null ? (
+            <button
+              type="button"
+              onClick={handleApply}
+              disabled={isApplying}
+              className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+            >
+              {isApplying ? (
+                <>
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  반영 중...
+                </>
+              ) : (
+                '시스템에 반영하기'
+              )}
+            </button>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <p className="text-sm font-medium text-teal-700">
+                {appliedCount.toLocaleString()}건 반영 완료
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Link
+                  to="/support-records"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                >
+                  이용·지원 내역 보기
+                </Link>
+                <Link
+                  to="/"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                >
+                  대시보드 보기
+                </Link>
+              </div>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleReset}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600"
           >
-            <RotateCcw size={16} /> 새 파일 선택
+            <RotateCcw size={13} /> 새 파일 선택
           </button>
         </section>
       )}

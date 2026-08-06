@@ -1,116 +1,158 @@
-import { AlertTriangle, ClipboardCheck, PackageSearch, TimerReset, Users } from 'lucide-react';
+import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import { ClipboardCheck, FileUp, MapPin, Users } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
-import StatusBadge from '../components/common/StatusBadge';
 import EmptyState from '../components/common/EmptyState';
-import RegionOverviewSection from '../components/dashboard/RegionOverviewSection';
 import MonthlySupportChart from '../components/charts/MonthlySupportChart';
 import RegionUserChart from '../components/charts/RegionUserChart';
-import { mockRegions } from '../data/mockRegions';
-import { mockSupportRecords } from '../data/mockSupportRecords';
-import { mockInventoryItems } from '../data/mockInventory';
-import { mockDataIssues } from '../data/mockDataIssues';
-import { formatDate, formatNumber } from '../utils/format';
-
-const totalUsers = mockRegions.reduce((sum, region) => sum + region.userCount, 0);
-const monthlySupportCount = mockSupportRecords.filter((record) => record.supportDate.startsWith('2026-08')).length;
-const totalInventoryItems = mockInventoryItems.length;
-const expiringItems = mockInventoryItems
-  .filter((item) => item.status === '임박')
-  .sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
-const recentSupportRecords = [...mockSupportRecords]
-  .sort((a, b) => b.supportDate.localeCompare(a.supportDate))
-  .slice(0, 5);
+import { useDataStore, findCol } from '../store/dataStore';
+import { formatNumber } from '../utils/format';
 
 export default function DashboardPage() {
+  const { dataset } = useDataStore();
+
+  const stats = useMemo(() => {
+    if (!dataset) return null;
+    const { records, columns } = dataset;
+
+    const nameCol = findCol(columns, /이용자|수혜자|이름|성명/);
+    const regionCol = findCol(columns, /읍면동|지역|권역/);
+    const dateCol = findCol(columns, /지원일|날짜/);
+    const itemCol = findCol(columns, /지원품목|품목|물품/);
+
+    const uniqueUsers = nameCol ? new Set(records.map((r) => r[nameCol])).size : records.length;
+    const uniqueRegions = regionCol ? new Set(records.map((r) => r[regionCol]).filter(Boolean)).size : 0;
+    const uniqueItems = itemCol ? new Set(records.map((r) => r[itemCol]).filter(Boolean)).size : 0;
+
+    // 이번 달 지원 건수
+    const now = new Date();
+    const thisMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const thisMonthCount = dateCol
+      ? records.filter((r) => {
+          const d = r[dateCol] ?? '';
+          return d.startsWith(thisMonthPrefix) || d.replace(/\./g, '-').startsWith(thisMonthPrefix);
+        }).length
+      : 0;
+
+    // 월별 지원 건수 차트 데이터
+    const monthlyMap = new Map<string, number>();
+    if (dateCol) {
+      for (const r of records) {
+        const raw = (r[dateCol] ?? '').replace(/\./g, '-');
+        const m = raw.match(/^(\d{4})-(\d{1,2})/);
+        if (!m) continue;
+        const label = `${parseInt(m[2])}월`;
+        monthlyMap.set(label, (monthlyMap.get(label) ?? 0) + 1);
+      }
+    }
+    const monthlyData = Array.from(monthlyMap, ([month, count]) => ({ month, count })).sort(
+      (a, b) => parseInt(a.month) - parseInt(b.month),
+    );
+
+    // 지역별 지원 건수 차트 데이터 (상위 10개)
+    const regionMap = new Map<string, number>();
+    if (regionCol) {
+      for (const r of records) {
+        const name = r[regionCol] ?? '';
+        if (name) regionMap.set(name, (regionMap.get(name) ?? 0) + 1);
+      }
+    }
+    const regionData = Array.from(regionMap, ([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+
+    // 최근 5건
+    const recentRecords = dateCol
+      ? [...records].sort((a, b) => (b[dateCol] ?? '').localeCompare(a[dateCol] ?? '')).slice(0, 5)
+      : records.slice(0, 5);
+
+    return {
+      totalRecords: records.length,
+      uniqueUsers,
+      uniqueRegions,
+      uniqueItems,
+      thisMonthCount,
+      monthlyData,
+      regionData,
+      recentRecords,
+      nameCol,
+      regionCol,
+      dateCol,
+      itemCol,
+    };
+  }, [dataset]);
+
+  if (!dataset || !stats) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="통합 대시보드" description="화성시 전체 그냥드림 운영 현황을 한눈에 확인합니다." />
+        <EmptyState
+          icon={FileUp}
+          title="업로드된 데이터가 없습니다"
+          message="데이터 업로드 페이지에서 엑셀 파일을 업로드하면 현황을 확인할 수 있습니다."
+        />
+        <Link
+          to="/upload"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700"
+        >
+          <FileUp size={16} /> 데이터 업로드하러 가기
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-      <PageHeader title="통합 대시보드" description="화성시 전체 그냥드림 운영 현황을 한눈에 확인합니다." />
+      <PageHeader
+        title="통합 대시보드"
+        description={`${dataset.fileName} · ${dataset.records.length.toLocaleString()}건`}
+      />
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <StatCard label="전체 이용자 수" value={`${formatNumber(totalUsers)}명`} icon={Users} />
-        <StatCard label="이번 달 지원 건수" value={`${formatNumber(monthlySupportCount)}건`} icon={ClipboardCheck} />
-        <StatCard label="관리 중인 물품 수" value={`${formatNumber(totalInventoryItems)}종`} icon={PackageSearch} />
-        <StatCard
-          label="유통기한 임박 건수"
-          value={`${formatNumber(expiringItems.length)}건`}
-          icon={TimerReset}
-          tone="warning"
-        />
-        <StatCard
-          label="데이터 확인 필요 건수"
-          value={`${formatNumber(mockDataIssues.length)}건`}
-          icon={AlertTriangle}
-          tone="danger"
-        />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="전체 지원 건수" value={`${formatNumber(stats.totalRecords)}건`} icon={ClipboardCheck} />
+        <StatCard label="이번 달 지원 건수" value={`${formatNumber(stats.thisMonthCount)}건`} icon={ClipboardCheck} />
+        {stats.nameCol && (
+          <StatCard label="이용자 수 (중복 제외)" value={`${formatNumber(stats.uniqueUsers)}명`} icon={Users} />
+        )}
+        {stats.regionCol && (
+          <StatCard label="지원 지역 수" value={`${formatNumber(stats.uniqueRegions)}개`} icon={MapPin} />
+        )}
       </div>
 
-      <RegionOverviewSection />
+      {(stats.monthlyData.length > 0 || stats.regionData.length > 0) && (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {stats.monthlyData.length > 0 && <MonthlySupportChart data={stats.monthlyData} />}
+          {stats.regionData.length > 0 && <RegionUserChart data={stats.regionData} />}
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <MonthlySupportChart />
-        <RegionUserChart />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-1">
+      {stats.recentRecords.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h3 className="text-base font-semibold text-slate-900">최근 지원 내역</h3>
           <div className="mt-3 space-y-2">
-            {recentSupportRecords.map((record) => (
-              <div key={record.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm">
+            {stats.recentRecords.map((record, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm"
+              >
                 <div>
-                  <p className="font-medium text-slate-800">{record.userName}</p>
-                  <p className="text-xs text-slate-400">
-                    {record.regionName} · {formatDate(record.supportDate)}
+                  <p className="font-medium text-slate-800">
+                    {stats.nameCol ? record[stats.nameCol] : `행 ${i + 1}`}
                   </p>
+                  {stats.regionCol && (
+                    <p className="text-xs text-slate-400">{record[stats.regionCol]}</p>
+                  )}
                 </div>
                 <div className="text-right text-xs text-slate-500">
-                  <p>{record.item}</p>
-                  <p>{record.quantity}개</p>
+                  {stats.itemCol && <p>{record[stats.itemCol]}</p>}
+                  {stats.dateCol && <p>{record[stats.dateCol]}</p>}
                 </div>
               </div>
             ))}
           </div>
         </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-1">
-          <h3 className="text-base font-semibold text-slate-900">유통기한 임박 물품</h3>
-          <div className="mt-3 space-y-2">
-            {expiringItems.length === 0 ? (
-              <EmptyState message="유통기한 임박 물품이 없습니다." />
-            ) : (
-              expiringItems.slice(0, 5).map((item) => (
-                <div key={item.id} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm">
-                  <div>
-                    <p className="font-medium text-slate-800">{item.name}</p>
-                    <p className="text-xs text-slate-400">{item.regionName}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-slate-500">{formatDate(item.expiryDate)}</p>
-                    <StatusBadge status={item.status} />
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-1">
-          <h3 className="text-base font-semibold text-slate-900">데이터 오류 및 확인 필요 알림</h3>
-          <div className="mt-3 space-y-2">
-            {mockDataIssues.map((issue) => (
-              <div key={issue.id} className="rounded-lg border border-slate-100 px-3 py-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <p className="font-medium text-slate-800">{issue.title}</p>
-                  <StatusBadge status={issue.severity === '높음' ? '확인 필요' : issue.severity === '중간' ? '주의' : '정상'} />
-                </div>
-                <p className="mt-1 text-xs text-slate-500">{issue.description}</p>
-                {issue.regionName && <p className="mt-1 text-xs text-slate-400">{issue.regionName}</p>}
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
+      )}
     </div>
   );
 }

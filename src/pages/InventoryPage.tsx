@@ -1,30 +1,78 @@
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { FileUp, Search } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
-import DataTable from '../components/common/DataTable';
-import StatusBadge from '../components/common/StatusBadge';
-import { mockInventoryItems } from '../data/mockInventory';
-import { formatDate, formatNumber } from '../utils/format';
-import type { InventoryStatus } from '../types';
-
-const STATUS_OPTIONS: InventoryStatus[] = ['정상', '임박', '부족', '확인 필요'];
+import EmptyState from '../components/common/EmptyState';
+import { useDataStore, findCol } from '../store/dataStore';
+import { formatNumber } from '../utils/format';
 
 export default function InventoryPage() {
+  const { dataset } = useDataStore();
   const [keyword, setKeyword] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
 
-  const filteredItems = useMemo(() => {
-    const normalizedKeyword = keyword.trim();
-    return mockInventoryItems.filter((item) => {
-      const matchesKeyword = normalizedKeyword === '' || item.name.includes(normalizedKeyword);
-      const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
-      return matchesKeyword && matchesStatus;
-    });
-  }, [keyword, statusFilter]);
+  const itemCol = dataset ? findCol(dataset.columns, /지원품목|품목|물품/) : null;
+  const qtyCol = dataset ? findCol(dataset.columns, /수량/) : null;
+  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
+
+  const itemStats = useMemo(() => {
+    if (!dataset || !itemCol) return [];
+    const map = new Map<string, { count: number; totalQty: number; regions: Set<string> }>();
+    for (const r of dataset.records) {
+      const name = r[itemCol] ?? '';
+      if (!name) continue;
+      if (!map.has(name)) map.set(name, { count: 0, totalQty: 0, regions: new Set() });
+      const entry = map.get(name)!;
+      entry.count++;
+      if (qtyCol) entry.totalQty += parseInt(r[qtyCol] ?? '0', 10) || 0;
+      if (regionCol && r[regionCol]) entry.regions.add(r[regionCol]);
+    }
+    return Array.from(map, ([name, data]) => ({ name, ...data })).sort(
+      (a, b) => b.count - a.count,
+    );
+  }, [dataset, itemCol, qtyCol, regionCol]);
+
+  const filtered = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return kw ? itemStats.filter((i) => i.name.toLowerCase().includes(kw)) : itemStats;
+  }, [itemStats, keyword]);
+
+  if (!dataset) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="지원품목 현황" description="지원 물품별 배부 현황을 확인합니다." />
+        <EmptyState
+          icon={FileUp}
+          title="업로드된 데이터가 없습니다"
+          message="데이터 업로드 페이지에서 엑셀 파일을 업로드하면 품목 현황을 확인할 수 있습니다."
+        />
+        <Link
+          to="/upload"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700"
+        >
+          <FileUp size={16} /> 데이터 업로드하러 가기
+        </Link>
+      </div>
+    );
+  }
+
+  if (!itemCol) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="지원품목 현황" />
+        <EmptyState
+          title="품목 열을 찾을 수 없습니다"
+          message="업로드된 파일에 '지원품목' 또는 '품목' 열이 있어야 품목 현황을 표시할 수 있습니다."
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <PageHeader title="물품·유통기한" description="지역별 물품 입출고와 유통기한 현황을 확인합니다." />
+      <PageHeader
+        title="지원품목 현황"
+        description={`${dataset.fileName} 기준 · ${itemStats.length}종 품목`}
+      />
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <label className="flex min-w-64 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-teal-500">
@@ -32,42 +80,37 @@ export default function InventoryPage() {
           <input
             type="text"
             value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            onChange={(e) => setKeyword(e.target.value)}
             placeholder="품목명 검색"
             className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
           />
         </label>
-
-        <select
-          value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
-        >
-          <option value="all">전체 상태</option>
-          {STATUS_OPTIONS.map((status) => (
-            <option key={status} value={status}>
-              {status}
-            </option>
-          ))}
-        </select>
       </div>
 
-      <p className="text-sm text-slate-500">총 {filteredItems.length}건</p>
+      <p className="text-sm text-slate-500">총 {filtered.length}종</p>
 
-      <DataTable
-        columns={[
-          { key: 'name', header: '품목명', render: (row) => row.name },
-          { key: 'regionName', header: '지역', render: (row) => row.regionName },
-          { key: 'inboundQuantity', header: '입고량', render: (row) => formatNumber(row.inboundQuantity) },
-          { key: 'outboundQuantity', header: '배부량', render: (row) => formatNumber(row.outboundQuantity) },
-          { key: 'currentStock', header: '현재 재고', render: (row) => formatNumber(row.currentStock) },
-          { key: 'expiryDate', header: '유통기한', render: (row) => formatDate(row.expiryDate) },
-          { key: 'status', header: '상태', render: (row) => <StatusBadge status={row.status} /> },
-        ]}
-        data={filteredItems}
-        rowKey={(row) => row.id}
-        emptyMessage="검색 조건에 맞는 물품이 없습니다."
-      />
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">품목명</th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-slate-500">지원 건수</th>
+              {qtyCol && <th className="px-4 py-3 text-center text-xs font-medium text-slate-500">총 지원 수량</th>}
+              {regionCol && <th className="px-4 py-3 text-center text-xs font-medium text-slate-500">지원 지역 수</th>}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {filtered.map(({ name, count, totalQty, regions }) => (
+              <tr key={name} className="hover:bg-slate-50">
+                <td className="px-4 py-3 font-medium text-slate-800">{name}</td>
+                <td className="px-4 py-3 text-center text-slate-700">{formatNumber(count)}건</td>
+                {qtyCol && <td className="px-4 py-3 text-center text-slate-700">{formatNumber(totalQty)}개</td>}
+                {regionCol && <td className="px-4 py-3 text-center text-slate-700">{formatNumber(regions.size)}개</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

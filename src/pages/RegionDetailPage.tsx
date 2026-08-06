@@ -1,102 +1,147 @@
+import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Boxes, ClipboardList, TimerReset, Users } from 'lucide-react';
+import { ArrowLeft, ClipboardList, FileUp, MapPin, Users } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
-import StatusBadge from '../components/common/StatusBadge';
-import DataTable from '../components/common/DataTable';
 import EmptyState from '../components/common/EmptyState';
-import RegionTrendChart from '../components/charts/RegionTrendChart';
-import { getRegionById } from '../data/mockRegions';
-import { mockSupportRecords } from '../data/mockSupportRecords';
-import { mockInventoryItems } from '../data/mockInventory';
-import { formatDate, formatNumber } from '../utils/format';
+import MonthlySupportChart from '../components/charts/MonthlySupportChart';
+import { useDataStore, findCol } from '../store/dataStore';
+import { formatNumber } from '../utils/format';
+
+const PAGE_SIZE = 20;
 
 export default function RegionDetailPage() {
   const { regionId } = useParams<{ regionId: string }>();
-  const region = getRegionById(regionId);
+  const { dataset } = useDataStore();
+  const regionName = regionId ? decodeURIComponent(regionId) : '';
 
-  if (!region) {
+  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
+  const nameCol = dataset ? findCol(dataset.columns, /이용자|수혜자|이름|성명/) : null;
+  const dateCol = dataset ? findCol(dataset.columns, /지원일|날짜/) : null;
+  const qtyCol = dataset ? findCol(dataset.columns, /수량/) : null;
+
+  const { regionRecords, monthlyData } = useMemo(() => {
+    if (!dataset) return { regionRecords: [], monthlyData: [] };
+
+    const records = regionCol
+      ? dataset.records.filter((r) => r[regionCol] === regionName)
+      : dataset.records;
+
+    const sorted = dateCol
+      ? [...records].sort((a, b) => (b[dateCol] ?? '').localeCompare(a[dateCol] ?? ''))
+      : records;
+
+    const mMap = new Map<string, number>();
+    if (dateCol) {
+      for (const r of records) {
+        const raw = (r[dateCol] ?? '').replace(/\./g, '-');
+        const m = raw.match(/^(\d{4})-(\d{1,2})/);
+        if (!m) continue;
+        const label = `${parseInt(m[2])}월`;
+        mMap.set(label, (mMap.get(label) ?? 0) + 1);
+      }
+    }
+    const monthly = Array.from(mMap, ([month, count]) => ({ month, count })).sort(
+      (a, b) => parseInt(a.month) - parseInt(b.month),
+    );
+
+    return { regionRecords: sorted, monthlyData: monthly };
+  }, [dataset, regionCol, dateCol, regionName]);
+
+  if (!dataset) {
     return (
       <div className="space-y-6">
-        <PageHeader title="지역 상세" />
-        <EmptyState title="존재하지 않는 지역입니다" message="지역별 현황 목록에서 다시 선택해 주세요." />
-        <Link to="/regions" className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700">
-          <ArrowLeft size={16} />
-          지역별 현황으로 돌아가기
+        <Link to="/regions" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-teal-600">
+          <ArrowLeft size={16} /> 지역별 현황으로 돌아가기
         </Link>
+        <PageHeader title="지역 상세" />
+        <EmptyState
+          icon={FileUp}
+          title="업로드된 데이터가 없습니다"
+          message="데이터 업로드 페이지에서 엑셀 파일을 업로드해 주세요."
+        />
       </div>
     );
   }
 
-  const supportRecords = mockSupportRecords
-    .filter((record) => record.regionId === region.id)
-    .sort((a, b) => b.supportDate.localeCompare(a.supportDate));
-  const inventoryItems = mockInventoryItems.filter((item) => item.regionId === region.id);
+  if (regionRecords.length === 0) {
+    return (
+      <div className="space-y-6">
+        <Link to="/regions" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-teal-600">
+          <ArrowLeft size={16} /> 지역별 현황으로 돌아가기
+        </Link>
+        <PageHeader title={regionName || '지역 상세'} />
+        <EmptyState title="해당 지역의 데이터가 없습니다" message="지역명을 다시 확인해 주세요." />
+      </div>
+    );
+  }
+
+  const uniqueUsers = nameCol ? new Set(regionRecords.map((r) => r[nameCol])).size : null;
 
   return (
     <div className="space-y-6">
       <Link to="/regions" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-teal-600">
-        <ArrowLeft size={16} />
-        지역별 현황으로 돌아가기
+        <ArrowLeft size={16} /> 지역별 현황으로 돌아가기
       </Link>
 
       <PageHeader
-        title={region.name}
-        description={`운영 기관 ${formatNumber(region.orgCount)}개소 · 최근 업데이트 ${formatDate(region.lastUpdated)}`}
-        actions={<StatusBadge status={region.status} />}
+        title={regionName}
+        description={`${dataset.fileName} 기준 · 총 ${regionRecords.length.toLocaleString()}건`}
+        actions={
+          <span className="flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+            <MapPin size={12} /> {regionName}
+          </span>
+        }
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="이용자 수" value={`${formatNumber(region.userCount)}명`} icon={Users} />
-        <StatCard label="이번 달 지원 건수" value={`${formatNumber(region.monthlySupportCount)}건`} icon={ClipboardList} />
-        <StatCard label="현재 재고 품목" value={`${formatNumber(region.inventoryCount)}종`} icon={Boxes} />
-        <StatCard
-          label="유통기한 임박 건수"
-          value={`${formatNumber(region.expiringSoonCount)}건`}
-          icon={TimerReset}
-          tone="warning"
-        />
+        <StatCard label="지원 건수" value={`${formatNumber(regionRecords.length)}건`} icon={ClipboardList} />
+        {uniqueUsers !== null && (
+          <StatCard label="이용자 수" value={`${formatNumber(uniqueUsers)}명`} icon={Users} />
+        )}
       </div>
 
+      {monthlyData.length > 1 && (
+        <MonthlySupportChart data={monthlyData} />
+      )}
+
+      {/* 지원 내역 테이블 */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="text-base font-semibold text-slate-900">월별 이용 추이</h3>
-        <p className="mt-1 text-sm text-slate-500">최근 6개월 지원 건수 추이</p>
-        <div className="mt-4">
-          <RegionTrendChart data={region.monthlyTrend} />
+        <h3 className="mb-3 text-base font-semibold text-slate-900">
+          지원 내역
+          <span className="ml-2 text-sm font-normal text-slate-400">
+            (최대 {PAGE_SIZE}건 표시)
+          </span>
+        </h3>
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                {dataset.columns.filter((c) => c !== regionCol).map((col) => (
+                  <th key={col} className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500">
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {regionRecords.slice(0, PAGE_SIZE).map((row, i) => (
+                <tr key={i} className="hover:bg-slate-50">
+                  {dataset.columns.filter((c) => c !== regionCol).map((col) => (
+                    <td key={col} className="whitespace-nowrap px-4 py-2.5 text-slate-700">
+                      {col === qtyCol ? `${row[col]}개` : row[col] ?? ''}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="mb-3 text-base font-semibold text-slate-900">최근 지원 내역</h3>
-        <DataTable
-          columns={[
-            { key: 'userName', header: '이용자', render: (row) => row.userName },
-            { key: 'supportDate', header: '지원일', render: (row) => formatDate(row.supportDate) },
-            { key: 'item', header: '지원 물품', render: (row) => row.item },
-            { key: 'quantity', header: '수량', render: (row) => `${row.quantity}개` },
-            { key: 'counselingStatus', header: '상담·복지 연계', render: (row) => <StatusBadge status={row.counselingStatus} /> },
-          ]}
-          data={supportRecords.slice(0, 8)}
-          rowKey={(row) => row.id}
-          emptyMessage="최근 지원 내역이 없습니다."
-        />
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h3 className="mb-3 text-base font-semibold text-slate-900">보유 물품 목록</h3>
-        <DataTable
-          columns={[
-            { key: 'name', header: '품목명', render: (row) => row.name },
-            { key: 'inboundQuantity', header: '입고량', render: (row) => formatNumber(row.inboundQuantity) },
-            { key: 'outboundQuantity', header: '배부량', render: (row) => formatNumber(row.outboundQuantity) },
-            { key: 'currentStock', header: '현재 재고', render: (row) => formatNumber(row.currentStock) },
-            { key: 'expiryDate', header: '유통기한', render: (row) => formatDate(row.expiryDate) },
-            { key: 'status', header: '상태', render: (row) => <StatusBadge status={row.status} /> },
-          ]}
-          data={inventoryItems}
-          rowKey={(row) => row.id}
-          emptyMessage="보유 물품이 없습니다."
-        />
+        {regionRecords.length > PAGE_SIZE && (
+          <p className="mt-2 text-right text-xs text-slate-400">
+            {regionRecords.length.toLocaleString()}건 중 {PAGE_SIZE}건 표시 — 전체 내역은 이용·지원 내역 페이지에서 확인하세요.
+          </p>
+        )}
       </section>
     </div>
   );
