@@ -53,6 +53,7 @@ export interface DataIssueAlert {
   id: string;
   title: string;
   description: string;
+  regionId?: RegionId;
   regionName?: string;
   severity: DataIssueSeverity;
 }

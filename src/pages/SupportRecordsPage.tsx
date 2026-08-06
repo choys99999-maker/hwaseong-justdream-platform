@@ -3,21 +3,21 @@ import { Search } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import StatusBadge from '../components/common/StatusBadge';
-import { mockSupportRecords } from '../data/mockSupportRecords';
-import { mockRegions } from '../data/mockRegions';
 import { formatDate } from '../utils/format';
+import { useDataScope } from '../hooks/useDataScope';
 import type { CounselingStatus } from '../types';
 
 const STATUS_OPTIONS: CounselingStatus[] = ['연계 완료', '연계 진행중', '미연계'];
 
 export default function SupportRecordsPage() {
+  const { supportRecords, regions, isSystemAdmin } = useDataScope();
   const [keyword, setKeyword] = useState('');
   const [regionFilter, setRegionFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
 
   const filteredRecords = useMemo(() => {
     const normalizedKeyword = keyword.trim();
-    return mockSupportRecords.filter((record) => {
+    return supportRecords.filter((record) => {
       const matchesKeyword =
         normalizedKeyword === '' ||
         record.userName.includes(normalizedKeyword) ||
@@ -26,7 +26,7 @@ export default function SupportRecordsPage() {
       const matchesStatus = statusFilter === 'all' || record.counselingStatus === statusFilter;
       return matchesKeyword && matchesRegion && matchesStatus;
     });
-  }, [keyword, regionFilter, statusFilter]);
+  }, [supportRecords, keyword, regionFilter, statusFilter]);
 
   return (
     <div className="space-y-6">
@@ -38,28 +38,31 @@ export default function SupportRecordsPage() {
           <input
             type="text"
             value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            onChange={(e) => setKeyword(e.target.value)}
             placeholder="이용자명 또는 지원 물품 검색"
             className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
           />
         </label>
 
-        <select
-          value={regionFilter}
-          onChange={(event) => setRegionFilter(event.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
-        >
-          <option value="all">전체 지역</option>
-          {mockRegions.map((region) => (
-            <option key={region.id} value={region.id}>
-              {region.name}
-            </option>
-          ))}
-        </select>
+        {/* 지역 필터: SYSTEM_ADMIN이 전체 범위를 볼 때만 표시 (단일 지역 선택 시 필터 의미 없음) */}
+        {isSystemAdmin && regions.length > 1 && (
+          <select
+            value={regionFilter}
+            onChange={(e) => setRegionFilter(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="all">전체 지역</option>
+            {regions.map((region) => (
+              <option key={region.id} value={region.id}>
+                {region.name}
+              </option>
+            ))}
+          </select>
+        )}
 
         <select
           value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value)}
+          onChange={(e) => setStatusFilter(e.target.value)}
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
         >
           <option value="all">전체 상태</option>

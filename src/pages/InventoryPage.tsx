@@ -3,24 +3,31 @@ import { Search } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import StatusBadge from '../components/common/StatusBadge';
-import { mockInventoryItems } from '../data/mockInventory';
 import { formatDate, formatNumber } from '../utils/format';
-import type { InventoryStatus } from '../types';
+import { useDataScope } from '../hooks/useDataScope';
+import { mockRegions } from '../data/mockRegions';
+import type { InventoryStatus, RegionId } from '../types';
 
 const STATUS_OPTIONS: InventoryStatus[] = ['정상', '임박', '부족', '확인 필요'];
 
 export default function InventoryPage() {
+  const { inventoryItems, isSystemAdmin, effectiveRegionId } = useDataScope();
+  // 페이지 내 지역 필터는 SYSTEM_ADMIN이 헤더에서 "전체"를 선택한 경우에만 표시
+  const showRegionFilter = isSystemAdmin && effectiveRegionId === null;
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [regionFilter, setRegionFilter] = useState<RegionId | 'all'>('all');
 
   const filteredItems = useMemo(() => {
     const normalizedKeyword = keyword.trim();
-    return mockInventoryItems.filter((item) => {
+    return inventoryItems.filter((item) => {
       const matchesKeyword = normalizedKeyword === '' || item.name.includes(normalizedKeyword);
       const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
-      return matchesKeyword && matchesStatus;
+      // regionFilter는 SYSTEM_ADMIN이 "전체" 범위에서만 활성화
+      const matchesRegion = regionFilter === 'all' || item.regionId === regionFilter;
+      return matchesKeyword && matchesStatus && matchesRegion;
     });
-  }, [keyword, statusFilter]);
+  }, [inventoryItems, keyword, statusFilter, regionFilter]);
 
   return (
     <div className="space-y-6">
@@ -32,15 +39,31 @@ export default function InventoryPage() {
           <input
             type="text"
             value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            onChange={(e) => setKeyword(e.target.value)}
             placeholder="품목명 검색"
             className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
           />
         </label>
 
+        {/* 지역 필터: SYSTEM_ADMIN이 헤더에서 "전체"를 선택한 경우에만 표시 */}
+        {showRegionFilter && (
+          <select
+            value={regionFilter}
+            onChange={(e) => setRegionFilter(e.target.value as RegionId | 'all')}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="all">전체 지역</option>
+            {mockRegions.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        )}
+
         <select
           value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value)}
+          onChange={(e) => setStatusFilter(e.target.value)}
           className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
         >
           <option value="all">전체 상태</option>

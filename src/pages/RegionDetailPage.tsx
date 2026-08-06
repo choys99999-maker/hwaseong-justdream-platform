@@ -10,9 +10,11 @@ import { getRegionById } from '../data/mockRegions';
 import { mockSupportRecords } from '../data/mockSupportRecords';
 import { mockInventoryItems } from '../data/mockInventory';
 import { formatDate, formatNumber } from '../utils/format';
+import { useAuth } from '../hooks/useAuth';
 
 export default function RegionDetailPage() {
   const { regionId } = useParams<{ regionId: string }>();
+  const { user } = useAuth();
   const region = getRegionById(regionId);
 
   if (!region) {
@@ -28,6 +30,24 @@ export default function RegionDetailPage() {
     );
   }
 
+  // REGION_ADMIN이 자신의 지역이 아닌 URL에 접근하면 차단
+  if (user.role === 'REGION_ADMIN' && region.id !== user.regionId) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="접근 불가" />
+        <EmptyState title="접근 권한이 없습니다" message="본인의 담당 지역 데이터만 조회할 수 있습니다." />
+        <Link
+          to={`/regions/${user.regionId}`}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700"
+        >
+          <ArrowLeft size={16} />
+          내 담당 지역으로 이동
+        </Link>
+      </div>
+    );
+  }
+
+  // 데이터 접근 계층: 이 페이지에서도 regionId로 필터링
   const supportRecords = mockSupportRecords
     .filter((record) => record.regionId === region.id)
     .sort((a, b) => b.supportDate.localeCompare(a.supportDate));

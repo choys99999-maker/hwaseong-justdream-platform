@@ -1,11 +1,19 @@
+import { useMemo } from 'react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { mockRegions } from '../../data/mockRegions';
+import type { Region } from '../../types';
 
 const CHART_COLOR = '#0d9488';
 
-const data = mockRegions.map((region) => ({ name: region.name, userCount: region.userCount }));
+interface Props {
+  regions: Region[];
+}
 
-export default function RegionUserChart() {
+export default function RegionUserChart({ regions }: Props) {
+  const data = useMemo(
+    () => regions.map((region) => ({ name: region.name, userCount: region.userCount })),
+    [regions],
+  );
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <h3 className="text-base font-semibold text-slate-900">지역별 이용자 비교</h3>

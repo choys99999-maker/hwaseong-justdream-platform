@@ -1,25 +1,30 @@
+import { useMemo } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { mockRegions } from '../../data/mockRegions';
+import type { Region } from '../../types';
 
 const CHART_COLOR = '#0d9488';
 
-function buildMonthlyTotals() {
-  const totals = new Map<string, number>();
-  mockRegions.forEach((region) => {
-    region.monthlyTrend.forEach((point) => {
-      totals.set(point.month, (totals.get(point.month) ?? 0) + point.count);
-    });
-  });
-  return Array.from(totals, ([month, count]) => ({ month, count }));
+interface Props {
+  regions: Region[];
 }
 
-const data = buildMonthlyTotals();
+export default function MonthlySupportChart({ regions }: Props) {
+  const data = useMemo(() => {
+    const totals = new Map<string, number>();
+    regions.forEach((region) => {
+      region.monthlyTrend.forEach((point) => {
+        totals.set(point.month, (totals.get(point.month) ?? 0) + point.count);
+      });
+    });
+    return Array.from(totals, ([month, count]) => ({ month, count }));
+  }, [regions]);
 
-export default function MonthlySupportChart() {
+  const subtitle = regions.length === 1 ? `${regions[0].name} 기준` : '화성시 전체 권역 합산 기준';
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5">
       <h3 className="text-base font-semibold text-slate-900">월별 지원 건수</h3>
-      <p className="mt-1 text-sm text-slate-500">화성시 전체 권역 합산 기준</p>
+      <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
       <div className="mt-4 h-64">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>

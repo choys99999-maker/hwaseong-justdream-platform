@@ -2,16 +2,18 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatusBadge from '../components/common/StatusBadge';
-import { mockRegions } from '../data/mockRegions';
 import { formatDate, formatNumber } from '../utils/format';
+import { useDataScope } from '../hooks/useDataScope';
 
 export default function RegionListPage() {
+  const { regions } = useDataScope();
+
   return (
     <div className="space-y-6">
       <PageHeader title="지역별 현황" description="권역별 운영 상태와 주요 지표를 확인합니다." />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {mockRegions.map((region) => (
+        {regions.map((region) => (
           <Link
             key={region.id}
             to={`/regions/${region.id}`}
