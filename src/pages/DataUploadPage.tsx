@@ -14,15 +14,38 @@ interface ExcelPreview {
 interface SelectedChecks {
   missing: boolean;
   duplicate: boolean;
-  error: boolean;
+  errorColumns: string[]; // 오류 검사할 열 이름 목록
 }
 
 interface ValidationResult {
   totalRows: number;
   missingRows: number | null;
   duplicateRows: number | null;
-  errorRows: number | null;
+  errorByColumn: Record<string, number> | null; // 열 이름 → 오류 건수
 }
+
+type ColType = 'date' | 'phone' | 'number' | 'text';
+
+function detectColumnType(name: string): ColType {
+  if (/일$|날짜|생년/.test(name)) return 'date';
+  if (/연락|전화|핸드폰/.test(name)) return 'phone';
+  if (/수량|개수|금액|합계/.test(name)) return 'number';
+  return 'text';
+}
+
+const COL_TYPE_LABEL: Record<ColType, string> = {
+  date: '날짜',
+  phone: '전화번호',
+  number: '숫자',
+  text: '텍스트',
+};
+
+const COL_TYPE_COLOR: Record<ColType, string> = {
+  date: 'bg-blue-50 text-blue-600',
+  phone: 'bg-purple-50 text-purple-600',
+  number: 'bg-green-50 text-green-600',
+  text: 'bg-slate-100 text-slate-500',
+};
 
 export default function DataUploadPage() {
   const [step, setStep] = useState<UploadStep>('select');
@@ -34,7 +57,7 @@ export default function DataUploadPage() {
   const [selectedChecks, setSelectedChecks] = useState<SelectedChecks>({
     missing: true,
     duplicate: true,
-    error: true,
+    errorColumns: [],
   });
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [validationProgress, setValidationProgress] = useState(0);
@@ -44,7 +67,6 @@ export default function DataUploadPage() {
   const workerRef = useRef<Worker | null>(null);
   const fileNameRef = useRef('');
 
-  // 워커 생성 및 메시지 핸들러 등록
   useEffect(() => {
     const worker = new Worker(
       new URL('../workers/excelWorker.ts', import.meta.url),
@@ -54,17 +76,24 @@ export default function DataUploadPage() {
     worker.onmessage = (e: MessageEvent) => {
       const msg = e.data;
       switch (msg.type) {
-        case 'parse-done':
+        case 'parse-done': {
+          const cols = msg.columns as string[];
           setPreview({
             fileName: fileNameRef.current,
             sheetName: msg.sheetName,
-            columns: msg.columns,
+            columns: cols,
             rows: msg.previewRows,
             totalRows: msg.totalRows,
           });
+          // 날짜·전화번호·숫자 열을 자동 선택
+          setSelectedChecks((prev) => ({
+            ...prev,
+            errorColumns: cols.filter((c) => detectColumnType(c) !== 'text'),
+          }));
           setIsParsing(false);
           setStep('columns');
           break;
+        }
         case 'validate-progress':
           setValidationProgress(msg.progress);
           break;
@@ -73,7 +102,7 @@ export default function DataUploadPage() {
             totalRows: msg.totalRows,
             missingRows: msg.missingRows,
             duplicateRows: msg.duplicateRows,
-            errorRows: msg.errorRows,
+            errorByColumn: msg.errorByColumn,
           });
           setIsValidating(false);
           break;
@@ -97,7 +126,6 @@ export default function DataUploadPage() {
     return () => worker.terminate();
   }, []);
 
-  // validation 단계 진입 시 자동으로 검증 시작
   useEffect(() => {
     if (step === 'validation' && !isValidating && !validationResult) {
       setIsValidating(true);
@@ -134,7 +162,6 @@ export default function DataUploadPage() {
       setUploadProgress(100);
       setIsParsing(true);
       const buffer = e.target?.result as ArrayBuffer;
-      // zero-copy 전송 — 워커가 메모리 소유권을 가져가므로 탭이 튕기지 않음
       workerRef.current!.postMessage({ type: 'parse', buffer }, [buffer]);
     };
 
@@ -167,6 +194,7 @@ export default function DataUploadPage() {
     setValidationResult(null);
     setValidationProgress(0);
     setIsValidating(false);
+    setSelectedChecks({ missing: true, duplicate: true, errorColumns: [] });
     setStep('select');
   }
 
@@ -176,6 +204,20 @@ export default function DataUploadPage() {
     setIsValidating(false);
     setStep('columns');
   }
+
+  function toggleErrorColumn(col: string) {
+    setSelectedChecks((prev) => ({
+      ...prev,
+      errorColumns: prev.errorColumns.includes(col)
+        ? prev.errorColumns.filter((c) => c !== col)
+        : [...prev.errorColumns, col],
+    }));
+  }
+
+  const noChecksSelected =
+    !selectedChecks.missing &&
+    !selectedChecks.duplicate &&
+    selectedChecks.errorColumns.length === 0;
 
   return (
     <div className="space-y-6">
@@ -331,27 +373,96 @@ export default function DataUploadPage() {
           <div>
             <h3 className="text-sm font-semibold text-slate-700">검사 항목 선택</h3>
             <p className="mt-0.5 text-xs text-slate-400">다음 단계에서 실행할 검사를 선택하세요.</p>
+
             <div className="mt-3 space-y-2">
-              {(
-                [
-                  { key: 'missing', label: '누락 검사', desc: '빈 셀이 있는 행을 찾습니다' },
-                  { key: 'duplicate', label: '중복 검사', desc: '동일한 행을 찾습니다' },
-                  { key: 'error', label: '오류 검사', desc: '날짜·연락처 형식 오류 행을 찾습니다' },
-                ] as const
-              ).map(({ key, label, desc }) => (
-                <label key={key} className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 hover:bg-slate-50">
-                  <input
-                    type="checkbox"
-                    checked={selectedChecks[key]}
-                    onChange={() => setSelectedChecks((p) => ({ ...p, [key]: !p[key] }))}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-teal-600"
-                  />
+              {/* 누락 검사 */}
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={selectedChecks.missing}
+                  onChange={() => setSelectedChecks((p) => ({ ...p, missing: !p.missing }))}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-teal-600"
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">누락 검사</p>
+                  <p className="text-xs text-slate-400">빈 셀이 있는 행을 찾습니다</p>
+                </div>
+              </label>
+
+              {/* 중복 검사 */}
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-4 py-3 hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={selectedChecks.duplicate}
+                  onChange={() => setSelectedChecks((p) => ({ ...p, duplicate: !p.duplicate }))}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 accent-teal-600"
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">중복 검사</p>
+                  <p className="text-xs text-slate-400">동일한 행을 찾습니다</p>
+                </div>
+              </label>
+
+              {/* 오류 검사 — 열별 선택 */}
+              <div className="rounded-lg border border-slate-200 px-4 py-3">
+                <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-slate-800">{label}</p>
-                    <p className="text-xs text-slate-400">{desc}</p>
+                    <p className="text-sm font-medium text-slate-800">오류 검사</p>
+                    <p className="text-xs text-slate-400">검사할 열을 선택하세요 (날짜·전화번호·숫자 형식 오류를 찾습니다)</p>
                   </div>
-                </label>
-              ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedChecks((prev) => ({
+                        ...prev,
+                        errorColumns:
+                          prev.errorColumns.length === preview.columns.length
+                            ? []
+                            : [...preview.columns],
+                      }))
+                    }
+                    className="shrink-0 text-xs text-teal-600 hover:underline"
+                  >
+                    {selectedChecks.errorColumns.length === preview.columns.length ? '전체 해제' : '전체 선택'}
+                  </button>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {preview.columns.map((col) => {
+                    const type = detectColumnType(col);
+                    const checked = selectedChecks.errorColumns.includes(col);
+                    return (
+                      <label
+                        key={col}
+                        className={`flex cursor-pointer items-start gap-2.5 rounded-lg border p-2.5 transition-colors ${
+                          checked
+                            ? 'border-teal-200 bg-teal-50'
+                            : 'border-slate-100 bg-slate-50 hover:border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleErrorColumn(col)}
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-slate-300 accent-teal-600"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-slate-800">{col}</p>
+                          <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${COL_TYPE_COLOR[type]}`}>
+                            {COL_TYPE_LABEL[type]}
+                          </span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {selectedChecks.errorColumns.length > 0 && (
+                  <p className="mt-2 text-xs text-teal-600">
+                    {selectedChecks.errorColumns.length}개 열 선택됨
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -359,7 +470,7 @@ export default function DataUploadPage() {
             <button
               type="button"
               onClick={() => setStep('validation')}
-              disabled={!selectedChecks.missing && !selectedChecks.duplicate && !selectedChecks.error}
+              disabled={noChecksSelected}
               className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
             >
               다음 <ArrowRight size={16} />
@@ -404,35 +515,55 @@ export default function DataUploadPage() {
                 총 <strong className="text-slate-800">{validationResult.totalRows.toLocaleString()}행</strong> 분석 완료
               </p>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {validationResult.missingRows !== null && (
-                  <div className={`rounded-lg border p-4 ${validationResult.missingRows > 0 ? 'border-amber-100 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
-                    <p className={`text-2xl font-bold tabular-nums ${validationResult.missingRows > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
-                      {validationResult.missingRows.toLocaleString()}
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-700">누락 행</p>
-                    <p className="text-xs text-slate-400">빈 셀이 있는 행</p>
+              {/* 누락·중복 카드 */}
+              {(validationResult.missingRows !== null || validationResult.duplicateRows !== null) && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {validationResult.missingRows !== null && (
+                    <div className={`rounded-lg border p-4 ${validationResult.missingRows > 0 ? 'border-amber-100 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}>
+                      <p className={`text-2xl font-bold tabular-nums ${validationResult.missingRows > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                        {validationResult.missingRows.toLocaleString()}
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-slate-700">누락 행</p>
+                      <p className="text-xs text-slate-400">빈 셀이 있는 행</p>
+                    </div>
+                  )}
+                  {validationResult.duplicateRows !== null && (
+                    <div className={`rounded-lg border p-4 ${validationResult.duplicateRows > 0 ? 'border-orange-100 bg-orange-50' : 'border-slate-200 bg-slate-50'}`}>
+                      <p className={`text-2xl font-bold tabular-nums ${validationResult.duplicateRows > 0 ? 'text-orange-600' : 'text-slate-400'}`}>
+                        {validationResult.duplicateRows.toLocaleString()}
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-slate-700">중복 행</p>
+                      <p className="text-xs text-slate-400">동일한 행</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 오류 검사 — 열별 결과 */}
+              {validationResult.errorByColumn && (
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-700">오류 검사 결과 (열별)</h4>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                    {Object.entries(validationResult.errorByColumn).map(([col, count]) => {
+                      const type = detectColumnType(col);
+                      return (
+                        <div
+                          key={col}
+                          className={`rounded-lg border p-3 ${count > 0 ? 'border-red-100 bg-red-50' : 'border-slate-200 bg-slate-50'}`}
+                        >
+                          <p className={`text-xl font-bold tabular-nums ${count > 0 ? 'text-red-600' : 'text-slate-400'}`}>
+                            {count.toLocaleString()}
+                          </p>
+                          <p className="mt-0.5 truncate text-sm font-medium text-slate-700">{col}</p>
+                          <span className={`mt-1 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${COL_TYPE_COLOR[type]}`}>
+                            {COL_TYPE_LABEL[type]}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-                {validationResult.duplicateRows !== null && (
-                  <div className={`rounded-lg border p-4 ${validationResult.duplicateRows > 0 ? 'border-orange-100 bg-orange-50' : 'border-slate-200 bg-slate-50'}`}>
-                    <p className={`text-2xl font-bold tabular-nums ${validationResult.duplicateRows > 0 ? 'text-orange-600' : 'text-slate-400'}`}>
-                      {validationResult.duplicateRows.toLocaleString()}
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-700">중복 행</p>
-                    <p className="text-xs text-slate-400">동일한 행</p>
-                  </div>
-                )}
-                {validationResult.errorRows !== null && (
-                  <div className={`rounded-lg border p-4 ${validationResult.errorRows > 0 ? 'border-red-100 bg-red-50' : 'border-slate-200 bg-slate-50'}`}>
-                    <p className={`text-2xl font-bold tabular-nums ${validationResult.errorRows > 0 ? 'text-red-600' : 'text-slate-400'}`}>
-                      {validationResult.errorRows.toLocaleString()}
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-700">형식 오류 행</p>
-                    <p className="text-xs text-slate-400">날짜·연락처 오류</p>
-                  </div>
-                )}
-              </div>
+                </div>
+              )}
 
               <div className="flex items-center gap-3 pt-1">
                 <button

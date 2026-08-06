@@ -4,12 +4,18 @@ import * as XLSX from 'xlsx';
 interface SelectedChecks {
   missing: boolean;
   duplicate: boolean;
-  error: boolean;
+  errorColumns: string[]; // 오류 검사할 열 이름 목록
 }
 
-// 파싱된 행을 워커 메모리에 보관 (validate 요청 때 재사용)
 let storedRows: unknown[][] = [];
 let storedHeaders: Array<{ name: string; idx: number }> = [];
+
+function detectColumnType(name: string): 'date' | 'phone' | 'number' | 'text' {
+  if (/일$|날짜|생년/.test(name)) return 'date';
+  if (/연락|전화|핸드폰/.test(name)) return 'phone';
+  if (/수량|개수|금액|합계/.test(name)) return 'number';
+  return 'text';
+}
 
 function handleParse(buffer: ArrayBuffer) {
   const wb = XLSX.read(buffer, { type: 'array' });
@@ -28,6 +34,7 @@ function handleParse(buffer: ArrayBuffer) {
   if (storedHeaders.length === 0)
     throw new Error('유효한 열 이름을 찾을 수 없습니다. 첫 번째 행에 열 이름이 있는지 확인하세요.');
 
+  const columns = storedHeaders.map((h) => h.name);
   const previewRows = storedRows.slice(1, 11).map((row) => {
     const arr = row as unknown[];
     return Object.fromEntries(
@@ -39,7 +46,7 @@ function handleParse(buffer: ArrayBuffer) {
     type: 'parse-done',
     sheetName,
     sheetNames: wb.SheetNames,
-    columns: storedHeaders.map((h) => h.name),
+    columns,
     previewRows,
     totalRows: storedRows.length - 1,
   });
@@ -51,13 +58,22 @@ function handleValidate(checks: SelectedChecks) {
 
   let missingRows = 0;
   let duplicateRows = 0;
-  let errorRows = 0;
 
-  // 중복 검사: 이름/성명 컬럼이 있으면 그것만, 없으면 전체 행 해시
+  // 열별 오류 카운터 초기화
+  const errorByColumn: Record<string, number> = {};
+  const errorColMeta = checks.errorColumns
+    .map((colName) => {
+      const h = storedHeaders.find((s) => s.name === colName);
+      return h ? { colName, idx: h.idx, type: detectColumnType(colName) } : null;
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+
+  for (const { colName } of errorColMeta) errorByColumn[colName] = 0;
+
+  // 중복 검사: 이름 컬럼 우선, 없으면 전체 행 해시
   const keyColIdx = (() => {
-    const patterns = ['이름', '성명', '이용자', '수혜자', '수급자'];
     for (const { name, idx } of storedHeaders) {
-      if (patterns.some((p) => name.includes(p))) return idx;
+      if (['이름', '성명', '이용자', '수혜자', '수급자'].some((p) => name.includes(p))) return idx;
     }
     return -1;
   })();
@@ -84,35 +100,18 @@ function handleValidate(checks: SelectedChecks) {
         else seenSet.add(key);
       }
 
-      if (checks.error) {
+      for (const { colName, idx, type } of errorColMeta) {
+        const val = String(arr[idx] ?? '');
+        if (!val) continue;
         let hasError = false;
-        for (let ci = 0; ci < storedHeaders.length; ci++) {
-          const { name: col, idx } = storedHeaders[ci];
-          const val = String(arr[idx] ?? '');
-          if (!val) continue;
-          if (
-            (col.includes('일') || col.includes('날짜')) &&
-            !/^\d{4}[-./]\d{1,2}[-./]\d{1,2}/.test(val)
-          ) {
-            hasError = true;
-            break;
-          }
-          if (
-            (col.includes('연락처') || col.includes('전화') || col.includes('번호')) &&
-            !/^[\d\s\-+().]{7,20}$/.test(val)
-          ) {
-            hasError = true;
-            break;
-          }
-        }
-        if (hasError) errorRows++;
+        if (type === 'date' && !/^\d{4}[-./]\d{1,2}[-./]\d{1,2}/.test(val)) hasError = true;
+        if (type === 'phone' && !/^[\d\s\-+().]{7,20}$/.test(val)) hasError = true;
+        if (type === 'number' && !/^\d+(\.\d+)?$/.test(val)) hasError = true;
+        if (hasError) errorByColumn[colName]++;
       }
     }
 
-    self.postMessage({
-      type: 'validate-progress',
-      progress: Math.round((end / total) * 100),
-    });
+    self.postMessage({ type: 'validate-progress', progress: Math.round((end / total) * 100) });
   }
 
   self.postMessage({
@@ -120,7 +119,7 @@ function handleValidate(checks: SelectedChecks) {
     totalRows: total,
     missingRows: checks.missing ? missingRows : null,
     duplicateRows: checks.duplicate ? duplicateRows : null,
-    errorRows: checks.error ? errorRows : null,
+    errorByColumn: errorColMeta.length > 0 ? errorByColumn : null,
   });
 }
 
