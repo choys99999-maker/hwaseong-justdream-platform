@@ -10,7 +10,7 @@ interface StepMeta {
 
 const STEPS: StepMeta[] = [
   { key: 'select', label: '파일 선택', icon: FileUp },
-  { key: 'uploading', label: '업로드 중', icon: Loader2 },
+  { key: 'uploading', label: '업로드', icon: Loader2 },
   { key: 'columns', label: '열 인식 결과', icon: Columns3 },
   { key: 'validation', label: '누락·중복·오류 확인', icon: ShieldCheck },
   { key: 'done', label: '통합 반영 완료', icon: CheckCircle2 },
