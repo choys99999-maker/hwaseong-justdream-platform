@@ -26,6 +26,8 @@ interface KakaoDistrictMapProps {
   selectedSiteId: string | null;
   onSelectDistrict: (district: DistrictId | null) => void;
   onSelectSite: (siteId: string) => void;
+  /** 폴리곤·마커·컨트롤이 아닌 지도 배경을 클릭했을 때만 호출된다. */
+  onMapClick?: () => void;
 }
 
 interface PolygonEntry {
@@ -63,6 +65,7 @@ export default function KakaoDistrictMap({
   selectedSiteId,
   onSelectDistrict,
   onSelectSite,
+  onMapClick,
 }: KakaoDistrictMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapsRef = useRef<KakaoMapsNamespace | null>(null);
@@ -76,8 +79,8 @@ export default function KakaoDistrictMap({
   const [retryToken, setRetryToken] = useState(0);
 
   // 이벤트 핸들러가 최신 props 를 참조하되, 지도 객체를 다시 만들지 않도록 ref 로 보관한다.
-  const handlersRef = useRef({ onSelectDistrict, onSelectSite, selectedDistrict });
-  handlersRef.current = { onSelectDistrict, onSelectSite, selectedDistrict };
+  const handlersRef = useRef({ onSelectDistrict, onSelectSite, selectedDistrict, onMapClick });
+  handlersRef.current = { onSelectDistrict, onSelectSite, selectedDistrict, onMapClick };
 
   /** 선택 상태에 맞춰 폴리곤 스타일을 다시 적용한다. */
   const paintPolygons = useCallback(() => {
@@ -135,6 +138,11 @@ export default function KakaoDistrictMap({
         map.addControl(new maps.ZoomControl(), maps.ControlPosition.RIGHT);
         mapRef.current = map;
 
+        // 지도 배경 클릭(폴리곤·마커 제외)에만 반응한다. 폴리곤 클릭은 preventMap() 으로 이 이벤트를 막는다.
+        const onMapBackgroundClick = () => handlersRef.current.onMapClick?.();
+        maps.event.addListener(map, 'click', onMapBackgroundClick);
+        cleanupRef.current.push(() => maps.event.removeListener(map, 'click', onMapBackgroundClick));
+
         // 구 폴리곤: 행정동 경계를 소속 구로 그룹핑해 그린다(런타임 union 없음).
         districtBoundaries.forEach((district) => {
           district.areas.forEach((area) => {
@@ -146,7 +154,11 @@ export default function KakaoDistrictMap({
               });
               polygon.setMap(map);
 
-              const onClick = () => handlersRef.current.onSelectDistrict(district.id);
+              const onClick = () => {
+                // 폴리곤 클릭은 지도 배경 클릭(전체 화면 진입)으로 이어지지 않게 한다.
+                maps.event.preventMap();
+                handlersRef.current.onSelectDistrict(district.id);
+              };
               const onOver = () => {
                 hoveredDistrictRef.current = district.id;
                 paintPolygons();

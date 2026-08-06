@@ -70,6 +70,7 @@ export interface KakaoMapsNamespace {
   event: {
     addListener(target: object, type: string, handler: (...args: unknown[]) => void): void;
     removeListener(target: object, type: string, handler: (...args: unknown[]) => void): void;
+    preventMap(): void;
   };
   load(callback: () => void): void;
 }
