@@ -7,7 +7,7 @@ const servicePrefix = process.env.JUPYTERHUB_SERVICE_PREFIX
 const developmentBase = servicePrefix ? `${servicePrefix}proxy/absolute/5173/` : '/'
 
 export default defineConfig(({ command }) => ({
-  base: command === 'serve' ? developmentBase : '/wecandoit/',
+  base: command === 'serve' ? developmentBase : '/',
   plugins: [react(), tailwindcss()],
   server: {
     allowedHosts: ['ahnbi3.suwon.ac.kr'],
