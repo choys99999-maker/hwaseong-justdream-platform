@@ -1,50 +1,98 @@
+import { useState, useEffect } from 'react';
 import { Link, NavLink } from 'react-router-dom';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { NAV_ITEMS } from '../../config/navigation';
 import hwaseongLogo from '../../assets/hwaseong-signature.png';
 
-export default function Sidebar() {
-  return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
-      <Link
-        to="/"
-        aria-label="통합 대시보드 홈으로 이동"
-        className="flex flex-col items-center border-b border-slate-200 px-5 py-4 cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-inset"
-      >
-        <img
-          src={hwaseongLogo}
-          alt="화성특례시"
-          style={{ width: '130px', objectFit: 'contain' }}
-        />
-        <p className="mt-2 text-[12px] font-bold leading-snug text-center text-slate-700">
-          화성형 그냥드림 통합 운영 플랫폼
-        </p>
-      </Link>
+const STORAGE_KEY = 'sidebar-collapsed';
 
-      <nav className="flex-1 space-y-1 px-3 py-4">
+export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem(STORAGE_KEY) === 'true'
+  );
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, String(collapsed));
+  }, [collapsed]);
+
+  return (
+    <aside
+      className={`flex shrink-0 flex-col border-r border-slate-200 bg-white ${collapsed ? 'w-16' : 'w-64'}`}
+      style={{ transition: 'width 220ms ease-in-out' }}
+    >
+      {/* Brand */}
+      <div className="relative border-b border-slate-200">
+        <Link
+          to="/"
+          aria-label="통합 대시보드 홈으로 이동"
+          className={`flex flex-col items-center py-4 cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-inset overflow-hidden ${
+            collapsed ? 'px-2' : 'px-5'
+          }`}
+        >
+          <img
+            src={hwaseongLogo}
+            alt="화성특례시"
+            style={{
+              width: collapsed ? '32px' : '130px',
+              objectFit: 'contain',
+              transition: 'width 220ms ease-in-out',
+            }}
+          />
+          {!collapsed && (
+            <p className="mt-2 text-[12px] font-bold leading-snug text-center text-slate-700">
+              화성형 그냥드림 통합 운영 플랫폼
+            </p>
+          )}
+        </Link>
+
+        {/* Toggle button — sits centered on the right edge of the brand section */}
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+          aria-expanded={!collapsed}
+          className="absolute right-0 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm text-slate-400 hover:text-slate-700 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          style={{ transition: 'box-shadow 150ms ease-in-out' }}
+        >
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 space-y-1 px-2 py-4">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
           return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === '/'}
-              className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-                  isActive
-                    ? 'bg-teal-50 text-teal-700'
-                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                }`
-              }
-            >
-              <Icon size={18} />
-              {item.label}
-            </NavLink>
+            <div key={item.path} className="relative group">
+              <NavLink
+                to={item.path}
+                end={item.path === '/'}
+                className={({ isActive }) =>
+                  `flex items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+                    collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
+                  } ${
+                    isActive
+                      ? 'bg-teal-50 text-teal-700'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`
+                }
+              >
+                <Icon size={18} className="shrink-0" />
+                {!collapsed && item.label}
+              </NavLink>
+              {/* Tooltip — only rendered in collapsed mode */}
+              {collapsed && (
+                <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-xs text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+                  {item.label}
+                </span>
+              )}
+            </div>
           );
         })}
       </nav>
 
-      <div className="border-t border-slate-200 px-5 py-4 text-xs text-slate-400">
-        AI 화성 챌린지 시제품
+      {/* Footer */}
+      <div className="border-t border-slate-200 px-3 py-4 text-xs text-slate-400 overflow-hidden">
+        {!collapsed && 'AI 화성 챌린지 시제품'}
       </div>
     </aside>
   );
