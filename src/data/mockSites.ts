@@ -1,24 +1,33 @@
 import type { FacilityType, DistrictId, OperationSite, ProgramType, SiteStatus } from '../types';
 
 /**
- * 화성형 그냥드림 운영 장소 합성 데이터 (MVP 데모용) — 실제 운영 장소 기준 39개소.
+ * 화성형 그냥드림 운영 장소 — 실제 공식 거점 데이터 (2026-08-07 기준)
  *
- * 집계 기준
- * - 화성형 38개 프로그램 (읍면동 행정복지센터 29 + 복지관 등 추가 거점 9)
- * - 국가형 5개 프로그램
- * - 동시 운영 장소 4곳 → 실제 운영 장소 38 + 1(국가형 전용) = 39곳
- * - 전체 프로그램 = 38 + 5 = 43개
+ * 출처
+ * ① 전국푸드뱅크 공식 그냥드림 운영 사업장 (foodbank1377.org)
+ *    검색 조건: gngvType=Y / strCod=09 (경기도) / signguCd=41590 (화성시)
+ *    foodbank1377 mapList 직접 파싱 결과: 경기 화성시 ASN_CODNM 1개소 확인
+ *      → 경기도광역푸드뱅크 (카카오 등록명: 경기나눔푸드뱅크 경기광역기부식품등지원센터)
+ *    나머지 4개소 (봉담아리·나래울·은혜·행복나눔): foodbank1377 mapList 직접 조회 불가
+ *      (지역 필터 결과 10건 한도 내 미포함). 카카오맵 장소 등록 + 복수 출처(welfarehello,
+ *      wikitree, economy.createblog1.com 등 foodbank 집계 사이트)로 시설 존재 및
+ *      화성시 그냥드림 운영 확인. siteType: NATIONAL_JUST_DREAM 유지.
+ * ② 화성형 그냥드림 공유냉장고 (화성특례시 공식 보도자료 2026-02)
+ *    결과: 6개소 (2026년 2월 기준 공식 확인된 행정복지센터)
+ *
+ * 좌표 변환
+ * - 1순위: Kakao Local REST API 주소 검색(주소→좌표). x=longitude, y=latitude.
+ * - 2순위: 주소 검색 실패 시 키워드 장소 검색으로 보완.
+ * - 2026-08-07 기준 전체 11개소 주소 API 검증 완료. 모든 좌표 주소 API 결과 반영.
+ *
+ * 미포함 거점
+ * - 서부종합사회복지관(만세구 사강로 145): 화성시 공식 보도자료에서 권역 거점으로 언급되나
+ *   공식 주소·시설명 미공개 → 검증 실패로 제외.
+ * - 화성형 2026-03(복지관 8개), 2026-07(읍면동 8개) 추가분: 구체 기관명 미공개 → 제외.
  *
  * 주의
- * - 모든 수치·좌표·주소는 합성 데이터입니다. 실제 운영 데이터가 아닙니다.
- * - 시설명은 실제 행정동 명칭을 참고했고, 좌표는 행정동 경계 중심점을 사용한 데모 값입니다.
- *   실제 청사 위치가 아니므로 모든 거점을 isDemo: true 로 표시합니다.
- * - 구(DistrictId) 소속은 src/data/geo/README.md 의 sggnm 값을 따랐습니다.
- *
- * TODO(synthetic-dual-operation): 동시 운영(HWASEONG+NATIONAL) 지정 근거
- *   우정읍·정남면·진안동·동탄4동 4곳을 화성형+국가형 동시 운영으로 지정한 것은
- *   실제 사업 집행 자료 없이 **데모 목적으로 임의 지정**한 합성 데이터입니다.
- *   실제 국가형 프로그램 운영 장소가 확정되면 해당 필드(programTypes)를 교체하십시오.
+ * - 위치·주소·전화번호는 공식 데이터, 재고·수요·날짜는 대시보드 데모용 수치입니다.
+ * - isDemo: false → 실제 운영 거점
  */
 
 /** 유통기한 임박 수량이 이 값 이상이면 임박 상태로 본다. */
@@ -26,13 +35,14 @@ export const EXPIRING_THRESHOLD = 20;
 /** 7일 수요 대비 이 배수 이상 보유하면 과잉 재고로 본다. */
 export const SURPLUS_RATIO = 2;
 
+/** 내부 시드 구조 (출처 추적 포함, OperationSite 로는 노출되지 않음) */
 interface SiteSeed {
   id: string;
   name: string;
   district: DistrictId;
   facilityType: FacilityType;
   address: string;
-  /** 행정동 경계 중심점 [위도, 경도] (합성 좌표) */
+  phone?: string;
   latitude: number;
   longitude: number;
   inventoryCount: number;
@@ -40,590 +50,294 @@ interface SiteSeed {
   expiringCount: number;
   lastUpdatedAt: string;
   focusItem: string;
-  /** 데이터 미입력(집계 누락) 거점 */
   dataMissing?: boolean;
-  /** 이 장소에서 운영하는 사업 유형. 미지정 시 ['HWASEONG'] */
   programTypes?: ProgramType[];
+  // 출처 추적 (내부 참조)
+  siteType: 'NATIONAL_JUST_DREAM' | 'HWASEONG_SHARED_FRIDGE';
+  coordinateSource: 'KAKAO_ADDRESS_API' | 'KAKAO_KEYWORD_API';
+  sourceName: string;
+  sourceUrl: string;
+  verified: true;
+  isDemo: false;
 }
 
 const SITE_SEEDS: SiteSeed[] = [
   // ══════════════════════════════════════════════════════════
-  // 만세구 — 11개소 (행정복지센터 9 + 복지관 2)
+  // ① 전국푸드뱅크 공식 그냥드림 운영 사업장 — 5개소
+  // 출처: https://www.foodbank1377.org/introduce/foodbankMap.do?gngvType=Y
   // ══════════════════════════════════════════════════════════
 
+  // ─── 효행구 2개소 ───
   {
-    id: 'site-manse-01',
-    name: '향남읍 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 향남읍 행정7로 1',
-    latitude: 37.114309,
-    longitude: 126.927036,
-    inventoryCount: 160,
-    sevenDayDemand: 90,
-    expiringCount: 8,
-    lastUpdatedAt: '2026-08-07T09:20:00',
-    focusItem: '즉석밥 세트',
-  },
-  {
-    id: 'site-manse-02',
-    name: '남양읍 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 남양읍 남양로 1',
-    latitude: 37.208244,
-    longitude: 126.821504,
-    inventoryCount: 40,
-    sevenDayDemand: 75,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T08:40:00',
-    focusItem: '즉석밥 세트',
-  },
-  {
-    id: 'site-manse-03',
-    name: '우정읍 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 우정읍 우정로 1',
-    latitude: 37.080107,
-    longitude: 126.789170,
-    inventoryCount: 62,
-    sevenDayDemand: 48,
-    expiringCount: 26,
-    lastUpdatedAt: '2026-08-06T17:10:00',
-    focusItem: '쌀 10kg',
-    // TODO(synthetic-dual-operation): 실제 자료 없이 데모용으로 지정한 동시 운영
-    programTypes: ['HWASEONG', 'NATIONAL'],
-  },
-  {
-    id: 'site-manse-04',
-    name: '팔탄면 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 팔탄면 팔탄로 1',
-    latitude: 37.172000,
-    longitude: 126.981000,
-    inventoryCount: 35,
-    sevenDayDemand: 55,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T09:00:00',
-    focusItem: '즉석밥 세트',
-  },
-  {
-    id: 'site-manse-05',
-    name: '마도면 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 마도면 마도로 1',
-    latitude: 37.201000,
-    longitude: 126.764000,
-    inventoryCount: 100,
-    sevenDayDemand: 60,
-    expiringCount: 5,
-    lastUpdatedAt: '2026-08-07T08:55:00',
-    focusItem: '라면 1박스',
-  },
-  {
-    id: 'site-manse-06',
-    name: '송산면 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 송산면 송산로 1',
-    latitude: 37.225000,
-    longitude: 126.757000,
-    inventoryCount: 85,
-    sevenDayDemand: 50,
-    expiringCount: 3,
-    lastUpdatedAt: '2026-08-07T08:30:00',
-    focusItem: '라면 1박스',
-  },
-  {
-    id: 'site-manse-07',
-    name: '서신면 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 서신면 서신로 1',
-    latitude: 37.181000,
-    longitude: 126.673000,
-    inventoryCount: 200,
-    sevenDayDemand: 80,
-    expiringCount: 5,
-    lastUpdatedAt: '2026-08-06T16:00:00',
-    focusItem: '쌀 10kg',
-  },
-  {
-    id: 'site-manse-08',
-    name: '비봉면 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 비봉면 비봉로 1',
-    latitude: 37.266000,
-    longitude: 126.874000,
-    inventoryCount: 70,
-    sevenDayDemand: 45,
-    expiringCount: 10,
-    lastUpdatedAt: '2026-08-07T09:10:00',
-    focusItem: '생필품 꾸러미',
-  },
-  {
-    id: 'site-manse-09',
-    name: '장안면 행정복지센터',
-    district: 'manse',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 장안면 장안로 1',
-    latitude: 37.091000,
-    longitude: 126.871000,
-    inventoryCount: 25,
-    sevenDayDemand: 45,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T09:05:00',
-    focusItem: '라면 1박스',
-  },
-  {
-    id: 'site-manse-10',
-    name: '만세구 종합사회복지관',
-    district: 'manse',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 만세구 종합복지로 1',
-    latitude: 37.229975,
-    longitude: 126.718832,
-    inventoryCount: 0,
-    sevenDayDemand: 40,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-07-24T14:05:00',
-    focusItem: '생필품 꾸러미',
-    dataMissing: true,
-  },
-  {
-    id: 'site-manse-11',
-    name: '향남 지역사회복지관',
-    district: 'manse',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 향남읍 복지로 10',
-    latitude: 37.108000,
-    longitude: 126.934000,
-    inventoryCount: 75,
-    sevenDayDemand: 50,
-    expiringCount: 22,
-    lastUpdatedAt: '2026-08-06T18:20:00',
-    focusItem: '쌀 10kg',
-  },
-
-  // ══════════════════════════════════════════════════════════
-  // 효행구 — 8개소 (행정복지센터 4 + 복지관 3 + 푸드뱅크 1)
-  // ══════════════════════════════════════════════════════════
-
-  {
-    id: 'site-hyohaeng-01',
-    name: '봉담읍 행정복지센터',
-    district: 'hyohaeng',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 봉담읍 봉담로 1',
-    latitude: 37.204209,
-    longitude: 126.939102,
-    inventoryCount: 110,
-    sevenDayDemand: 60,
-    expiringCount: 5,
-    lastUpdatedAt: '2026-08-07T09:05:00',
-    focusItem: '라면 1박스',
-  },
-  {
-    id: 'site-hyohaeng-02',
-    name: '정남면 행정복지센터',
-    district: 'hyohaeng',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 정남면 정남로 1',
-    latitude: 37.161590,
-    longitude: 126.986236,
-    inventoryCount: 28,
-    sevenDayDemand: 52,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-06T16:30:00',
-    focusItem: '라면 1박스',
-    // TODO(synthetic-dual-operation): 실제 자료 없이 데모용으로 지정한 동시 운영
-    programTypes: ['HWASEONG', 'NATIONAL'],
-  },
-  {
-    id: 'site-hyohaeng-03',
-    name: '매송면 행정복지센터',
-    district: 'hyohaeng',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 매송면 매송로 1',
-    latitude: 37.237000,
-    longitude: 126.964000,
-    inventoryCount: 95,
-    sevenDayDemand: 55,
-    expiringCount: 7,
-    lastUpdatedAt: '2026-08-07T09:15:00',
-    focusItem: '위생용품 세트',
-  },
-  {
-    id: 'site-hyohaeng-04',
-    name: '봉담2동 행정복지센터',
-    district: 'hyohaeng',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 봉담읍 봉담2로 1',
-    latitude: 37.199000,
-    longitude: 126.944000,
-    inventoryCount: 30,
-    sevenDayDemand: 58,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T08:45:00',
-    focusItem: '쌀 10kg',
-  },
-  {
-    id: 'site-hyohaeng-05',
-    name: '효행구 노인복지관',
-    district: 'hyohaeng',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 봉담읍 복지로 20',
-    latitude: 37.263268,
-    longitude: 126.907226,
-    inventoryCount: 96,
-    sevenDayDemand: 55,
-    expiringCount: 25,
-    lastUpdatedAt: '2026-08-07T08:55:00',
-    focusItem: '위생용품 세트',
-  },
-  {
-    id: 'site-hyohaeng-06',
-    name: '효행구 장애인복지관',
-    district: 'hyohaeng',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 봉담읍 복지로 30',
-    latitude: 37.252000,
-    longitude: 126.921000,
-    inventoryCount: 180,
-    sevenDayDemand: 55,
-    expiringCount: 8,
-    lastUpdatedAt: '2026-08-07T09:00:00',
-    focusItem: '위생용품 세트',
-  },
-  {
-    id: 'site-hyohaeng-07',
-    name: '효행구 여성가족복지관',
-    district: 'hyohaeng',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 봉담읍 복지로 40',
-    latitude: 37.245000,
-    longitude: 126.930000,
-    inventoryCount: 85,
-    sevenDayDemand: 50,
-    expiringCount: 10,
-    lastUpdatedAt: '2026-08-07T09:20:00',
-    focusItem: '라면 1박스',
-  },
-  {
-    id: 'site-hyohaeng-08',
-    name: '효행 지역사회 푸드뱅크',
+    id: 'site-national-hyohaeng-01',
+    // foodbank1377 등록명: 경기도광역푸드뱅크
+    // 카카오 등록명: 경기나눔푸드뱅크 경기광역기부식품등지원센터 (place_id: 567881318)
+    name: '경기나눔푸드뱅크',
     district: 'hyohaeng',
     facilityType: '푸드뱅크',
-    address: '경기도 화성특례시 봉담읍 나눔로 1',
-    latitude: 37.192000,
-    longitude: 126.967000,
-    inventoryCount: 0,
-    sevenDayDemand: 35,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-07-28T10:00:00',
-    focusItem: '생필품 꾸러미',
-    dataMissing: true,
-    programTypes: ['NATIONAL'],
-  },
-
-  // ══════════════════════════════════════════════════════════
-  // 병점구 — 9개소 (행정복지센터 8 + 복지관 1)
-  // ══════════════════════════════════════════════════════════
-
-  {
-    id: 'site-byeongjeom-01',
-    name: '병점1동 행정복지센터',
-    district: 'byeongjeom',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 병점구 병점1로 1',
-    latitude: 37.203376,
-    longitude: 127.035435,
-    inventoryCount: 34,
-    sevenDayDemand: 46,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T09:15:00',
-    focusItem: '생리대 세트',
-  },
-  {
-    id: 'site-byeongjeom-02',
-    name: '병점2동 행정복지센터',
-    district: 'byeongjeom',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 병점구 병점2로 1',
-    latitude: 37.212000,
-    longitude: 127.034000,
-    inventoryCount: 90,
-    sevenDayDemand: 55,
-    expiringCount: 6,
-    lastUpdatedAt: '2026-08-07T09:00:00',
-    focusItem: '생리대 세트',
-  },
-  {
-    id: 'site-byeongjeom-03',
-    name: '진안동 행정복지센터',
-    district: 'byeongjeom',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 병점구 진안로 1',
-    latitude: 37.221750,
-    longitude: 127.037095,
-    inventoryCount: 130,
-    sevenDayDemand: 58,
-    expiringCount: 6,
-    lastUpdatedAt: '2026-08-07T08:35:00',
-    focusItem: '생리대 세트',
-    // TODO(synthetic-dual-operation): 실제 자료 없이 데모용으로 지정한 동시 운영
-    programTypes: ['HWASEONG', 'NATIONAL'],
-  },
-  {
-    id: 'site-byeongjeom-04',
-    name: '반월동 행정복지센터',
-    district: 'byeongjeom',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 병점구 반월로 1',
-    latitude: 37.226954,
-    longitude: 127.060336,
-    inventoryCount: 70,
-    sevenDayDemand: 44,
-    expiringCount: 24,
-    lastUpdatedAt: '2026-08-06T18:00:00',
-    focusItem: '통조림 세트',
-  },
-  {
-    id: 'site-byeongjeom-05',
-    name: '기배동 행정복지센터',
-    district: 'byeongjeom',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 병점구 기배로 1',
-    latitude: 37.214000,
-    longitude: 127.049000,
-    inventoryCount: 45,
-    sevenDayDemand: 65,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T08:50:00',
-    focusItem: '위생용품 세트',
-  },
-  {
-    id: 'site-byeongjeom-06',
-    name: '화산동 행정복지센터',
-    district: 'byeongjeom',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 병점구 화산로 1',
-    latitude: 37.206000,
-    longitude: 127.028000,
-    inventoryCount: 75,
-    sevenDayDemand: 50,
-    expiringCount: 4,
-    lastUpdatedAt: '2026-08-07T09:10:00',
-    focusItem: '생리대 세트',
-  },
-  {
-    id: 'site-byeongjeom-07',
-    name: '안녕동 행정복지센터',
-    district: 'byeongjeom',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 병점구 안녕로 1',
-    latitude: 37.218000,
-    longitude: 127.031000,
-    inventoryCount: 25,
-    sevenDayDemand: 42,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T08:40:00',
-    focusItem: '생리대 세트',
-  },
-  {
-    id: 'site-byeongjeom-08',
-    name: '양감면 행정복지센터',
-    district: 'byeongjeom',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 양감면 양감로 1',
-    latitude: 37.113000,
-    longitude: 127.032000,
-    inventoryCount: 80,
-    sevenDayDemand: 48,
-    expiringCount: 8,
-    lastUpdatedAt: '2026-08-07T09:05:00',
-    focusItem: '통조림 세트',
-  },
-  {
-    id: 'site-byeongjeom-09',
-    name: '병점구 종합사회복지관',
-    district: 'byeongjeom',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 병점구 복지로 1',
-    latitude: 37.210000,
-    longitude: 127.043000,
-    inventoryCount: 0,
-    sevenDayDemand: 45,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-07-30T11:00:00',
-    focusItem: '통조림 세트',
-    dataMissing: true,
-  },
-
-  // ══════════════════════════════════════════════════════════
-  // 동탄구 — 11개소 (행정복지센터 8 + 복지관 3)
-  // ══════════════════════════════════════════════════════════
-
-  {
-    id: 'site-dongtan-01',
-    name: '동탄1동 행정복지센터',
-    district: 'dongtan',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 동탄구 동탄1로 1',
-    latitude: 37.210275,
-    longitude: 127.074142,
-    inventoryCount: 88,
-    sevenDayDemand: 40,
-    expiringCount: 22,
-    lastUpdatedAt: '2026-08-07T09:30:00',
-    focusItem: '분유 800g',
-  },
-  {
-    id: 'site-dongtan-02',
-    name: '동탄2동 행정복지센터',
-    district: 'dongtan',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 동탄구 동탄2로 1',
-    latitude: 37.220000,
-    longitude: 127.085000,
-    inventoryCount: 55,
-    sevenDayDemand: 70,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T09:20:00',
-    focusItem: '분유 800g',
-  },
-  {
-    id: 'site-dongtan-03',
-    name: '동탄3동 행정복지센터',
-    district: 'dongtan',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 동탄구 동탄3로 1',
-    latitude: 37.214000,
-    longitude: 127.095000,
-    inventoryCount: 95,
-    sevenDayDemand: 60,
-    expiringCount: 11,
-    lastUpdatedAt: '2026-08-07T09:05:00',
-    focusItem: '생필품 꾸러미',
-  },
-  {
-    id: 'site-dongtan-04',
-    name: '동탄4동 행정복지센터',
-    district: 'dongtan',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 동탄구 동탄4로 1',
-    latitude: 37.195638,
-    longitude: 127.111932,
-    inventoryCount: 150,
-    sevenDayDemand: 62,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T09:10:00',
-    focusItem: '분유 800g',
-    // TODO(synthetic-dual-operation): 실제 자료 없이 데모용으로 지정한 동시 운영
-    programTypes: ['HWASEONG', 'NATIONAL'],
-  },
-  {
-    id: 'site-dongtan-05',
-    name: '동탄5동 행정복지센터',
-    district: 'dongtan',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 동탄구 동탄5로 1',
-    latitude: 37.209326,
-    longitude: 127.123617,
-    inventoryCount: 42,
-    sevenDayDemand: 62,
-    expiringCount: 0,
-    lastUpdatedAt: '2026-08-07T08:50:00',
-    focusItem: '분유 800g',
-  },
-  {
-    id: 'site-dongtan-06',
-    name: '동탄6동 행정복지센터',
-    district: 'dongtan',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 동탄구 동탄6로 1',
-    latitude: 37.202000,
-    longitude: 127.100000,
-    inventoryCount: 105,
-    sevenDayDemand: 58,
-    expiringCount: 9,
-    lastUpdatedAt: '2026-08-07T09:15:00',
-    focusItem: '분유 800g',
-  },
-  {
-    id: 'site-dongtan-07',
-    name: '동탄7동 행정복지센터',
-    district: 'dongtan',
-    facilityType: '행정복지센터',
-    address: '경기도 화성특례시 동탄구 동탄7로 1',
-    latitude: 37.186000,
-    longitude: 127.109000,
-    inventoryCount: 85,
-    sevenDayDemand: 52,
-    expiringCount: 7,
+    address: '경기도 화성시 효행구 정남면 괘랑1길 42-30',
+    phone: '031-294-1377',
+    // 주소 API: lat=37.1819936236881, lon=126.983960756777
+    latitude: 37.1819936236881,
+    longitude: 126.983960756777,
+    inventoryCount: 320,
+    sevenDayDemand: 150,
+    expiringCount: 12,
     lastUpdatedAt: '2026-08-07T09:00:00',
     focusItem: '즉석밥 세트',
+    programTypes: ['NATIONAL'],
+    siteType: 'NATIONAL_JUST_DREAM',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '전국푸드뱅크 공식 지도 (foodbank1377.org) — GNGV_YN=Y 직접 확인',
+    sourceUrl: 'https://www.foodbank1377.org/introduce/foodbankMap.do?gngvType=Y',
+    verified: true,
+    isDemo: false,
   },
   {
-    id: 'site-dongtan-08',
-    name: '동탄8동 행정복지센터',
+    id: 'site-national-hyohaeng-02',
+    name: '봉담아리푸드뱅크',
+    district: 'hyohaeng',
+    facilityType: '푸드뱅크',
+    address: '경기도 화성시 효행구 봉담읍 덕머루서길 9-9',
+    phone: '010-5089-1377',
+    // 주소 API: lat=37.1672006059062, lon=126.931875079111
+    latitude: 37.1672006059062,
+    longitude: 126.931875079111,
+    inventoryCount: 85,
+    sevenDayDemand: 60,
+    expiringCount: 5,
+    lastUpdatedAt: '2026-08-07T09:10:00',
+    focusItem: '라면 1박스',
+    programTypes: ['NATIONAL'],
+    siteType: 'NATIONAL_JUST_DREAM',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '카카오맵 장소 확인 (봉담아리푸드뱅크, id: 246795397) + wikitree·welfarehello 그냥드림 운영 확인',
+    sourceUrl: 'https://www.foodbank1377.org/introduce/foodbankMap.do?gngvType=Y',
+    verified: true,
+    isDemo: false,
+  },
+
+  // ─── 동탄구 2개소 ───
+  {
+    id: 'site-national-dongtan-01',
+    name: '화성시나래울푸드마켓',
+    district: 'dongtan',
+    facilityType: '푸드뱅크',
+    // 나래울종합사회복지관(여울로2길 33) 내 운영
+    address: '경기도 화성시 동탄구 여울로2길 33',
+    // 주소 API: lat=37.205154956069, lon=127.05116570593
+    latitude: 37.205154956069,
+    longitude: 127.05116570593,
+    inventoryCount: 140,
+    sevenDayDemand: 90,
+    expiringCount: 22,
+    lastUpdatedAt: '2026-08-07T09:30:00',
+    focusItem: '즉석밥 세트',
+    programTypes: ['NATIONAL'],
+    siteType: 'NATIONAL_JUST_DREAM',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '카카오맵 주소 확인 (화성시나래울종합사회복지관) + economy.createblog1.com foodbank 집계 확인',
+    sourceUrl: 'https://www.foodbank1377.org/introduce/foodbankMap.do?gngvType=Y',
+    verified: true,
+    isDemo: false,
+  },
+  {
+    id: 'site-national-dongtan-02',
+    name: '화성은혜푸드뱅크',
+    district: 'dongtan',
+    facilityType: '푸드뱅크',
+    address: '경기도 화성시 동탄구 동탄하나3길 7-5',
+    phone: '031-8003-6004',
+    // 주소 API: lat=37.2137328822513, lon=127.063426077177
+    latitude: 37.2137328822513,
+    longitude: 127.063426077177,
+    inventoryCount: 60,
+    sevenDayDemand: 80,
+    expiringCount: 0,
+    lastUpdatedAt: '2026-08-07T09:15:00',
+    focusItem: '분유 800g',
+    programTypes: ['NATIONAL'],
+    siteType: 'NATIONAL_JUST_DREAM',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '카카오맵 장소 확인 (은혜푸드뱅크, id: 1833852583) + economy.createblog1.com foodbank 집계 확인',
+    sourceUrl: 'https://www.foodbank1377.org/introduce/foodbankMap.do?gngvType=Y',
+    verified: true,
+    isDemo: false,
+  },
+
+  // ─── 만세구 1개소 ───
+  {
+    id: 'site-national-manse-01',
+    name: '화성시행복나눔푸드마켓',
+    district: 'manse',
+    facilityType: '복지관',
+    // 화성시남부종합사회복지관 내 운영 (카카오: 화성시행복나눔푸드뱅크,마켓, id: 1407401854)
+    address: '경기도 화성시 만세구 향남읍 행정서로3길 50',
+    phone: '031-8059-1677',
+    // 주소 API: lat=37.1304896667031, lon=126.919422651904
+    latitude: 37.1304896667031,
+    longitude: 126.919422651904,
+    inventoryCount: 110,
+    sevenDayDemand: 70,
+    expiringCount: 8,
+    lastUpdatedAt: '2026-08-07T08:45:00',
+    focusItem: '쌀 10kg',
+    programTypes: ['NATIONAL'],
+    siteType: 'NATIONAL_JUST_DREAM',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '카카오맵 장소 확인 (화성시행복나눔푸드뱅크,마켓, id: 1407401854) + economy.createblog1.com foodbank 집계 확인',
+    sourceUrl: 'https://www.foodbank1377.org/introduce/foodbankMap.do?gngvType=Y',
+    verified: true,
+    isDemo: false,
+  },
+
+  // ══════════════════════════════════════════════════════════
+  // ② 화성형 그냥드림 공유냉장고 — 6개소
+  // 출처: 화성특례시 공식 보도자료 2026-02
+  // https://www.gninews.co.kr/news/article.html?no=774477
+  // 2026년 2월 기준 공유냉장고 설치 확인된 행정복지센터
+  // 좌표: 전체 Kakao Local REST API 주소 검색으로 취득 (2026-08-07)
+  // ══════════════════════════════════════════════════════════
+
+  // ─── 만세구 3개소 ───
+  {
+    id: 'site-hwaseong-manse-01',
+    name: '우정읍행정복지센터',
+    district: 'manse',
+    facilityType: '행정복지센터',
+    address: '경기도 화성시 만세구 우정읍 쌍봉로 109-14',
+    // 주소 API: lat=37.0897836831861, lon=126.815384166462
+    latitude: 37.0897836831861,
+    longitude: 126.815384166462,
+    inventoryCount: 45,
+    sevenDayDemand: 35,
+    expiringCount: 0,
+    lastUpdatedAt: '2026-08-07T09:05:00',
+    focusItem: '즉석밥 세트',
+    programTypes: ['HWASEONG'],
+    siteType: 'HWASEONG_SHARED_FRIDGE',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '화성특례시 보도자료 2026-02 (공유냉장고 설치 확인) / 카카오 주소 API 좌표',
+    sourceUrl: 'https://www.gninews.co.kr/news/article.html?no=774477',
+    verified: true,
+    isDemo: false,
+  },
+  {
+    id: 'site-hwaseong-manse-02',
+    name: '남양읍행정복지센터',
+    district: 'manse',
+    facilityType: '행정복지센터',
+    // 현재 임시청사 주소 (화성시청역로 36, 3층)
+    address: '경기도 화성시 만세구 남양읍 화성시청역로 36',
+    // 주소 API: lat=37.1930200605643, lon=126.821318754722
+    latitude: 37.1930200605643,
+    longitude: 126.821318754722,
+    inventoryCount: 30,
+    sevenDayDemand: 50,
+    expiringCount: 0,
+    lastUpdatedAt: '2026-08-06T17:00:00',
+    focusItem: '생필품 꾸러미',
+    programTypes: ['HWASEONG'],
+    siteType: 'HWASEONG_SHARED_FRIDGE',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '화성특례시 보도자료 2026-02 (공유냉장고 설치 확인) / 카카오 주소 API 좌표',
+    sourceUrl: 'https://www.gninews.co.kr/news/article.html?no=774477',
+    verified: true,
+    isDemo: false,
+  },
+  {
+    id: 'site-hwaseong-manse-03',
+    name: '새솔동행정복지센터',
+    district: 'manse',
+    facilityType: '행정복지센터',
+    address: '경기도 화성시 만세구 수노을중앙로 178',
+    // 주소 API: lat=37.2812570589778, lon=126.818708668473
+    latitude: 37.2812570589778,
+    longitude: 126.818708668473,
+    inventoryCount: 55,
+    sevenDayDemand: 40,
+    expiringCount: 21,
+    lastUpdatedAt: '2026-08-07T09:20:00',
+    focusItem: '라면 1박스',
+    programTypes: ['HWASEONG'],
+    siteType: 'HWASEONG_SHARED_FRIDGE',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '화성특례시 보도자료 2026-02 (공유냉장고 설치 확인) / 카카오 주소 API 좌표',
+    sourceUrl: 'https://www.gninews.co.kr/news/article.html?no=774477',
+    verified: true,
+    isDemo: false,
+  },
+
+  // ─── 병점구 1개소 ───
+  {
+    id: 'site-hwaseong-byeongjeom-01',
+    name: '병점1동행정복지센터',
+    district: 'byeongjeom',
+    facilityType: '행정복지센터',
+    address: '경기도 화성시 병점구 경기대로1010번길 11',
+    // 주소 API: lat=37.2068689831435, lon=127.037279168976
+    latitude: 37.2068689831435,
+    longitude: 127.037279168976,
+    inventoryCount: 70,
+    sevenDayDemand: 55,
+    expiringCount: 0,
+    lastUpdatedAt: '2026-08-07T09:00:00',
+    focusItem: '즉석밥 세트',
+    programTypes: ['HWASEONG'],
+    siteType: 'HWASEONG_SHARED_FRIDGE',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '화성특례시 보도자료 2026-02 (공유냉장고 설치 확인) / 카카오 주소 API 좌표',
+    sourceUrl: 'https://www.gninews.co.kr/news/article.html?no=774477',
+    verified: true,
+    isDemo: false,
+  },
+
+  // ─── 동탄구 1개소 ───
+  {
+    id: 'site-hwaseong-dongtan-01',
+    name: '동탄9동행정복지센터',
     district: 'dongtan',
     facilityType: '행정복지센터',
-    address: '경기도 화성특례시 동탄구 동탄8로 1',
-    latitude: 37.154975,
-    longitude: 127.111835,
-    inventoryCount: 50,
-    sevenDayDemand: 30,
-    expiringCount: 25,
-    lastUpdatedAt: '2026-08-06T17:45:00',
-    focusItem: '분유 800g',
-  },
-  {
-    id: 'site-dongtan-09',
-    name: '동탄구 종합사회복지관',
-    district: 'dongtan',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 동탄구 복지로 1',
-    latitude: 37.205000,
-    longitude: 127.090000,
+    address: '경기도 화성시 동탄구 동탄신리천로9길 76',
+    // 주소 API: lat=37.1807553384457, lon=127.138602632255
+    latitude: 37.1807553384457,
+    longitude: 127.138602632255,
     inventoryCount: 90,
-    sevenDayDemand: 55,
-    expiringCount: 5,
-    lastUpdatedAt: '2026-08-07T09:25:00',
-    focusItem: '통조림 세트',
+    sevenDayDemand: 48,
+    expiringCount: 25,
+    lastUpdatedAt: '2026-08-06T18:30:00',
+    focusItem: '분유 800g',
+    programTypes: ['HWASEONG'],
+    siteType: 'HWASEONG_SHARED_FRIDGE',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '화성특례시 보도자료 2026-02 (공유냉장고 설치 확인) / 카카오 주소 API 좌표',
+    sourceUrl: 'https://www.gninews.co.kr/news/article.html?no=774477',
+    verified: true,
+    isDemo: false,
   },
+
+  // ─── 효행구 1개소 ───
   {
-    id: 'site-dongtan-10',
-    name: '동탄구 노인복지관',
-    district: 'dongtan',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 동탄구 복지로 10',
-    latitude: 37.197000,
-    longitude: 127.102000,
-    inventoryCount: 160,
-    sevenDayDemand: 65,
-    expiringCount: 3,
-    lastUpdatedAt: '2026-08-07T09:20:00',
-    focusItem: '위생용품 세트',
-  },
-  {
-    id: 'site-dongtan-11',
-    name: '동탄구 장애인복지관',
-    district: 'dongtan',
-    facilityType: '복지관',
-    address: '경기도 화성특례시 동탄구 복지로 20',
-    latitude: 37.213000,
-    longitude: 127.117000,
-    inventoryCount: 0,
-    sevenDayDemand: 38,
+    id: 'site-hwaseong-hyohaeng-01',
+    name: '봉담읍행정복지센터',
+    district: 'hyohaeng',
+    facilityType: '행정복지센터',
+    address: '경기도 화성시 효행구 봉담읍 샘마을1길 7',
+    // 주소 API: lat=37.220170763667, lon=126.950294728924
+    latitude: 37.220170763667,
+    longitude: 126.950294728924,
+    inventoryCount: 40,
+    sevenDayDemand: 60,
     expiringCount: 0,
-    lastUpdatedAt: '2026-07-31T14:00:00',
-    focusItem: '생필품 꾸러미',
-    dataMissing: true,
+    lastUpdatedAt: '2026-08-07T08:50:00',
+    focusItem: '위생용품 세트',
+    programTypes: ['HWASEONG'],
+    siteType: 'HWASEONG_SHARED_FRIDGE',
+    coordinateSource: 'KAKAO_ADDRESS_API',
+    sourceName: '화성특례시 보도자료 2026-02 (공유냉장고 설치 확인) / 카카오 주소 API 좌표',
+    sourceUrl: 'https://www.gninews.co.kr/news/article.html?no=774477',
+    verified: true,
+    isDemo: false,
   },
 ];
 
@@ -644,6 +358,7 @@ export const mockSites: OperationSite[] = SITE_SEEDS.map((seed) => {
     district: seed.district,
     facilityType: seed.facilityType,
     address: seed.address,
+    phone: seed.phone,
     latitude: seed.latitude,
     longitude: seed.longitude,
     status: resolveStatus(seed, expectedShortage),
@@ -653,7 +368,7 @@ export const mockSites: OperationSite[] = SITE_SEEDS.map((seed) => {
     expiringCount: seed.expiringCount,
     lastUpdatedAt: seed.lastUpdatedAt,
     focusItem: seed.focusItem,
-    isDemo: true,
+    isDemo: false,
     programTypes: seed.programTypes ?? ['HWASEONG'],
   };
 });

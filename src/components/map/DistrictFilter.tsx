@@ -5,15 +5,18 @@ interface DistrictFilterProps {
   selectedDistrict: DistrictId | null;
   districtRiskLevels: Record<DistrictId, SiteStatus>;
   onSelect: (district: DistrictId | null) => void;
+  /** true 이면 버튼을 더 작게 렌더링한다. */
+  compact?: boolean;
 }
 
 /** 지도 위 구 필터. 폴리곤 선택 상태와 항상 같은 값을 공유한다. */
-export default function DistrictFilter({ selectedDistrict, districtRiskLevels, onSelect }: DistrictFilterProps) {
-  const baseClass =
-    'inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500';
+export default function DistrictFilter({ selectedDistrict, districtRiskLevels, onSelect, compact }: DistrictFilterProps) {
+  const baseClass = compact
+    ? 'inline-flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500'
+    : 'inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500';
 
   return (
-    <div className="-mx-1 flex flex-wrap gap-2 overflow-x-auto px-1 pb-0.5" role="group" aria-label="구역 필터">
+    <div className="flex flex-wrap gap-1.5 overflow-x-auto" role="group" aria-label="구역 필터">
       <button
         type="button"
         onClick={() => onSelect(null)}

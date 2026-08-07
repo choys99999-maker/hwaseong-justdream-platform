@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Boxes, MapPin, PackageSearch, Repeat2, TimerReset } from 'lucide-react';
-import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
 import StatusBadge from '../components/common/StatusBadge';
 import EmptyState from '../components/common/EmptyState';
@@ -26,30 +25,25 @@ export default function DashboardPage() {
   const [isProgramModalOpen, setIsProgramModalOpen] = useState(false);
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="통합 대시보드"
-        description="거점별 재고 불균형을 확인하고 재배분 여부를 판단합니다."
-      />
-
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {/* 운영 프로그램 카드 — 클릭 시 상세 패널 */}
         <button
           type="button"
           onClick={() => setIsProgramModalOpen(true)}
-          className="rounded-xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="rounded-xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-sm text-slate-500">운영 프로그램</p>
-              <p className="mt-2 text-2xl font-semibold text-slate-900">{PROGRAM_SUMMARY.total}개</p>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="text-xs text-slate-500">운영 프로그램</p>
+              <p className="mt-1.5 text-xl font-semibold text-slate-900">{PROGRAM_SUMMARY.total}개</p>
+              <p className="mt-0.5 text-xs text-slate-400">
                 화성형 {PROGRAM_SUMMARY.hwaseong} · 국가형 {PROGRAM_SUMMARY.national}
               </p>
-              <p className="mt-0.5 text-xs text-teal-600">실제 운영 장소 {PROGRAM_SUMMARY.locationCount}곳 ↗</p>
+              <p className="mt-0.5 text-xs text-teal-600">운영 장소 {PROGRAM_SUMMARY.locationCount}곳 ↗</p>
             </div>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
-              <MapPin size={20} />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
+              <MapPin size={17} />
             </div>
           </div>
         </button>
@@ -58,7 +52,7 @@ export default function DashboardPage() {
           label="7일 내 부족 예상"
           value={`${formatNumber(citySummary.shortageSiteCount)}개소`}
           icon={PackageSearch}
-          description={`예상 부족 ${formatNumber(citySummary.shortageQuantity)}개`}
+          description={`부족 ${formatNumber(citySummary.shortageQuantity)}개`}
           tone="danger"
         />
         <StatCard

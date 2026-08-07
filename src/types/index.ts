@@ -89,8 +89,10 @@ export interface OperationSite {
   isDemo: boolean;
   /** 이 장소에서 운영하는 사업 유형 목록. 동시 운영이면 두 값 모두 포함된다. */
   programTypes: ProgramType[];
-  /** 주소 (합성 데이터) */
+  /** 주소 */
   address?: string;
+  /** 전화번호 (공식 확인된 경우) */
+  phone?: string;
 }
 
 export interface OperationSummary {
