@@ -1,4 +1,4 @@
-import { ClipboardList, LayoutDashboard, MapPinned, PackageSearch, Trash2, UploadCloud, type LucideIcon } from 'lucide-react';
+import { ClipboardList, FolderClosed, LayoutDashboard, MapPinned, PackageSearch, UploadCloud, type LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   path: string;
@@ -12,7 +12,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/support-records', label: '이용·지원 내역', icon: ClipboardList },
   { path: '/inventory', label: '물품·유통기한', icon: PackageSearch },
   { path: '/upload', label: '데이터 업로드', icon: UploadCloud },
-  { path: '/delete', label: '데이터 삭제', icon: Trash2 },
+  { path: '/files', label: '파일 관리', icon: FolderClosed },
 ];
 
 export function getPageTitle(pathname: string): string {

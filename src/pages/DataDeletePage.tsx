@@ -1,9 +1,10 @@
-import { FileSpreadsheet, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { FileSpreadsheet, FolderClosed, Plus, Trash2 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
 import { useDataStore } from '../store/dataStore';
 
-export default function DataDeletePage() {
+export default function FileManagePage() {
   const { datasets, activeId, isLoading, removeDataset, clearAll } = useDataStore();
 
   if (isLoading) return null;
@@ -12,13 +13,21 @@ export default function DataDeletePage() {
     return (
       <div className="space-y-6">
         <PageHeader
-          title="데이터 삭제"
-          description="저장된 파일을 선택하여 삭제할 수 있습니다."
+          title="파일 관리"
+          description="저장된 파일을 관리하거나 새 파일을 추가할 수 있습니다."
+          actions={
+            <Link
+              to="/upload"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-teal-700"
+            >
+              <Plus size={15} /> 파일 추가
+            </Link>
+          }
         />
         <EmptyState
-          icon={Trash2}
-          title="삭제할 파일이 없습니다"
-          message="업로드된 데이터가 없습니다."
+          icon={FolderClosed}
+          title="저장된 파일이 없습니다"
+          message="파일 추가 버튼을 눌러 엑셀 파일을 업로드해 주세요."
         />
       </div>
     );
@@ -39,16 +48,24 @@ export default function DataDeletePage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="데이터 삭제"
-        description="저장된 파일을 선택하여 삭제할 수 있습니다."
+        title="파일 관리"
+        description="저장된 파일을 관리하거나 새 파일을 추가할 수 있습니다."
         actions={
-          <button
-            type="button"
-            onClick={handleClearAll}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100"
-          >
-            <Trash2 size={15} /> 전체 삭제
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100"
+            >
+              <Trash2 size={15} /> 전체 삭제
+            </button>
+            <Link
+              to="/upload"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-teal-700"
+            >
+              <Plus size={15} /> 파일 추가
+            </Link>
+          </div>
         }
       />
 

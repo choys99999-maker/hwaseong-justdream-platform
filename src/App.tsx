@@ -6,7 +6,7 @@ import RegionDetailPage from './pages/RegionDetailPage';
 import SupportRecordsPage from './pages/SupportRecordsPage';
 import InventoryPage from './pages/InventoryPage';
 import DataUploadPage from './pages/DataUploadPage';
-import DataDeletePage from './pages/DataDeletePage';
+import FileManagePage from './pages/DataDeletePage';
 
 export default function App() {
   return (
@@ -18,7 +18,7 @@ export default function App() {
         <Route path="/support-records" element={<SupportRecordsPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/upload" element={<DataUploadPage />} />
-        <Route path="/delete" element={<DataDeletePage />} />
+        <Route path="/files" element={<FileManagePage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
