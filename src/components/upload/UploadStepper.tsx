@@ -40,7 +40,7 @@ export default function UploadStepper({ currentStep }: UploadStepperProps) {
                     : 'bg-slate-100 text-slate-400'
               }`}
             >
-              <Icon size={16} className={isCurrent && step.key === 'uploading' ? 'animate-spin' : ''} />
+              {isCompleted ? <Check size={16} /> : <Icon size={16} />}
               {step.label}
             </div>
             {index < STEPS.length - 1 && <div className="h-px w-6 bg-slate-200" />}
