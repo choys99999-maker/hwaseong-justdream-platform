@@ -16,6 +16,11 @@ const POLYGON_STYLE = {
 
 const BOUNDS_PADDING = 24;
 const RELAYOUT_DEBOUNCE_MS = 160;
+/**
+ * 카카오맵 레벨(level) 이 이 값 이상이면 구 단위 클러스터 오버레이를 표시하고
+ * 개별 마커는 숨긴다. Kakao level ≥ 9 ≈ 화성시 전체가 뷰포트에 들어오는 광역 줌.
+ */
+const CLUSTER_ZOOM_THRESHOLD = 9;
 
 type MapPhase = 'loading' | 'ready' | 'missing-key' | 'error';
 
@@ -28,6 +33,8 @@ interface KakaoDistrictMapProps {
   onSelectSite: (siteId: string) => void;
   /** 폴리곤·마커·컨트롤이 아닌 지도 배경을 클릭했을 때만 호출된다. */
   onMapClick?: () => void;
+  /** 마커 가시성 필터. 반환값이 false 면 해당 거점 마커를 숨긴다. */
+  filterFn?: (site: OperationSite) => boolean;
 }
 
 interface PolygonEntry {
@@ -39,6 +46,12 @@ interface MarkerEntry {
   site: OperationSite;
   overlay: KakaoCustomOverlay;
   element: HTMLButtonElement;
+}
+
+interface ClusterEntry {
+  districtId: DistrictId;
+  overlay: KakaoCustomOverlay;
+  element: HTMLDivElement;
 }
 
 function createMarkerElement(site: OperationSite): HTMLButtonElement {
@@ -58,6 +71,14 @@ function createMarkerElement(site: OperationSite): HTMLButtonElement {
   return button;
 }
 
+function createClusterElement(districtName: string): HTMLDivElement {
+  const div = document.createElement('div');
+  div.className = 'gj-cluster';
+  div.setAttribute('aria-label', `${districtName} 클러스터`);
+  div.textContent = '0';
+  return div;
+}
+
 export default function KakaoDistrictMap({
   sites,
   districtRiskLevels,
@@ -66,21 +87,29 @@ export default function KakaoDistrictMap({
   onSelectDistrict,
   onSelectSite,
   onMapClick,
+  filterFn,
 }: KakaoDistrictMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapsRef = useRef<KakaoMapsNamespace | null>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const polygonsRef = useRef<PolygonEntry[]>([]);
   const markersRef = useRef<MarkerEntry[]>([]);
+  const clusterOverlaysRef = useRef<ClusterEntry[]>([]);
   const hoveredDistrictRef = useRef<DistrictId | null>(null);
   const cleanupRef = useRef<(() => void)[]>([]);
 
   const [phase, setPhase] = useState<MapPhase>('loading');
   const [retryToken, setRetryToken] = useState(0);
+  /** true = 광역 줌(level ≥ CLUSTER_ZOOM_THRESHOLD). 구 단위 클러스터 원을 표시한다. */
+  const [clusterMode, setClusterMode] = useState(true);
 
   // 이벤트 핸들러가 최신 props 를 참조하되, 지도 객체를 다시 만들지 않도록 ref 로 보관한다.
   const handlersRef = useRef({ onSelectDistrict, onSelectSite, selectedDistrict, onMapClick });
   handlersRef.current = { onSelectDistrict, onSelectSite, selectedDistrict, onMapClick };
+
+  // filterFn 은 useCallback 으로 안정화된 참조이므로 ref 에 최신값을 보관한다.
+  const filterFnRef = useRef(filterFn);
+  filterFnRef.current = filterFn;
 
   /** 선택 상태에 맞춰 폴리곤 스타일을 다시 적용한다. */
   const paintPolygons = useCallback(() => {
@@ -138,12 +167,20 @@ export default function KakaoDistrictMap({
         map.addControl(new maps.ZoomControl(), maps.ControlPosition.RIGHT);
         mapRef.current = map;
 
-        // 지도 배경 클릭(폴리곤·마커 제외)에만 반응한다. 폴리곤 클릭은 preventMap() 으로 이 이벤트를 막는다.
+        // 지도 배경 클릭(폴리곤·마커 제외)에만 반응한다.
         const onMapBackgroundClick = () => handlersRef.current.onMapClick?.();
         maps.event.addListener(map, 'click', onMapBackgroundClick);
         cleanupRef.current.push(() => maps.event.removeListener(map, 'click', onMapBackgroundClick));
 
-        // 구 폴리곤: 행정동 경계를 소속 구로 그룹핑해 그린다(런타임 union 없음).
+        // 줌 변경 → 클러스터 모드 전환
+        const onZoomChanged = () => {
+          const level = mapRef.current?.getLevel() ?? 9;
+          setClusterMode(level >= CLUSTER_ZOOM_THRESHOLD);
+        };
+        maps.event.addListener(map, 'zoom_changed', onZoomChanged);
+        cleanupRef.current.push(() => maps.event.removeListener(map, 'zoom_changed', onZoomChanged));
+
+        // 구 폴리곤
         districtBoundaries.forEach((district) => {
           district.areas.forEach((area) => {
             area.polygons.forEach((rings) => {
@@ -155,7 +192,6 @@ export default function KakaoDistrictMap({
               polygon.setMap(map);
 
               const onClick = () => {
-                // 폴리곤 클릭은 지도 배경 클릭(전체 화면 진입)으로 이어지지 않게 한다.
                 maps.event.preventMap();
                 handlersRef.current.onSelectDistrict(district.id);
               };
@@ -199,13 +235,42 @@ export default function KakaoDistrictMap({
             zIndex: 5,
             clickable: true,
           });
-          overlay.setMap(map);
+          // 초기에는 지도에 붙이지 않는다. effect 2 에서 관리한다.
 
           cleanupRef.current.push(() => {
             element.removeEventListener('click', onClick);
             overlay.setMap(null);
           });
           markersRef.current.push({ site, overlay, element });
+        });
+
+        // 구 단위 클러스터 오버레이 (구당 1개)
+        districtBoundaries.forEach((district) => {
+          const [minLng, minLat, maxLng, maxLat] = getDistrictBBox(district.id);
+          const centerLat = (minLat + maxLat) / 2;
+          const centerLng = (minLng + maxLng) / 2;
+
+          const element = createClusterElement(district.name);
+          const onClusterClick = (e: MouseEvent) => {
+            e.stopPropagation();
+            handlersRef.current.onSelectDistrict(district.id);
+          };
+          element.addEventListener('click', onClusterClick);
+
+          const overlay = new maps.CustomOverlay({
+            position: new maps.LatLng(centerLat, centerLng),
+            content: element,
+            yAnchor: 0.5,
+            xAnchor: 0.5,
+            zIndex: 7,
+            clickable: true,
+          });
+
+          cleanupRef.current.push(() => {
+            element.removeEventListener('click', onClusterClick);
+            overlay.setMap(null);
+          });
+          clusterOverlaysRef.current.push({ districtId: district.id, overlay, element });
         });
 
         paintPolygons();
@@ -228,6 +293,7 @@ export default function KakaoDistrictMap({
       cleanupRef.current = [];
       polygonsRef.current = [];
       markersRef.current = [];
+      clusterOverlaysRef.current = [];
       hoveredDistrictRef.current = null;
       mapRef.current = null;
       mapsRef.current = null;
@@ -236,16 +302,36 @@ export default function KakaoDistrictMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryToken]);
 
-  // 2) 구 선택 변경 → 폴리곤 스타일, 마커 표시 범위, 지도 범위 갱신
+  // 2) 구 선택·필터·클러스터 모드 변경 → 마커/클러스터 가시성 및 폴리곤 스타일 갱신
   useEffect(() => {
     if (phase !== 'ready') return;
     paintPolygons();
+
+    const fn = filterFnRef.current;
+    const inClusterMode = clusterMode && selectedDistrict === null;
+
+    // 개별 마커
     markersRef.current.forEach(({ site, overlay }) => {
-      const visible = selectedDistrict === null || site.district === selectedDistrict;
-      overlay.setMap(visible ? mapRef.current : null);
+      const districtVisible = selectedDistrict === null || site.district === selectedDistrict;
+      const filterVisible = !fn || fn(site);
+      overlay.setMap(!inClusterMode && districtVisible && filterVisible ? mapRef.current : null);
     });
+
+    // 구 클러스터 오버레이
+    clusterOverlaysRef.current.forEach(({ districtId, overlay, element }) => {
+      if (!inClusterMode) {
+        overlay.setMap(null);
+        return;
+      }
+      const count = markersRef.current.filter(
+        (m) => m.site.district === districtId && (!fn || fn(m.site)),
+      ).length;
+      element.textContent = String(count);
+      overlay.setMap(count > 0 ? mapRef.current : null);
+    });
+
     fitBounds(selectedDistrict);
-  }, [phase, selectedDistrict, paintPolygons, fitBounds]);
+  }, [phase, selectedDistrict, filterFn, clusterMode, paintPolygons, fitBounds]);
 
   // 3) 거점 선택 표시
   useEffect(() => {
@@ -288,7 +374,6 @@ export default function KakaoDistrictMap({
   };
 
   return (
-    // ring 은 레이아웃 크기에 영향을 주지 않아 지도 영역 최소 높이를 그대로 유지한다.
     <div className="relative h-full w-full overflow-hidden rounded-lg bg-slate-100 ring-1 ring-slate-200">
       <div
         ref={containerRef}

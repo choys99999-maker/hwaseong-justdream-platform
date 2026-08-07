@@ -67,3 +67,30 @@ body {
 .gj-marker[data-selected='true'] .gj-marker-label {
   opacity: 1;
 }
+
+/*
+ * 구 단위 클러스터 오버레이. 축소(zoom ≥ threshold) 상태에서 개별 마커 대신 표시한다.
+ */
+.gj-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 9999px;
+  background: rgba(15, 118, 110, 0.85);
+  border: 2.5px solid #ffffff;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.32), 0 0 0 6px rgba(15, 118, 110, 0.14);
+  transition: transform 100ms ease-in-out, box-shadow 100ms ease-in-out;
+  user-select: none;
+}
+
+.gj-cluster:hover {
+  transform: scale(1.09);
+  box-shadow: 0 4px 12px rgb(15 23 42 / 0.38), 0 0 0 9px rgba(15, 118, 110, 0.20);
+}

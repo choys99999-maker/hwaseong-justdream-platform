@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Expand, X } from 'lucide-react';
-import type { DistrictId } from '../../types';
+import type { DistrictId, FacilityType, OperationSite, ProgramType, SiteStatus } from '../../types';
 import KakaoDistrictMap from '../map/KakaoDistrictMap';
 import DistrictFilter from '../map/DistrictFilter';
 import MapLegend from '../map/MapLegend';
@@ -8,6 +8,13 @@ import OperationActionPanel from './OperationActionPanel';
 import { mockSites, getSiteById } from '../../data/mockSites';
 import { districtRiskLevels } from '../../data/operationSummary';
 import { BOUNDARY_ATTRIBUTION } from '../../data/districtBoundaries';
+
+type ProgramTypeFilter = 'ALL' | ProgramType | 'BOTH';
+type FacilityTypeFilter = 'ALL' | Exclude<FacilityType, '푸드뱅크' | '기타'> | '푸드뱅크·기타';
+type StatusFilter = 'ALL' | SiteStatus;
+
+const SELECT_CLASS =
+  'rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer';
 
 /**
  * 기존 '화성시 지역 운영 현황' 영역을 대체하는 지도 중심 영역.
@@ -21,6 +28,34 @@ export default function OperationMapSection() {
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  const [programTypeFilter, setProgramTypeFilter] = useState<ProgramTypeFilter>('ALL');
+  const [facilityTypeFilter, setFacilityTypeFilter] = useState<FacilityTypeFilter>('ALL');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+
+  const filterFn = useCallback(
+    (site: OperationSite) => {
+      if (programTypeFilter !== 'ALL') {
+        if (programTypeFilter === 'BOTH') {
+          if (!site.programTypes.includes('HWASEONG') || !site.programTypes.includes('NATIONAL')) return false;
+        } else {
+          if (!site.programTypes.includes(programTypeFilter)) return false;
+        }
+      }
+      if (facilityTypeFilter !== 'ALL') {
+        if (facilityTypeFilter === '푸드뱅크·기타') {
+          if (site.facilityType !== '푸드뱅크' && site.facilityType !== '기타') return false;
+        } else {
+          if (site.facilityType !== facilityTypeFilter) return false;
+        }
+      }
+      if (statusFilter !== 'ALL') {
+        if (site.status !== statusFilter) return false;
+      }
+      return true;
+    },
+    [programTypeFilter, facilityTypeFilter, statusFilter],
+  );
 
   // 구역을 바꾸면 이전에 선택한 거점은 초기화한다.
   const handleSelectDistrict = useCallback((district: DistrictId | null) => {
@@ -56,6 +91,16 @@ export default function OperationMapSection() {
 
   const selectedSite = getSiteById(selectedSiteId);
 
+  const totalSiteCount = mockSites.length;
+  const visibleSiteCount = useMemo(
+    () =>
+      mockSites.filter((site) => {
+        const districtMatch = selectedDistrict === null || site.district === selectedDistrict;
+        return districtMatch && filterFn(site);
+      }).length,
+    [selectedDistrict, filterFn],
+  );
+
   return (
     <section className="grid grid-cols-1 gap-4 lg:grid-cols-[65fr_35fr] xl:grid-cols-[70fr_30fr]">
       <div
@@ -82,12 +127,54 @@ export default function OperationMapSection() {
           </button>
         </div>
 
-        <div className={isFocusMode ? 'absolute left-4 top-4 z-10 max-w-[calc(100%_-_4rem)]' : ''}>
+        <div className={isFocusMode ? 'absolute left-4 top-4 z-10 max-w-[calc(100%_-_4rem)] space-y-2' : 'space-y-2'}>
           <DistrictFilter
             selectedDistrict={selectedDistrict}
             districtRiskLevels={districtRiskLevels}
             onSelect={handleSelectDistrict}
           />
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="지도 필터">
+            <select
+              className={SELECT_CLASS}
+              value={programTypeFilter}
+              onChange={(e) => setProgramTypeFilter(e.target.value as ProgramTypeFilter)}
+              aria-label="사업 유형 필터"
+            >
+              <option value="ALL">사업 유형 전체</option>
+              <option value="HWASEONG">화성형</option>
+              <option value="NATIONAL">국가형</option>
+              <option value="BOTH">동시 운영</option>
+            </select>
+            <select
+              className={SELECT_CLASS}
+              value={facilityTypeFilter}
+              onChange={(e) => setFacilityTypeFilter(e.target.value as FacilityTypeFilter)}
+              aria-label="시설 유형 필터"
+            >
+              <option value="ALL">시설 유형 전체</option>
+              <option value="행정복지센터">행정복지센터</option>
+              <option value="복지관">복지관</option>
+              <option value="푸드뱅크·기타">푸드뱅크·기타</option>
+            </select>
+            <select
+              className={SELECT_CLASS}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              aria-label="운영 상태 필터"
+            >
+              <option value="ALL">운영 상태 전체</option>
+              <option value="normal">정상</option>
+              <option value="shortage">부족</option>
+              <option value="surplus">과잉</option>
+              <option value="expiring">유통기한 임박</option>
+              <option value="missing">데이터 미입력</option>
+            </select>
+            <span className="ml-auto shrink-0 text-xs text-slate-400" aria-live="polite">
+              {visibleSiteCount < totalSiteCount
+                ? `${totalSiteCount}곳 중 ${visibleSiteCount}곳 표시`
+                : `전체 ${totalSiteCount}곳`}
+            </span>
+          </div>
         </div>
 
         <div
@@ -105,6 +192,7 @@ export default function OperationMapSection() {
             onSelectDistrict={handleSelectDistrict}
             onSelectSite={handleSelectSite}
             onMapClick={isFocusMode ? undefined : openFocusMode}
+            filterFn={filterFn}
           />
         </div>
 

@@ -1,4 +1,5 @@
-import { ArrowLeft, ArrowRight, CalendarClock, Info } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarClock, ExternalLink, Info, Package } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { DistrictId, OperationSite, RedistributionRecommendation } from '../../types';
 import SiteStatusBadge from '../common/SiteStatusBadge';
 import EmptyState from '../common/EmptyState';
@@ -113,6 +114,13 @@ export default function OperationActionPanel({
                 <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">데모 거점</span>
               )}
             </p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              {selectedSite.programTypes.includes('HWASEONG') && selectedSite.programTypes.includes('NATIONAL')
+                ? '화성형·국가형 동시 운영'
+                : selectedSite.programTypes.includes('NATIONAL')
+                  ? '국가형'
+                  : '화성형'}
+            </p>
           </div>
           <SiteStatusBadge status={selectedSite.status} />
         </div>
@@ -124,10 +132,24 @@ export default function OperationActionPanel({
           <MetricTile label="유통기한 임박" value={selectedSite.expiringCount} unit="개" />
         </dl>
 
-        <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
+        <div className="mt-3 flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <Package size={13} className="shrink-0 text-slate-400" />
+          <span className="text-slate-400">주요 품목</span>
+          <span className="ml-1 font-medium">{selectedSite.focusItem}</span>
+        </div>
+
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
           <CalendarClock size={14} />
           최근 데이터 입력: {formatDateTime(selectedSite.lastUpdatedAt)}
         </div>
+
+        <Link
+          to={`/regions/${selectedSite.district}`}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-teal-300 hover:bg-teal-50/40 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          <ExternalLink size={13} />
+          {REGION_NAMES[selectedSite.district]} 현황 보기
+        </Link>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <RecommendationList

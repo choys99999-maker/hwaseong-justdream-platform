@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { Boxes, MapPin, PackageSearch, Repeat2, TimerReset } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
 import StatusBadge from '../components/common/StatusBadge';
 import EmptyState from '../components/common/EmptyState';
 import OperationMapSection from '../components/dashboard/OperationMapSection';
+import ProgramDetailModal from '../components/dashboard/ProgramDetailModal';
 import MonthlyFlowChart from '../components/charts/MonthlyFlowChart';
 import DistrictRiskChart from '../components/charts/DistrictRiskChart';
 import { mockInventoryItems } from '../data/mockInventory';
 import { mockDataIssues } from '../data/mockDataIssues';
 import { mockRedistributionRecords } from '../data/mockRedistributions';
 import { citySummary } from '../data/operationSummary';
+import { PROGRAM_SUMMARY } from '../data/programSummary';
 import { formatDate, formatNumber } from '../utils/format';
 
 const expiringItems = mockInventoryItems
@@ -20,6 +23,8 @@ const recentRedistributions = [...mockRedistributionRecords]
   .slice(0, 5);
 
 export default function DashboardPage() {
+  const [isProgramModalOpen, setIsProgramModalOpen] = useState(false);
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -28,7 +33,26 @@ export default function DashboardPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <StatCard label="운영 거점 수" value={`${formatNumber(citySummary.siteCount)}개소`} icon={MapPin} />
+        {/* 운영 프로그램 카드 — 클릭 시 상세 패널 */}
+        <button
+          type="button"
+          onClick={() => setIsProgramModalOpen(true)}
+          className="rounded-xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm text-slate-500">운영 프로그램</p>
+              <p className="mt-2 text-2xl font-semibold text-slate-900">{PROGRAM_SUMMARY.total}개</p>
+              <p className="mt-1 text-xs text-slate-400">
+                화성형 {PROGRAM_SUMMARY.hwaseong} · 국가형 {PROGRAM_SUMMARY.national}
+              </p>
+              <p className="mt-0.5 text-xs text-teal-600">실제 운영 장소 {PROGRAM_SUMMARY.locationCount}곳 ↗</p>
+            </div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
+              <MapPin size={20} />
+            </div>
+          </div>
+        </button>
         <StatCard label="전체 재고 수량" value={`${formatNumber(citySummary.inventoryTotal)}개`} icon={Boxes} />
         <StatCard
           label="7일 내 부족 예상"
@@ -45,6 +69,8 @@ export default function DashboardPage() {
         />
         <StatCard label="재배분 필요 건수" value={`${formatNumber(citySummary.recommendationCount)}건`} icon={Repeat2} />
       </div>
+
+      {isProgramModalOpen && <ProgramDetailModal onClose={() => setIsProgramModalOpen(false)} />}
 
       <OperationMapSection />
 
