@@ -6,6 +6,7 @@ import RegionDetailPage from './pages/RegionDetailPage';
 import SupportRecordsPage from './pages/SupportRecordsPage';
 import InventoryPage from './pages/InventoryPage';
 import DataUploadPage from './pages/DataUploadPage';
+import IconsPage from './pages/IconsPage';
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/support-records" element={<SupportRecordsPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/upload" element={<DataUploadPage />} />
+        <Route path="/icons" element={<IconsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
