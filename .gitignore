@@ -146,3 +146,6 @@ vite.log
 # Editor / tool configs
 .claude/
 .vscode/
+
+# 좌표 확정 스크립트가 만드는 임시 페이지 (앱 키 포함, 실행 후 자동 삭제)
+public/__geocode.html

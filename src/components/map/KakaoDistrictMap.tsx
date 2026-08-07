@@ -27,11 +27,141 @@ const DISTRICT_OUTLINE_STYLE = {
 
 const BOUNDS_PADDING = 24;
 const RELAYOUT_DEBOUNCE_MS = 160;
+/** 지도 최초 생성 레벨. 화성시 전체가 뷰포트에 들어온다. */
+const INITIAL_LEVEL = 9;
 /**
- * 카카오맵 레벨(level) 이 이 값 이상이면 구 단위 클러스터 오버레이를 표시하고
- * 개별 마커는 숨긴다. Kakao level ≥ 9 ≈ 화성시 전체가 뷰포트에 들어오는 광역 줌.
+ * 카카오맵 레벨(level) 이 이 값 이상이면 구 단위 요약 오버레이만 표시하고 개별 마커는 숨긴다.
+ * 두 표현의 역할을 분리한다.
+ *   - level ≥ 10 (화성시보다 더 넓은 광역 뷰): 구 단위 요약 = "이 구에 몇 곳"
+ *   - level ≤ 9  (화성시 전체 ~ 확대):        개별 거점 마커 + 기관명 = "어디에 무엇"
+ * 실제 거점 위치가 읽히는 배율에서는 항상 개별 사업장이 우선한다.
  */
-const CLUSTER_ZOOM_THRESHOLD = 9;
+const CLUSTER_ZOOM_THRESHOLD = 10;
+
+/**
+ * 라벨 배치 후보. 오른쪽을 기본으로 하고, 이미 놓인 라벨·마커와 겹치면 순서대로 옮긴다.
+ * 후보를 다 써도 자리가 없으면 이름을 숨기지 않고 겹침 면적이 가장 작은 자리를 쓴다.
+ */
+const LABEL_PLACES = [
+  'right',
+  'left',
+  'bottom',
+  'top',
+  'bottom-right',
+  'top-right',
+  'bottom-left',
+  'top-left',
+] as const;
+type LabelPlace = (typeof LABEL_PLACES)[number];
+
+/** 다른 거점의 원형 마커를 덮는 것이 라벨끼리 겹치는 것보다 나쁘므로 가중치를 준다. */
+const DOT_OVERLAP_WEIGHT = 3;
+
+/** 원형 마커 중심에서 라벨 변까지의 거리(px). CSS 의 calc(100% + 5px) 와 맞춘다. */
+const LABEL_OFFSET = 11;
+/** 대각선 배치의 중심-변 거리(px). CSS 의 calc(100% + 3px) 와 맞춘다. */
+const DIAGONAL_OFFSET = 9;
+/** 원형 마커가 차지하는 반경(px). 라벨이 다른 거점의 점을 덮지 않도록 장애물로 넣는다. */
+const DOT_RADIUS = 8;
+/** 겹침 판정 여유(px) */
+const COLLISION_SLACK = 2;
+
+interface LabelBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  /** true 면 다른 거점의 원형 마커 자리 */
+  isDot?: boolean;
+}
+
+interface MeasuredMarker {
+  entry: MarkerEntry;
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+}
+
+function labelBox(place: LabelPlace, m: MeasuredMarker): LabelBox {
+  switch (place) {
+    case 'right':
+      return { left: m.cx + LABEL_OFFSET, top: m.cy - m.h / 2, right: m.cx + LABEL_OFFSET + m.w, bottom: m.cy + m.h / 2 };
+    case 'left':
+      return { left: m.cx - LABEL_OFFSET - m.w, top: m.cy - m.h / 2, right: m.cx - LABEL_OFFSET, bottom: m.cy + m.h / 2 };
+    case 'bottom':
+      return { left: m.cx - m.w / 2, top: m.cy + LABEL_OFFSET, right: m.cx + m.w / 2, bottom: m.cy + LABEL_OFFSET + m.h };
+    case 'top':
+      return { left: m.cx - m.w / 2, top: m.cy - LABEL_OFFSET - m.h, right: m.cx + m.w / 2, bottom: m.cy - LABEL_OFFSET };
+    case 'bottom-right':
+      return { left: m.cx + DIAGONAL_OFFSET, top: m.cy + DIAGONAL_OFFSET, right: m.cx + DIAGONAL_OFFSET + m.w, bottom: m.cy + DIAGONAL_OFFSET + m.h };
+    case 'top-right':
+      return { left: m.cx + DIAGONAL_OFFSET, top: m.cy - DIAGONAL_OFFSET - m.h, right: m.cx + DIAGONAL_OFFSET + m.w, bottom: m.cy - DIAGONAL_OFFSET };
+    case 'bottom-left':
+      return { left: m.cx - DIAGONAL_OFFSET - m.w, top: m.cy + DIAGONAL_OFFSET, right: m.cx - DIAGONAL_OFFSET, bottom: m.cy + DIAGONAL_OFFSET + m.h };
+    case 'top-left':
+      return { left: m.cx - DIAGONAL_OFFSET - m.w, top: m.cy - DIAGONAL_OFFSET - m.h, right: m.cx - DIAGONAL_OFFSET, bottom: m.cy - DIAGONAL_OFFSET };
+  }
+}
+
+/** 두 사각형이 겹치는 넓이(px²). 여유(COLLISION_SLACK) 안쪽 스침은 0 으로 본다. */
+function overlapArea(a: LabelBox, b: LabelBox): number {
+  const x = Math.min(a.right, b.right) - Math.max(a.left, b.left) - COLLISION_SLACK;
+  const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) - COLLISION_SLACK;
+  if (x <= 0 || y <= 0) return 0;
+  return x * y * (b.isDot ? DOT_OVERLAP_WEIGHT : 1);
+}
+
+/**
+ * 화면에 보이는 거점 라벨의 겹침을 배치 방향만 바꿔 줄인다.
+ * 이름은 절대 숨기지 않는다. 8방향 어디에도 빈자리가 없으면 겹침 면적이 가장 작은 쪽을 쓴다.
+ * (거점이 지나치게 몰린 구간은 확대하면 풀린다 — 확대 시 개별 거점이 우선이다)
+ */
+function layoutLabels(entries: MarkerEntry[]): void {
+  const measured: MeasuredMarker[] = [];
+  entries.forEach((entry) => {
+    if (!entry.visible) return;
+    const dot = entry.element.getBoundingClientRect();
+    const label = entry.label.getBoundingClientRect();
+    if (label.width === 0 || label.height === 0) return;
+    measured.push({
+      entry,
+      cx: dot.left + dot.width / 2,
+      cy: dot.top + dot.height / 2,
+      w: label.width,
+      h: label.height,
+    });
+  });
+  if (measured.length === 0) return;
+
+  // 위 → 아래, 왼쪽 → 오른쪽 순으로 자리를 잡아 배치 결과가 재계산마다 흔들리지 않게 한다.
+  measured.sort((a, b) => a.cy - b.cy || a.cx - b.cx);
+
+  // 모든 거점의 원형 마커 자리를 먼저 장애물로 깔아 둔다.
+  const occupied: LabelBox[] = measured.map((m) => ({
+    left: m.cx - DOT_RADIUS,
+    top: m.cy - DOT_RADIUS,
+    right: m.cx + DOT_RADIUS,
+    bottom: m.cy + DOT_RADIUS,
+    isDot: true,
+  }));
+
+  measured.forEach((m) => {
+    let best: LabelPlace = LABEL_PLACES[0];
+    let bestCost = Number.POSITIVE_INFINITY;
+    for (const candidate of LABEL_PLACES) {
+      const box = labelBox(candidate, m);
+      const cost = occupied.reduce((sum, other) => sum + overlapArea(box, other), 0);
+      if (cost < bestCost) {
+        best = candidate;
+        bestCost = cost;
+      }
+      if (bestCost === 0) break; // 앞선 후보에서 자리를 찾으면 더 볼 필요가 없다
+    }
+    occupied.push(labelBox(best, m));
+    m.entry.element.dataset.place = best;
+  });
+}
 
 type MapPhase = 'loading' | 'ready' | 'missing-key' | 'error';
 
@@ -62,37 +192,98 @@ interface MarkerEntry {
   site: OperationSite;
   overlay: KakaoCustomOverlay;
   element: HTMLButtonElement;
+  label: HTMLSpanElement;
+  /** 현재 지도에 붙어 있는지. 라벨 배치 계산 대상 판단에 쓴다. */
+  visible: boolean;
 }
 
 interface ClusterEntry {
   districtId: DistrictId;
   overlay: KakaoCustomOverlay;
+  countElement: HTMLSpanElement;
   element: HTMLDivElement;
 }
 
-function createMarkerElement(site: OperationSite): HTMLButtonElement {
+/**
+ * 좌표가 완전히 같은 거점들의 **표시 위치**만 좌우로 벌리는 오프셋(px)을 계산한다.
+ *
+ * 같은 건물에 두 기관이 들어 있는 경우(예: 동탄대로8길 36 — 동탄노인복지관 / 동탄7동 협의체)
+ * 카카오가 두 기관에 같은 좌표를 주기 때문에 원형 마커가 정확히 포개진다.
+ * 실제 lat/lng 는 손대지 않고, 화면에서만 좌우로 밀어 각각 클릭할 수 있게 한다.
+ * 밀어낸 원과 실제 지점 사이는 짧은 stem 으로 이어 붙여 위치 관계가 어색해 보이지 않게 한다.
+ *
+ * id 정렬 기준으로 자리를 배분하므로 렌더링할 때마다 같은 결과가 나온다.
+ */
+const COINCIDENT_STEP = 14;
+
+function computeCoincidentShifts(sites: OperationSite[]): Map<string, number> {
+  const groups = new Map<string, OperationSite[]>();
+  sites.forEach((site) => {
+    const key = `${site.latitude.toFixed(6)},${site.longitude.toFixed(6)}`;
+    groups.set(key, [...(groups.get(key) ?? []), site]);
+  });
+
+  const shifts = new Map<string, number>();
+  groups.forEach((group) => {
+    if (group.length < 2) return;
+    [...group]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .forEach((site, index) => {
+        // 그룹 중앙을 기준으로 좌우 대칭 배치한다. 2개면 -14px / +14px.
+        shifts.set(site.id, (index - (group.length - 1) / 2) * (COINCIDENT_STEP * 2));
+      });
+  });
+  return shifts;
+}
+
+/**
+ * 거점 마커 = 상태 원형 + 기관명 라벨. 버튼 하나가 통째로 클릭 타깃이 된다.
+ * 라벨은 absolute 라 버튼 크기(12px)를 바꾸지 않으므로 오버레이 앵커가 항상 원 중심이다.
+ */
+function createMarkerElement(site: OperationSite, shift: number): { element: HTMLButtonElement; label: HTMLSpanElement } {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'gj-marker';
-  button.style.backgroundColor = SITE_STATUS_COLORS[site.status].fill;
-  button.style.borderColor = '#ffffff';
+  button.style.setProperty('--gj-status', SITE_STATUS_COLORS[site.status].fill);
   button.setAttribute('aria-label', `${site.name} · ${SITE_STATUS_LABELS[site.status]}`);
   button.dataset.selected = 'false';
+  button.dataset.place = 'right';
+
+  if (shift !== 0) {
+    // 원의 반지름(6px)만큼은 원에 가리므로 stem 은 그만큼 짧게 그린다.
+    const stemWidth = Math.abs(shift) - 6;
+    button.dataset.coincident = 'true';
+    button.style.setProperty('--gj-shift', `${shift}px`);
+    button.style.setProperty('--gj-stem-left', `${shift > 0 ? -shift : 6}px`);
+    button.style.setProperty('--gj-stem-width', `${stemWidth}px`);
+  }
 
   const label = document.createElement('span');
   label.className = 'gj-marker-label';
-  label.textContent = site.name;
+  // 지도에는 축약형만 노출한다. 정식 기관명은 aria-label·상세 패널에서 확인한다.
+  label.textContent = site.displayName;
+  label.title = site.name;
   button.appendChild(label);
 
-  return button;
+  return { element: button, label };
 }
 
-function createClusterElement(districtName: string): HTMLDivElement {
+/** 구 단위 요약 오버레이. 개별 거점 마커와 헷갈리지 않도록 구 이름을 함께 적는다. */
+function createClusterElement(districtName: string): { element: HTMLDivElement; countElement: HTMLSpanElement } {
   const div = document.createElement('div');
   div.className = 'gj-cluster';
-  div.setAttribute('aria-label', `${districtName} 클러스터`);
-  div.textContent = '0';
-  return div;
+  div.setAttribute('aria-label', `${districtName} 거점 요약`);
+
+  const count = document.createElement('span');
+  count.className = 'gj-cluster-count';
+  count.textContent = '0';
+
+  const name = document.createElement('span');
+  name.className = 'gj-cluster-name';
+  name.textContent = districtName;
+
+  div.append(count, name);
+  return { element: div, countElement: count };
 }
 
 export default function KakaoDistrictMap({
@@ -114,11 +305,18 @@ export default function KakaoDistrictMap({
   const clusterOverlaysRef = useRef<ClusterEntry[]>([]);
   const hoveredDistrictRef = useRef<DistrictId | null>(null);
   const cleanupRef = useRef<(() => void)[]>([]);
+  const layoutFrameRef = useRef(0);
 
   const [phase, setPhase] = useState<MapPhase>('loading');
   const [retryToken, setRetryToken] = useState(0);
-  /** true = 광역 줌(level ≥ CLUSTER_ZOOM_THRESHOLD). 구 단위 클러스터 원을 표시한다. */
-  const [clusterMode, setClusterMode] = useState(true);
+  /** true = 광역 줌(level ≥ CLUSTER_ZOOM_THRESHOLD). 구 단위 요약 원을 표시한다. */
+  const [clusterMode, setClusterMode] = useState(INITIAL_LEVEL >= CLUSTER_ZOOM_THRESHOLD);
+
+  /** 라벨 겹침 재계산. 지도 이동·줌·가시성 변경 뒤 한 프레임 뒤에 한 번만 돈다. */
+  const scheduleLabelLayout = useCallback(() => {
+    cancelAnimationFrame(layoutFrameRef.current);
+    layoutFrameRef.current = requestAnimationFrame(() => layoutLabels(markersRef.current));
+  }, []);
 
   // 이벤트 핸들러가 최신 props 를 참조하되, 지도 객체를 다시 만들지 않도록 ref 로 보관한다.
   const handlersRef = useRef({ onSelectDistrict, onSelectSite, selectedDistrict, onMapClick });
@@ -219,7 +417,7 @@ export default function KakaoDistrictMap({
         const [minLng, minLat, maxLng, maxLat] = HWASEONG_FOCUS_BBOX;
         const map = new maps.Map(containerRef.current, {
           center: new maps.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2),
-          level: 9,
+          level: INITIAL_LEVEL,
         });
         map.addControl(new maps.ZoomControl(), maps.ControlPosition.RIGHT);
         mapRef.current = map;
@@ -229,13 +427,18 @@ export default function KakaoDistrictMap({
         maps.event.addListener(map, 'click', onMapBackgroundClick);
         cleanupRef.current.push(() => maps.event.removeListener(map, 'click', onMapBackgroundClick));
 
-        // 줌 변경 → 클러스터 모드 전환
+        // 줌 변경 → 구 요약 / 개별 거점 전환
         const onZoomChanged = () => {
-          const level = mapRef.current?.getLevel() ?? 9;
+          const level = mapRef.current?.getLevel() ?? INITIAL_LEVEL;
           setClusterMode(level >= CLUSTER_ZOOM_THRESHOLD);
         };
         maps.event.addListener(map, 'zoom_changed', onZoomChanged);
         cleanupRef.current.push(() => maps.event.removeListener(map, 'zoom_changed', onZoomChanged));
+
+        // 이동·줌이 끝나 오버레이 위치가 확정되면 라벨 배치를 다시 계산한다.
+        const onIdle = () => scheduleLabelLayout();
+        maps.event.addListener(map, 'idle', onIdle);
+        cleanupRef.current.push(() => maps.event.removeListener(map, 'idle', onIdle));
 
         // 구 폴리곤
         districtBoundaries.forEach((district) => {
@@ -290,8 +493,11 @@ export default function KakaoDistrictMap({
         });
 
         // 거점 마커
+        // 좌표가 겹치는 거점은 표시 위치만 좌우로 벌린다. (실제 좌표는 그대로)
+        const coincidentShifts = computeCoincidentShifts(sites);
+
         sites.forEach((site) => {
-          const element = createMarkerElement(site);
+          const { element, label } = createMarkerElement(site, coincidentShifts.get(site.id) ?? 0);
           const onClick = (event: MouseEvent) => {
             event.stopPropagation();
             handlersRef.current.onSelectSite(site.id);
@@ -312,7 +518,7 @@ export default function KakaoDistrictMap({
             element.removeEventListener('click', onClick);
             overlay.setMap(null);
           });
-          markersRef.current.push({ site, overlay, element });
+          markersRef.current.push({ site, overlay, element, label, visible: false });
         });
 
         // 구 단위 클러스터 오버레이 (구당 1개)
@@ -320,7 +526,7 @@ export default function KakaoDistrictMap({
           // bbox 중심은 서해 도서 때문에 만세구에서 바다로 나간다. 구 내부가 보장된 대표점을 쓴다.
           const [centerLng, centerLat] = district.center;
 
-          const element = createClusterElement(district.name);
+          const { element, countElement } = createClusterElement(district.name);
           const onClusterClick = (e: MouseEvent) => {
             e.stopPropagation();
             handlersRef.current.onSelectDistrict(district.id);
@@ -340,11 +546,13 @@ export default function KakaoDistrictMap({
             element.removeEventListener('click', onClusterClick);
             overlay.setMap(null);
           });
-          clusterOverlaysRef.current.push({ districtId: district.id, overlay, element });
+          clusterOverlaysRef.current.push({ districtId: district.id, overlay, countElement, element });
         });
 
         paintPolygons();
         fitBounds(handlersRef.current.selectedDistrict);
+        // setBounds 로 레벨이 바뀌어도 zoom_changed 가 오지 않는 경우가 있어 한 번 맞춰 둔다.
+        setClusterMode(map.getLevel() >= CLUSTER_ZOOM_THRESHOLD);
         setPhase('ready');
       })
       .catch((error: unknown) => {
@@ -359,6 +567,7 @@ export default function KakaoDistrictMap({
 
     return () => {
       mounted = false;
+      cancelAnimationFrame(layoutFrameRef.current);
       cleanupRef.current.forEach((dispose) => dispose());
       cleanupRef.current = [];
       polygonsRef.current = [];
@@ -382,14 +591,15 @@ export default function KakaoDistrictMap({
     const inClusterMode = clusterMode && selectedDistrict === null;
 
     // 개별 마커
-    markersRef.current.forEach(({ site, overlay }) => {
-      const districtVisible = selectedDistrict === null || site.district === selectedDistrict;
-      const filterVisible = !fn || fn(site);
-      overlay.setMap(!inClusterMode && districtVisible && filterVisible ? mapRef.current : null);
+    markersRef.current.forEach((entry) => {
+      const districtVisible = selectedDistrict === null || entry.site.district === selectedDistrict;
+      const filterVisible = !fn || fn(entry.site);
+      entry.visible = !inClusterMode && districtVisible && filterVisible;
+      entry.overlay.setMap(entry.visible ? mapRef.current : null);
     });
 
-    // 구 클러스터 오버레이
-    clusterOverlaysRef.current.forEach(({ districtId, overlay, element }) => {
+    // 구 단위 요약 오버레이
+    clusterOverlaysRef.current.forEach(({ districtId, overlay, countElement }) => {
       if (!inClusterMode) {
         overlay.setMap(null);
         return;
@@ -397,11 +607,12 @@ export default function KakaoDistrictMap({
       const count = markersRef.current.filter(
         (m) => m.site.district === districtId && (!fn || fn(m.site)),
       ).length;
-      element.textContent = String(count);
+      countElement.textContent = String(count);
       overlay.setMap(count > 0 ? mapRef.current : null);
     });
 
-  }, [phase, selectedDistrict, filterFn, clusterMode, paintPolygons]);
+    scheduleLabelLayout();
+  }, [phase, selectedDistrict, filterFn, clusterMode, paintPolygons, scheduleLabelLayout]);
 
   // 3) 거점 선택 표시
   useEffect(() => {
@@ -411,7 +622,9 @@ export default function KakaoDistrictMap({
       element.dataset.selected = String(isSelected);
       overlay.setZIndex(isSelected ? 9 : 5);
     });
-  }, [phase, selectedSiteId]);
+    // 선택 시 라벨 굵기가 바뀌어 폭이 달라지므로 배치를 다시 잡는다.
+    scheduleLabelLayout();
+  }, [phase, selectedSiteId, scheduleLabelLayout]);
 
   // 4) 사이드바 접기 등으로 컨테이너 크기가 바뀌면 relayout 후 범위를 다시 맞춘다.
   useEffect(() => {
@@ -432,6 +645,7 @@ export default function KakaoDistrictMap({
           mapRef.current?.setCenter(center);
           mapRef.current?.setLevel(level);
         }
+        scheduleLabelLayout();
       }, RELAYOUT_DEBOUNCE_MS);
     });
     observer.observe(container);
@@ -441,7 +655,7 @@ export default function KakaoDistrictMap({
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [phase]);
+  }, [phase, scheduleLabelLayout]);
 
   const handleRetry = () => {
     resetKakaoMapsLoader();

@@ -15,79 +15,223 @@ body {
 }
 
 /*
- * 카카오맵 CustomOverlay 로 그리는 거점 마커.
+ * 카카오맵 CustomOverlay 로 그리는 거점 마커 (상태 원형 + 기관명 라벨).
  * React 트리 밖에서 생성하는 DOM 이라 유틸리티 클래스 대신 여기서 스타일을 정의한다.
+ *
+ * 루트 <button> 은 원형 마커와 같은 12px 정사각형으로 고정한다.
+ * 라벨은 absolute 라 루트 크기에 영향을 주지 않으므로, CustomOverlay 의
+ * xAnchor/yAnchor 0.5 가 라벨 길이와 무관하게 항상 원 중심을 좌표에 맞춘다.
+ * 원 크기 변화는 ::before 에서만 일어나 선택 시에도 앵커가 흔들리지 않는다.
  */
 .gj-marker {
   position: relative;
   display: block;
-  width: 15px;
-  height: 15px;
+  width: 12px;
+  height: 12px;
   padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.gj-marker::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
   border: 2px solid #ffffff;
   border-radius: 9999px;
-  cursor: pointer;
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.35);
+  background: var(--gj-status, #94a3b8);
+  box-shadow: 0 1px 1.5px rgb(15 23 42 / 0.22);
   transition:
     width 120ms ease-in-out,
-    height 120ms ease-in-out;
-}
-
-.gj-marker:focus-visible {
-  outline: 2px solid #0d9488;
-  outline-offset: 2px;
-}
-
-.gj-marker[data-selected='true'] {
-  width: 21px;
-  height: 21px;
-  border-width: 3px;
-  box-shadow: 0 0 0 3px rgb(13 148 136 / 0.45);
-}
-
-.gj-marker-label {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #1e293b;
-  color: #ffffff;
-  font-size: 11px;
-  line-height: 1.45;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease-in-out;
-}
-
-.gj-marker:hover .gj-marker-label,
-.gj-marker:focus-visible .gj-marker-label,
-.gj-marker[data-selected='true'] .gj-marker-label {
-  opacity: 1;
+    height 120ms ease-in-out,
+    box-shadow 120ms ease-in-out;
 }
 
 /*
- * 구 단위 클러스터 오버레이. 축소(zoom ≥ threshold) 상태에서 개별 마커 대신 표시한다.
+ * 좌표가 완전히 같은 거점(같은 건물에 두 기관)의 표시 위치만 좌우로 벌린다.
+ * 데이터의 lat/lng 는 그대로 두고 화면에서만 옮기며, 실제 지점과 원 사이를
+ * 짧은 stem 으로 이어 위치 관계가 드러나게 한다.
+ */
+.gj-marker[data-coincident='true'] {
+  transform: translateX(var(--gj-shift, 0));
+}
+
+.gj-marker[data-coincident='true']::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: calc(50% + var(--gj-stem-left, 0px));
+  width: var(--gj-stem-width, 0px);
+  height: 1px;
+  margin-top: -0.5px;
+  background: #94a3b8;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.gj-marker:focus-visible {
+  outline: none;
+}
+
+.gj-marker:focus-visible::before,
+.gj-marker[data-selected='true']::before {
+  width: 16px;
+  height: 16px;
+  box-shadow:
+    0 0 0 3px rgb(13 148 136 / 0.35),
+    0 1px 2px rgb(15 23 42 / 0.25);
+}
+
+/*
+ * 기관명 라벨. 지도 도로명·지명을 덜 가리도록 흰 배경 + 얇은 회색 테두리로 눌러 둔다.
+ * 최대 2줄까지 접히고, 그보다 길면 말줄임한다. (이름을 통째로 숨기지는 않는다)
+ */
+.gj-marker-label {
+  position: absolute;
+  /*
+   * width:max-content + max-width 조합.
+   * 짧은 이름은 한 줄로 딱 맞고, 길면 max-width 에서 접힌다.
+   * absolute 라 부모(12px) 폭에 끌려가지 않도록 max-content 를 기준으로 잡는다.
+   */
+  width: max-content;
+  max-width: 116px;
+  /* 2줄(=1.3 × 11.5px × 2)까지만 보이고 그 이상은 잘라 지도를 덮지 않게 한다. */
+  max-height: 35px;
+  overflow: hidden;
+  padding: 1.5px 5px;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.94);
+  color: #334155;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-align: left;
+  /* 카카오 오버레이 래퍼가 white-space:nowrap 을 내려주므로 여기서 되돌린다. */
+  white-space: normal;
+  /* 한글은 어절(공백) 기준 줄바꿈을 우선하고, 붙여 쓴 긴 기관명만 강제로 접는다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+  transition:
+    border-color 120ms ease-in-out,
+    transform 120ms ease-in-out,
+    box-shadow 120ms ease-in-out;
+}
+
+/* 라벨 배치 — layoutLabels() 가 겹침을 피해 data-place 를 정한다. */
+.gj-marker[data-place='right'] .gj-marker-label {
+  left: calc(100% + 5px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.gj-marker[data-place='left'] .gj-marker-label {
+  right: calc(100% + 5px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.gj-marker[data-place='bottom'] .gj-marker-label {
+  left: 50%;
+  top: calc(100% + 5px);
+  transform: translateX(-50%);
+}
+
+.gj-marker[data-place='top'] .gj-marker-label {
+  left: 50%;
+  bottom: calc(100% + 5px);
+  transform: translateX(-50%);
+}
+
+/* 대각선 배치 — 상하좌우로 자리가 없는 밀집 구간에서 쓴다. */
+.gj-marker[data-place='bottom-right'] .gj-marker-label {
+  left: calc(100% + 3px);
+  top: calc(100% + 3px);
+}
+
+.gj-marker[data-place='top-right'] .gj-marker-label {
+  left: calc(100% + 3px);
+  bottom: calc(100% + 3px);
+}
+
+.gj-marker[data-place='bottom-left'] .gj-marker-label {
+  right: calc(100% + 3px);
+  top: calc(100% + 3px);
+}
+
+.gj-marker[data-place='top-left'] .gj-marker-label {
+  right: calc(100% + 3px);
+  bottom: calc(100% + 3px);
+}
+
+.gj-marker:hover .gj-marker-label {
+  border-color: #94a3b8;
+  box-shadow: 0 2px 4px rgb(15 23 42 / 0.12);
+}
+
+.gj-marker[data-place='right']:hover .gj-marker-label,
+.gj-marker[data-place='left']:hover .gj-marker-label {
+  transform: translateY(calc(-50% - 1px));
+}
+
+.gj-marker[data-place='bottom']:hover .gj-marker-label,
+.gj-marker[data-place='top']:hover .gj-marker-label {
+  transform: translateX(-50%) translateY(-1px);
+}
+
+.gj-marker[data-place^='bottom-']:hover .gj-marker-label,
+.gj-marker[data-place^='top-']:hover .gj-marker-label {
+  transform: translateY(-1px);
+}
+
+.gj-marker:focus-visible .gj-marker-label,
+.gj-marker[data-selected='true'] .gj-marker-label {
+  border-color: #0d9488;
+  color: #0f172a;
+  font-weight: 600;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.14);
+}
+
+/*
+ * 구 단위 요약 오버레이. 광역 축소(level ≥ threshold) 에서 개별 거점 대신 표시한다.
+ * 개별 거점 마커와 역할이 헷갈리지 않도록 구 이름을 함께 적는다.
  */
 .gj-cluster {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
+  gap: 1px;
+  width: 44px;
+  height: 44px;
   border-radius: 9999px;
-  background: rgba(15, 118, 110, 0.85);
+  background: rgba(15, 118, 110, 0.88);
   border: 2.5px solid #ffffff;
   color: #ffffff;
-  font-size: 15px;
-  font-weight: 700;
   line-height: 1;
   cursor: pointer;
   box-shadow: 0 2px 8px rgb(15 23 42 / 0.32), 0 0 0 6px rgba(15, 118, 110, 0.14);
   transition: transform 100ms ease-in-out, box-shadow 100ms ease-in-out;
   user-select: none;
+}
+
+.gj-cluster-count {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.gj-cluster-name {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.9;
 }
 
 .gj-cluster:hover {

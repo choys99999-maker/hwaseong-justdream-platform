@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Expand, X } from 'lucide-react';
-import type { DistrictId, FacilityType, OperationSite, ProgramType, SiteStatus } from '../../types';
+import type { DistrictId, FacilityType, OperationSite, SiteStatus } from '../../types';
 import KakaoDistrictMap from '../map/KakaoDistrictMap';
 import DistrictFilter from '../map/DistrictFilter';
 import MapLegend from '../map/MapLegend';
@@ -9,7 +9,11 @@ import { mockSites, getSiteById } from '../../data/mockSites';
 import { districtRiskLevels } from '../../data/operationSummary';
 import { BOUNDARY_ATTRIBUTION } from '../../data/districtBoundaries';
 
-type ProgramTypeFilter = 'ALL' | ProgramType | 'BOTH';
+/**
+ * 확정 거점 25곳은 전부 화성형이라 선택지를 '전체'와 '화성형'으로만 둔다.
+ * (데이터 모델의 `ProgramType` 은 국가형을 그대로 지원한다. 국가형 거점이 들어오면 선택지를 되살린다)
+ */
+type ProgramTypeFilter = 'ALL' | 'HWASEONG';
 type FacilityTypeFilter = 'ALL' | Exclude<FacilityType, '푸드뱅크' | '기타'> | '푸드뱅크·기타';
 type StatusFilter = 'ALL' | SiteStatus;
 
@@ -44,11 +48,7 @@ export default function OperationMapSection() {
   const filterFn = useCallback(
     (site: OperationSite) => {
       if (programTypeFilter !== 'ALL') {
-        if (programTypeFilter === 'BOTH') {
-          if (!site.programTypes.includes('HWASEONG') || !site.programTypes.includes('NATIONAL')) return false;
-        } else {
-          if (!site.programTypes.includes(programTypeFilter)) return false;
-        }
+        if (!site.programTypes.includes(programTypeFilter)) return false;
       }
       if (facilityTypeFilter !== 'ALL') {
         if (facilityTypeFilter === '푸드뱅크·기타') {
@@ -163,8 +163,6 @@ export default function OperationMapSection() {
           >
             <option value="ALL">사업유형 전체</option>
             <option value="HWASEONG">화성형</option>
-            <option value="NATIONAL">국가형</option>
-            <option value="BOTH">동시 운영</option>
           </select>
           <select
             className={SELECT_CLASS}

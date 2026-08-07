@@ -22,6 +22,21 @@ interface OperationActionPanelProps {
   onClearSite: () => void;
 }
 
+/**
+ * 재고·수요·유통기한은 아직 확정 자료가 없는 시연용 수치다.
+ * 확정된 기관 수(거점 수 등)와 같은 묶음으로 보이지 않도록 지표 그룹 위에 출처를 밝힌다.
+ */
+function DemoMetricsLabel() {
+  return (
+    <p className="mt-4 flex items-center gap-1.5 text-[11px] text-slate-400">
+      운영 지표
+      <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 ring-1 ring-amber-600/20">
+        시연 데이터
+      </span>
+    </p>
+  );
+}
+
 function MetricTile({ label, value, unit }: { label: string; value: number; unit: string }) {
   return (
     <div className="rounded-lg bg-slate-50 p-3">
@@ -125,7 +140,8 @@ export default function OperationActionPanel({
           <SiteStatusBadge status={selectedSite.status} />
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-3">
+        <DemoMetricsLabel />
+        <dl className="mt-1.5 grid grid-cols-2 gap-3">
           <MetricTile label="현재 재고" value={selectedSite.inventoryCount} unit="개" />
           <MetricTile label="7일 예상 수요" value={selectedSite.sevenDayDemand} unit="개" />
           <MetricTile label="예상 부족 수량" value={selectedSite.expectedShortage} unit="개" />
@@ -184,10 +200,14 @@ export default function OperationActionPanel({
           <h4 className="text-base font-semibold text-slate-900">{summary.name}</h4>
           <SiteStatusBadge status={summary.riskLevel} />
         </div>
-        <p className="mt-0.5 text-xs text-slate-500">지도에서 거점 마커를 선택하면 상세 현황을 볼 수 있습니다.</p>
+        {/* 거점 수는 확정 데이터라 시연 지표와 섞지 않고 따로 적는다. */}
+        <p className="mt-0.5 text-xs text-slate-500">
+          운영 거점 <span className="font-medium text-slate-700">{summary.siteCount}곳</span> · 지도에서 거점 마커를
+          선택하면 상세 현황을 볼 수 있습니다.
+        </p>
 
-        <dl className="mt-4 grid grid-cols-2 gap-3">
-          <MetricTile label="운영 거점 수" value={summary.siteCount} unit="개소" />
+        <DemoMetricsLabel />
+        <dl className="mt-1.5 grid grid-cols-2 gap-3">
           <MetricTile label="전체 재고" value={summary.inventoryTotal} unit="개" />
           <MetricTile label="부족 예상 거점" value={summary.shortageSiteCount} unit="개소" />
           <MetricTile label="유통기한 임박" value={summary.expiringQuantity} unit="개" />
@@ -214,9 +234,13 @@ export default function OperationActionPanel({
   return (
     <div className="flex h-full flex-col">
       <h4 className="text-base font-semibold text-slate-900">화성시 전체</h4>
-      <p className="mt-0.5 text-xs text-slate-500">지도에서 구역을 선택하면 해당 구 요약으로 바뀝니다.</p>
+      <p className="mt-0.5 text-xs text-slate-500">
+        운영 거점 <span className="font-medium text-slate-700">{citySummary.siteCount}곳</span> · 지도에서 구역을
+        선택하면 해당 구 요약으로 바뀝니다.
+      </p>
 
-      <dl className="mt-4 grid grid-cols-2 gap-3">
+      <DemoMetricsLabel />
+      <dl className="mt-1.5 grid grid-cols-2 gap-3">
         <MetricTile label="부족 예상 거점" value={citySummary.shortageSiteCount} unit="개소" />
         <MetricTile label="유통기한 임박" value={citySummary.expiringQuantity} unit="개" />
         <MetricTile label="과잉 재고 거점" value={citySummary.surplusSiteCount} unit="개소" />

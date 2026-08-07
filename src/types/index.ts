@@ -68,7 +68,10 @@ export type FacilityType = '행정복지센터' | '복지관' | '푸드뱅크' |
 
 export interface OperationSite {
   id: string;
+  /** 정식 기관명. 상세 패널·표·데이터 매칭 기준값이다. */
   name: string;
+  /** 지도 라벨용 축약 기관명. `src/data/siteDisplayName.ts` 규칙으로 생성한다. */
+  displayName: string;
   district: DistrictId;
   facilityType: FacilityType;
   latitude: number;

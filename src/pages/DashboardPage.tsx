@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { Boxes, MapPin, PackageSearch, Repeat2, TimerReset } from 'lucide-react';
+import { Boxes, Building2, HandHeart, Map, MapPin, PackageSearch, Repeat2, TimerReset } from 'lucide-react';
 import StatCard from '../components/common/StatCard';
 import StatusBadge from '../components/common/StatusBadge';
 import EmptyState from '../components/common/EmptyState';
 import OperationMapSection from '../components/dashboard/OperationMapSection';
-import ProgramDetailModal from '../components/dashboard/ProgramDetailModal';
+import SiteCompositionModal from '../components/dashboard/SiteCompositionModal';
 import MonthlyFlowChart from '../components/charts/MonthlyFlowChart';
 import DistrictRiskChart from '../components/charts/DistrictRiskChart';
 import { mockInventoryItems } from '../data/mockInventory';
 import { mockDataIssues } from '../data/mockDataIssues';
 import { mockRedistributionRecords } from '../data/mockRedistributions';
 import { citySummary } from '../data/operationSummary';
-import { PROGRAM_SUMMARY } from '../data/programSummary';
+import { JUSTDREAM_SITE_SUMMARY, SITE_COUNT_BY_DISTRICT } from '../data/justdreamSummary';
 import { formatDate, formatNumber } from '../utils/format';
 
 const expiringItems = mockInventoryItems
@@ -22,49 +22,82 @@ const recentRedistributions = [...mockRedistributionRecords]
   .slice(0, 5);
 
 export default function DashboardPage() {
-  const [isProgramModalOpen, setIsProgramModalOpen] = useState(false);
+  const [isCompositionModalOpen, setIsCompositionModalOpen] = useState(false);
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        {/* 운영 프로그램 카드 — 클릭 시 상세 패널 */}
-        <button
-          type="button"
-          onClick={() => setIsProgramModalOpen(true)}
-          className="rounded-xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-        >
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs text-slate-500">운영 프로그램</p>
-              <p className="mt-1.5 text-xl font-semibold text-slate-900">{PROGRAM_SUMMARY.total}개</p>
-              <p className="mt-0.5 text-xs text-slate-400">
-                화성형 {PROGRAM_SUMMARY.hwaseong} · 국가형 {PROGRAM_SUMMARY.national}
-              </p>
-              <p className="mt-0.5 text-xs text-teal-600">운영 장소 {PROGRAM_SUMMARY.locationCount}곳 ↗</p>
+      {/*
+        핵심 KPI — 전부 justdream_sites_25(확정 데이터)에서 계산한 값이다.
+        아래 운영 지표는 아직 시연용 합성 수치라, 같은 줄에 섞지 않고 구역을 나눠 표기한다.
+      */}
+      <section aria-label="운영 거점 현황">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <button
+            type="button"
+            onClick={() => setIsCompositionModalOpen(true)}
+            className="rounded-xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs text-slate-500">전체 운영 거점</p>
+                <p className="mt-1.5 text-xl font-semibold text-slate-900">{JUSTDREAM_SITE_SUMMARY.total}곳</p>
+                <p className="mt-0.5 text-xs text-teal-600">거점 구성 보기 ↗</p>
+              </div>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
+                <MapPin size={17} />
+              </div>
             </div>
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
-              <MapPin size={17} />
-            </div>
-          </div>
-        </button>
-        <StatCard label="전체 재고 수량" value={`${formatNumber(citySummary.inventoryTotal)}개`} icon={Boxes} />
-        <StatCard
-          label="7일 내 부족 예상"
-          value={`${formatNumber(citySummary.shortageSiteCount)}개소`}
-          icon={PackageSearch}
-          description={`부족 ${formatNumber(citySummary.shortageQuantity)}개`}
-          tone="danger"
-        />
-        <StatCard
-          label="유통기한 임박"
-          value={`${formatNumber(citySummary.expiringQuantity)}개`}
-          icon={TimerReset}
-          tone="warning"
-        />
-        <StatCard label="재배분 필요 건수" value={`${formatNumber(citySummary.recommendationCount)}건`} icon={Repeat2} />
-      </div>
+          </button>
+          <StatCard
+            label="복지기관"
+            value={`${JUSTDREAM_SITE_SUMMARY.welfareOrgCount}곳`}
+            icon={Building2}
+            description="종합사회복지관 · 노인/장애인복지관"
+          />
+          <StatCard
+            label="지역사회보장협의체"
+            value={`${JUSTDREAM_SITE_SUMMARY.councilCount}곳`}
+            icon={HandHeart}
+            description="읍면동 행정복지센터 운영"
+          />
+          <StatCard
+            label="운영 권역"
+            value={`${JUSTDREAM_SITE_SUMMARY.districtCount}개 구`}
+            icon={Map}
+            description={SITE_COUNT_BY_DISTRICT.map((d) => `${d.name} ${d.count}`).join(' · ')}
+          />
+        </div>
+      </section>
 
-      {isProgramModalOpen && <ProgramDetailModal onClose={() => setIsProgramModalOpen(false)} />}
+      {isCompositionModalOpen && <SiteCompositionModal onClose={() => setIsCompositionModalOpen(false)} />}
+
+      {/* 운영 지표 — 재고·수요·유통기한은 아직 확정 자료가 없는 시연용 수치다. */}
+      <section aria-label="운영 지표 (시연 데이터)">
+        <div className="mb-1.5 flex items-center gap-1.5">
+          <h2 className="text-xs font-medium text-slate-500">운영 지표</h2>
+          <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 ring-1 ring-amber-600/20">
+            시연 데이터
+          </span>
+          <span className="text-[11px] text-slate-400">재고·수요·유통기한 수치는 실제 운영 데이터가 아닙니다</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard label="전체 재고 수량" value={`${formatNumber(citySummary.inventoryTotal)}개`} icon={Boxes} />
+          <StatCard
+            label="7일 내 부족 예상"
+            value={`${formatNumber(citySummary.shortageSiteCount)}개소`}
+            icon={PackageSearch}
+            description={`부족 ${formatNumber(citySummary.shortageQuantity)}개`}
+            tone="danger"
+          />
+          <StatCard
+            label="유통기한 임박"
+            value={`${formatNumber(citySummary.expiringQuantity)}개`}
+            icon={TimerReset}
+            tone="warning"
+          />
+          <StatCard label="재배분 필요 건수" value={`${formatNumber(citySummary.recommendationCount)}건`} icon={Repeat2} />
+        </div>
+      </section>
 
       <OperationMapSection />
 
