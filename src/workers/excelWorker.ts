@@ -30,13 +30,15 @@ const SHEET_CONFIGS: Record<SheetType, SheetConfig> = {
   generic:     { sectionLabelRows: 0, headerRowCount: 1 },
 };
 
-const NUMBER_FIELDS = new Set<PlatformColumnKey>([
-  'userCount', 'basicConsultation', 'referralTotal', 'linkageCompleted',
-  'basicLivelihood', 'nearPoverty', 'emergencyWelfare', 'otherLinkage',
-  'underReview', 'noLinkageNeeded',
-  'serialNo',
-  'inboundQuantity', 'outboundQuantity', 'stock',
-]);
+const NUMBER_FIELDS_BY_TYPE: Record<SheetType, Set<PlatformColumnKey>> = {
+  performance: new Set([
+    'userCount', 'basicConsultation', 'referralTotal', 'linkageCompleted',
+    'basicLivelihood', 'nearPoverty', 'emergencyWelfare', 'otherLinkage',
+    'underReview', 'noLinkageNeeded',
+  ]),
+  referral: new Set(['serialNo']),
+  generic: new Set(['inboundQuantity', 'outboundQuantity', 'stock']),
+};
 
 const DATE_FIELDS = new Set<PlatformColumnKey>(['consultDate', 'inboundDate', 'expirationDate']);
 
@@ -229,7 +231,8 @@ function handleConvert(sheetMappings: Record<string, Record<string, string | nul
     const data = storedSheets.get(sheetName);
     if (!data) continue;
 
-    const { rows, headers, dataStartRow } = data;
+    const { rows, headers, dataStartRow, sheetType } = data;
+    const NUMBER_FIELDS = NUMBER_FIELDS_BY_TYPE[sheetType];
     const records: MappedRecord[] = [];
     const errors: ValidationError[] = [];
 
