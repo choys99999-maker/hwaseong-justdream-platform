@@ -3,7 +3,7 @@ import { AlertTriangle, KeyRound, RotateCw } from 'lucide-react';
 import type { DistrictId, OperationSite, SiteStatus } from '../../types';
 import type { KakaoCustomOverlay, KakaoMap, KakaoMapsNamespace, KakaoPolygon, KakaoPolyline } from '../../types/kakao';
 import { KAKAO_KEY_ENV_NAME, MissingKakaoKeyError, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
-import { HWASEONG_FOCUS_BBOX, districtBoundaries, getDistrictBBox } from '../../data/districtBoundaries';
+import { HWASEONG_FOCUS_BBOX, districtBoundaries } from '../../data/districtBoundaries';
 import { SITE_STATUS_COLORS, SITE_STATUS_LABELS } from '../../data/regionMeta';
 
 /** 폴리곤 표현 기준. 지명과 도로가 읽히도록 기본 채도를 낮게 유지한다. */
@@ -26,6 +26,12 @@ const DISTRICT_OUTLINE_STYLE = {
 } as const;
 
 const BOUNDS_PADDING = 24;
+/**
+ * 구 경계 fitting 전용 여백. 카카오맵 레벨이 정수라 화면 점유율이 2배 단위로 끊기는데,
+ * 24px 로는 효행구·동탄구가 한 단계 더 축소된 레벨로 밀려 경계가 화면의 절반도 못 채웠다.
+ * 12px 이면 네 구 모두 가장 조밀한 레벨을 고르면서 최소 14px 여백이 남는다.
+ */
+const DISTRICT_BOUNDS_PADDING = 12;
 const RELAYOUT_DEBOUNCE_MS = 160;
 /** 지도 최초 생성 레벨. 화성시 전체가 뷰포트에 들어온다. */
 const INITIAL_LEVEL = 9;
@@ -370,14 +376,44 @@ export default function KakaoDistrictMap({
     });
   }, [districtRiskLevels]);
 
-  /** 선택된 구(없으면 화성시 전체) 범위로 지도를 맞춘다. */
-  const fitBounds = useCallback((district: DistrictId | null) => {
+  /** 선택된 구(없으면 화성시 전체) 실제 outline 좌표로 bounds를 계산해 지도를 맞춘다. */
+  const fitMapToDistrict = useCallback((district: DistrictId | null) => {
     const maps = mapsRef.current;
     const map = mapRef.current;
     if (!maps || !map) return;
-    const [minLng, minLat, maxLng, maxLat] = getDistrictBBox(district);
-    const bounds = new maps.LatLngBounds(new maps.LatLng(minLat, minLng), new maps.LatLng(maxLat, maxLng));
-    map.setBounds(bounds, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING);
+
+    const targets = district === null
+      ? districtBoundaries
+      : districtBoundaries.filter((d) => d.id === district);
+    if (targets.length === 0) return;
+
+    // focusBBox 범위 안쪽 좌표만 포함해 서해 도서를 자동으로 제외한다.
+    const points: Array<[number, number]> = [];
+    targets.forEach((d) => {
+      const [focusMinLng, focusMinLat, focusMaxLng, focusMaxLat] = d.focusBBox;
+      d.outline.forEach((ring) => {
+        ring.forEach(([lng, lat]) => {
+          if (lng >= focusMinLng && lng <= focusMaxLng && lat >= focusMinLat && lat <= focusMaxLat) {
+            points.push([lat, lng]);
+          }
+        });
+      });
+    });
+    if (points.length === 0) return;
+
+    const first = new maps.LatLng(points[0][0], points[0][1]);
+    const bounds = new maps.LatLngBounds(first, first);
+    for (let i = 1; i < points.length; i++) {
+      bounds.extend(new maps.LatLng(points[i][0], points[i][1]));
+    }
+    map.relayout();
+    map.setBounds(
+      bounds,
+      DISTRICT_BOUNDS_PADDING,
+      DISTRICT_BOUNDS_PADDING,
+      DISTRICT_BOUNDS_PADDING,
+      DISTRICT_BOUNDS_PADDING,
+    );
   }, []);
 
   /** 현재 필터·구 선택 기준으로 표시 중인 마커에 맞춰 지도 범위를 조정한다. */
@@ -394,7 +430,7 @@ export default function KakaoDistrictMap({
     });
 
     if (visible.length === 0) {
-      fitBounds(selectedDist);
+      fitMapToDistrict(selectedDist);
       return;
     }
 
@@ -402,7 +438,7 @@ export default function KakaoDistrictMap({
     const bounds = new maps.LatLngBounds(first, first);
     visible.slice(1).forEach(({ site }) => bounds.extend(new maps.LatLng(site.latitude, site.longitude)));
     map.setBounds(bounds, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING);
-  }, [fitBounds]);
+  }, [fitMapToDistrict]);
 
   // 1) SDK 로드 + 지도 생성. 재시도할 때만 다시 실행한다.
   useEffect(() => {
@@ -454,7 +490,6 @@ export default function KakaoDistrictMap({
               const onClick = () => {
                 maps.event.preventMap();
                 handlersRef.current.onSelectDistrict(district.id);
-                fitBounds(district.id);
               };
               const onOver = () => {
                 hoveredDistrictRef.current = district.id;
@@ -550,7 +585,7 @@ export default function KakaoDistrictMap({
         });
 
         paintPolygons();
-        fitBounds(handlersRef.current.selectedDistrict);
+        fitMapToDistrict(handlersRef.current.selectedDistrict);
         // setBounds 로 레벨이 바뀌어도 zoom_changed 가 오지 않는 경우가 있어 한 번 맞춰 둔다.
         setClusterMode(map.getLevel() >= CLUSTER_ZOOM_THRESHOLD);
         setPhase('ready');
@@ -626,7 +661,13 @@ export default function KakaoDistrictMap({
     scheduleLabelLayout();
   }, [phase, selectedSiteId, scheduleLabelLayout]);
 
-  // 4) 사이드바 접기 등으로 컨테이너 크기가 바뀌면 relayout 후 범위를 다시 맞춘다.
+  // 4) 구 선택 변경 시 해당 경계로 지도를 fitting 한다. 필터 버튼·폴리곤 클릭 모두 처리한다.
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    fitMapToDistrict(selectedDistrict);
+  }, [phase, selectedDistrict, fitMapToDistrict]);
+
+  // 5) 사이드바 접기 등으로 컨테이너 크기가 바뀌면 relayout 후 범위를 다시 맞춘다.
   useEffect(() => {
     const container = containerRef.current;
     if (phase !== 'ready' || !container) return;
@@ -638,13 +679,7 @@ export default function KakaoDistrictMap({
       frame = requestAnimationFrame(() => mapRef.current?.relayout());
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        const center = mapRef.current?.getCenter();
-        const level = mapRef.current?.getLevel();
-        mapRef.current?.relayout();
-        if (center !== undefined && level !== undefined) {
-          mapRef.current?.setCenter(center);
-          mapRef.current?.setLevel(level);
-        }
+        fitMapToDistrict(handlersRef.current.selectedDistrict);
         scheduleLabelLayout();
       }, RELAYOUT_DEBOUNCE_MS);
     });
@@ -655,7 +690,7 @@ export default function KakaoDistrictMap({
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [phase, scheduleLabelLayout]);
+  }, [phase, scheduleLabelLayout, fitMapToDistrict]);
 
   const handleRetry = () => {
     resetKakaoMapsLoader();
