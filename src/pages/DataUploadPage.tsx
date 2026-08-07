@@ -287,15 +287,22 @@ export default function DataUploadPage() {
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && confirmRename()}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 ${
+                  datasets.some((d) => d.fileName === renameValue.trim()) && renameValue.trim()
+                    ? 'border-red-400 focus:border-red-400 focus:ring-red-400/20'
+                    : 'border-slate-300 focus:border-teal-500 focus:ring-teal-500/20'
+                }`}
                 autoFocus
               />
+              {datasets.some((d) => d.fileName === renameValue.trim()) && renameValue.trim() && (
+                <p className="mt-1.5 text-xs text-red-500">이미 등록된 파일 이름입니다. 다른 이름으로 바꿔주세요.</p>
+              )}
             </div>
             <div className="mt-4 flex gap-2">
               <button
                 type="button"
                 onClick={confirmRename}
-                disabled={!renameValue.trim()}
+                disabled={!renameValue.trim() || datasets.some((d) => d.fileName === renameValue.trim())}
                 className="flex-1 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 이 이름으로 올리기
