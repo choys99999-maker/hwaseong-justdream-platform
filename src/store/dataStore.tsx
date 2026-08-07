@@ -1,6 +1,13 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { dbGetAll, dbPut, dbDelete } from './db';
 
+export interface SheetEntry {
+  sheetName: string;
+  sheetType: string;
+  columns: string[];
+  records: Record<string, string>[];
+}
+
 export interface UploadedDataset {
   id: string;
   records: Record<string, string>[];
@@ -9,6 +16,7 @@ export interface UploadedDataset {
   uploadedAt: string;
   sheetName?: string;
   sheetType?: string;
+  sheets?: SheetEntry[];
 }
 
 interface DataStoreValue {

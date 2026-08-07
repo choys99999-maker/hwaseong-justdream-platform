@@ -21,6 +21,7 @@ import {
   GENERIC_COLUMNS,
 } from '../utils/columnMapping';
 import { useDataStore } from '../store/dataStore';
+import type { SheetEntry } from '../store/dataStore';
 import type {
   SheetParseResult,
   SheetConvertResult,
@@ -183,6 +184,8 @@ export default function DataUploadPage() {
 
   function handleSave() {
     const now = new Date().toISOString();
+    const sheetEntries: SheetEntry[] = [];
+
     for (const result of convertResults) {
       const sheet = sheets.find((s) => s.sheetName === result.sheetName);
       if (!sheet) continue;
@@ -204,15 +207,20 @@ export default function DataUploadPage() {
         return obj;
       });
 
-      addDataset({
-        records,
-        columns,
-        fileName: `${fileNameRef.current} — ${result.sheetName}`,
-        uploadedAt: now,
-        sheetName: result.sheetName,
-        sheetType: sheet.sheetType,
-      });
+      sheetEntries.push({ sheetName: result.sheetName, sheetType: sheet.sheetType, columns, records });
     }
+
+    const first = sheetEntries[0];
+    addDataset({
+      records: first?.records ?? [],
+      columns: first?.columns ?? [],
+      fileName: fileNameRef.current,
+      uploadedAt: now,
+      sheetName: first?.sheetName,
+      sheetType: first?.sheetType,
+      sheets: sheetEntries,
+    });
+
     setIsSaved(true);
   }
 
