@@ -24,7 +24,7 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="물품·유통기한" description="지역별 물품 입출고와 유통기한 현황을 확인합니다." />
+      <PageHeader title="물품·재고 관리" description="지역별 물품 입출고, 재고, 유통기한 현황을 확인합니다." />
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <label className="flex min-w-64 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-teal-500">

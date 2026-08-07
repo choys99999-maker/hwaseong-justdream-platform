@@ -136,6 +136,51 @@ export interface RedistributionRecord {
   districtName: string;
 }
 
+/** 복지서비스 연계완료 유형별 건수 */
+export interface WelfareLinkageBreakdown {
+  basicLivelihood: number;
+  nearPoor: number;
+  emergencyWelfare: number;
+  other: number;
+}
+
+/** 기관별 실적 1건. 주별·누적 실적 화면에서 공통으로 사용한다. */
+export interface OrgPerformanceRecord {
+  id: string;
+  orgName: string;
+  regionId: RegionId;
+  /** 주별 실적일 때만 사용하는 주차 라벨 (예: '2026-08-1주차') */
+  weekLabel?: string;
+  userCount: number;
+  basicCounselingCount: number;
+  counselingReferralCount: number;
+  welfareLinkageCompleted: WelfareLinkageBreakdown;
+  underReviewCount: number;
+  noLinkageNeededCount: number;
+}
+
+export type VisitType = '최초방문' | '재방문';
+export type LinkageConductedStatus = '실시' | '미실시';
+export type LinkageCompletionType = '기초생활' | '차상위' | '긴급복지' | '기타' | '해당없음';
+
+/** 2차 의뢰 연계 대상자 1명. */
+export interface SecondReferralCase {
+  id: string;
+  orgName: string;
+  regionId: RegionId;
+  visitType: VisitType;
+  clientName: string;
+  birthDate: string;
+  address: string;
+  counselingDate: string;
+  secondReferralDong: string;
+  linkageConducted: LinkageConductedStatus;
+  linkageCompletionType: LinkageCompletionType;
+  note?: string;
+  underReview: boolean;
+  noLinkageNeeded: boolean;
+}
+
 /** GeoJSON 링: `[경도, 위도]` 좌표 배열 */
 export type BoundaryRing = [number, number][];
 /** 폴리곤 1개: 첫 링이 외곽선, 이후 링은 구멍 */

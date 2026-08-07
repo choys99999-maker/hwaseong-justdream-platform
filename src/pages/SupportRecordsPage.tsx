@@ -30,7 +30,7 @@ export default function SupportRecordsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="이용·지원 내역" description="이용자별 지원 물품과 상담·복지 연계 현황을 확인합니다." />
+      <PageHeader title="이용자·상담 관리" description="이용자 목록과 지원 물품, 상담·복지 연계 현황을 확인합니다." />
 
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
         <label className="flex min-w-64 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-teal-500">

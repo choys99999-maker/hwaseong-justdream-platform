@@ -1,4 +1,12 @@
-import { ClipboardList, LayoutDashboard, MapPinned, PackageSearch, UploadCloud, type LucideIcon } from 'lucide-react';
+import {
+  ClipboardList,
+  LayoutDashboard,
+  MapPinned,
+  PackageSearch,
+  TrendingUp,
+  UploadCloud,
+  type LucideIcon,
+} from 'lucide-react';
 
 export interface NavItem {
   path: string;
@@ -9,8 +17,9 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { path: '/', label: '통합 대시보드', icon: LayoutDashboard },
   { path: '/regions', label: '지역별 현황', icon: MapPinned },
-  { path: '/support-records', label: '이용·지원 내역', icon: ClipboardList },
-  { path: '/inventory', label: '물품·유통기한', icon: PackageSearch },
+  { path: '/performance', label: '실적·복지연계', icon: ClipboardList },
+  { path: '/inventory', label: '물품·재고 관리', icon: PackageSearch },
+  { path: '/forecast', label: 'AI 수요예측', icon: TrendingUp },
   { path: '/upload', label: '데이터 업로드', icon: UploadCloud },
 ];
 
