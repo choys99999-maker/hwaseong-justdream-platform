@@ -42,6 +42,21 @@ export interface KakaoPolygon {
   setZIndex(zIndex: number): void;
 }
 
+export interface KakaoPolylineOptions {
+  path?: KakaoLatLng[];
+  strokeWeight?: number;
+  strokeColor?: string;
+  strokeOpacity?: number;
+  strokeStyle?: string;
+  zIndex?: number;
+}
+
+export interface KakaoPolyline {
+  setMap(map: KakaoMap | null): void;
+  setOptions(options: KakaoPolylineOptions): void;
+  setZIndex(zIndex: number): void;
+}
+
 export interface KakaoCustomOverlayOptions {
   position: KakaoLatLng;
   content: HTMLElement | string;
@@ -66,6 +81,7 @@ export interface KakaoMapsNamespace {
   ZoomControl: new () => KakaoZoomControl;
   ControlPosition: Record<string, unknown>;
   Polygon: new (options: KakaoPolygonOptions) => KakaoPolygon;
+  Polyline: new (options: KakaoPolylineOptions) => KakaoPolyline;
   CustomOverlay: new (options: KakaoCustomOverlayOptions) => KakaoCustomOverlay;
   event: {
     addListener(target: object, type: string, handler: (...args: unknown[]) => void): void;

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, KeyRound, RotateCw } from 'lucide-react';
 import type { DistrictId, OperationSite, SiteStatus } from '../../types';
-import type { KakaoCustomOverlay, KakaoMap, KakaoMapsNamespace, KakaoPolygon } from '../../types/kakao';
+import type { KakaoCustomOverlay, KakaoMap, KakaoMapsNamespace, KakaoPolygon, KakaoPolyline } from '../../types/kakao';
 import { KAKAO_KEY_ENV_NAME, MissingKakaoKeyError, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
-import { HWASEONG_BBOX, districtBoundaries, getDistrictBBox } from '../../data/districtBoundaries';
+import { HWASEONG_FOCUS_BBOX, districtBoundaries, getDistrictBBox } from '../../data/districtBoundaries';
 import { SITE_STATUS_COLORS, SITE_STATUS_LABELS } from '../../data/regionMeta';
 
 /** 폴리곤 표현 기준. 지명과 도로가 읽히도록 기본 채도를 낮게 유지한다. */
@@ -12,6 +12,17 @@ const POLYGON_STYLE = {
   hover: { strokeWeight: 3, strokeOpacity: 1, fillOpacity: 0.28, zIndex: 3 },
   selected: { strokeWeight: 3, strokeOpacity: 1, fillOpacity: 0.24, zIndex: 4 },
   dimmed: { strokeWeight: 1, strokeOpacity: 0.35, fillOpacity: 0.07, zIndex: 1 },
+} as const;
+
+/**
+ * 구 경계선. 읍면동 경계(strokeWeight 1~3)보다 확실히 굵고 어둡게 그려서 4개 구가 구분되게 한다.
+ * 상태 색상(fill)은 그대로 두고 경계선만 얹으므로 기존 색 규칙과 충돌하지 않는다.
+ */
+const DISTRICT_OUTLINE_COLOR = '#1e293b';
+const DISTRICT_OUTLINE_STYLE = {
+  base: { strokeWeight: 5, strokeOpacity: 0.85, zIndex: 6 },
+  selected: { strokeWeight: 6, strokeOpacity: 1, zIndex: 8 },
+  dimmed: { strokeWeight: 3, strokeOpacity: 0.3, zIndex: 6 },
 } as const;
 
 const BOUNDS_PADDING = 24;
@@ -40,6 +51,11 @@ interface KakaoDistrictMapProps {
 interface PolygonEntry {
   district: DistrictId;
   polygon: KakaoPolygon;
+}
+
+interface OutlineEntry {
+  district: DistrictId;
+  polyline: KakaoPolyline;
 }
 
 interface MarkerEntry {
@@ -93,6 +109,7 @@ export default function KakaoDistrictMap({
   const mapsRef = useRef<KakaoMapsNamespace | null>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const polygonsRef = useRef<PolygonEntry[]>([]);
+  const outlinesRef = useRef<OutlineEntry[]>([]);
   const markersRef = useRef<MarkerEntry[]>([]);
   const clusterOverlaysRef = useRef<ClusterEntry[]>([]);
   const hoveredDistrictRef = useRef<DistrictId | null>(null);
@@ -137,6 +154,22 @@ export default function KakaoDistrictMap({
       });
       polygon.setZIndex(style.zIndex);
     });
+
+    // 구 경계선은 상태 색과 무관하게 굵기·투명도만 선택 상태에 맞춘다.
+    outlinesRef.current.forEach(({ district, polyline }) => {
+      const isSelected = selected === district;
+      const style = isSelected
+        ? DISTRICT_OUTLINE_STYLE.selected
+        : selected !== null
+          ? DISTRICT_OUTLINE_STYLE.dimmed
+          : DISTRICT_OUTLINE_STYLE.base;
+      polyline.setOptions({
+        strokeColor: DISTRICT_OUTLINE_COLOR,
+        strokeWeight: style.strokeWeight,
+        strokeOpacity: style.strokeOpacity,
+      });
+      polyline.setZIndex(style.zIndex);
+    });
   }, [districtRiskLevels]);
 
   /** 선택된 구(없으면 화성시 전체) 범위로 지도를 맞춘다. */
@@ -144,7 +177,7 @@ export default function KakaoDistrictMap({
     const maps = mapsRef.current;
     const map = mapRef.current;
     if (!maps || !map) return;
-    const [minLng, minLat, maxLng, maxLat] = district ? getDistrictBBox(district) : HWASEONG_BBOX;
+    const [minLng, minLat, maxLng, maxLat] = getDistrictBBox(district);
     const bounds = new maps.LatLngBounds(new maps.LatLng(minLat, minLng), new maps.LatLng(maxLat, maxLng));
     map.setBounds(bounds, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING);
   }, []);
@@ -183,7 +216,7 @@ export default function KakaoDistrictMap({
         if (!mounted || !containerRef.current) return;
         mapsRef.current = maps;
 
-        const [minLng, minLat, maxLng, maxLat] = HWASEONG_BBOX;
+        const [minLng, minLat, maxLng, maxLat] = HWASEONG_FOCUS_BBOX;
         const map = new maps.Map(containerRef.current, {
           center: new maps.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2),
           level: 9,
@@ -243,6 +276,19 @@ export default function KakaoDistrictMap({
           });
         });
 
+        // 구 경계선 오버레이. 클릭 리스너를 붙이지 않아 읍면동 폴리곤 클릭을 가리지 않는다.
+        districtBoundaries.forEach((district) => {
+          district.outline.forEach((ring) => {
+            const polyline = new maps.Polyline({
+              path: ring.map(([lng, lat]) => new maps.LatLng(lat, lng)),
+              strokeStyle: 'solid',
+            });
+            polyline.setMap(map);
+            cleanupRef.current.push(() => polyline.setMap(null));
+            outlinesRef.current.push({ district: district.id, polyline });
+          });
+        });
+
         // 거점 마커
         sites.forEach((site) => {
           const element = createMarkerElement(site);
@@ -271,9 +317,8 @@ export default function KakaoDistrictMap({
 
         // 구 단위 클러스터 오버레이 (구당 1개)
         districtBoundaries.forEach((district) => {
-          const [minLng, minLat, maxLng, maxLat] = getDistrictBBox(district.id);
-          const centerLat = (minLat + maxLat) / 2;
-          const centerLng = (minLng + maxLng) / 2;
+          // bbox 중심은 서해 도서 때문에 만세구에서 바다로 나간다. 구 내부가 보장된 대표점을 쓴다.
+          const [centerLng, centerLat] = district.center;
 
           const element = createClusterElement(district.name);
           const onClusterClick = (e: MouseEvent) => {
@@ -317,6 +362,7 @@ export default function KakaoDistrictMap({
       cleanupRef.current.forEach((dispose) => dispose());
       cleanupRef.current = [];
       polygonsRef.current = [];
+      outlinesRef.current = [];
       markersRef.current = [];
       clusterOverlaysRef.current = [];
       hoveredDistrictRef.current = null;

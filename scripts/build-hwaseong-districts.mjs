@@ -22,11 +22,16 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
-/** 단순화 허용 오차(도). 위도 37도 기준 약 25~30m. */
-const TOLERANCE = 0.0003;
+/** 단순화 허용 오차(도). 위도 37도 기준 약 8~9m. */
+const TOLERANCE = 0.0001;
 /** 이 값보다 대각선이 짧은 링은 제외한다(도). 약 400m. */
 const MIN_RING_SPAN = 0.004;
 const PRECISION = 5;
+/**
+ * focusBBox 에 포함할 폴리곤 면적 비율. 나머지(제부도 등 서해 도서)는 화면 범위에서만 빠지고
+ * 폴리곤 데이터에는 그대로 남는다. 0.985 는 만세구 본토(송산면 서쪽 끝)까지 포함하는 값이다.
+ */
+const FOCUS_AREA_RATIO = 0.985;
 
 const DISTRICTS = [
   { id: 'manse', sggnm: '화성시만세구', name: '만세구' },
@@ -117,6 +122,142 @@ function extendBBox(bbox, ring) {
   }
 }
 
+/** 부호 없는 링 면적(제곱도). 크기 비교용이라 위경도 왜곡은 보정하지 않는다. */
+function ringArea(ring) {
+  let sum = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    sum += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  }
+  return Math.abs(sum) / 2;
+}
+
+function pointInRing(ring, [x, y]) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** polygons = [[외곽링, 구멍링...], ...] 중 한 곳이라도 점을 품으면 true. */
+function pointInPolygons(polygons, point) {
+  return polygons.some(
+    (rings) => pointInRing(rings[0], point) && !rings.slice(1).some((hole) => pointInRing(hole, point)),
+  );
+}
+
+/**
+ * 구 경계선(union outline).
+ *
+ * 원본 SGIS 행정동 경계는 인접 행정동끼리 정점을 공유하므로, 같은 구에 속한 모든 링의
+ * 무향 간선을 세면 내부 경계는 정확히 2번, 구 외곽은 1번 나타난다. 1번만 나온 간선을
+ * 이어 붙이면 폴리곤 클리핑 없이 구 외곽선을 얻는다.
+ * 단순화 전 원본 좌표에서 계산해야 정점 공유가 깨지지 않는다.
+ */
+function dissolveOutline(rings) {
+  const edges = new Map();
+  for (const ring of rings) {
+    for (let i = 0; i < ring.length - 1; i += 1) {
+      const a = ring[i];
+      const b = ring[i + 1];
+      const ka = `${a[0]},${a[1]}`;
+      const kb = `${b[0]},${b[1]}`;
+      if (ka === kb) continue;
+      const key = ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+      const entry = edges.get(key);
+      if (entry) entry.count += 1;
+      else edges.set(key, { a, b, count: 1 });
+    }
+  }
+
+  const border = [...edges.values()].filter((edge) => edge.count === 1);
+  const adjacency = new Map();
+  border.forEach((edge, index) => {
+    const ka = `${edge.a[0]},${edge.a[1]}`;
+    const kb = `${edge.b[0]},${edge.b[1]}`;
+    if (!adjacency.has(ka)) adjacency.set(ka, []);
+    if (!adjacency.has(kb)) adjacency.set(kb, []);
+    adjacency.get(ka).push({ index, to: edge.b });
+    adjacency.get(kb).push({ index, to: edge.a });
+  });
+
+  const used = new Set();
+  const outline = [];
+  for (let i = 0; i < border.length; i += 1) {
+    if (used.has(i)) continue;
+    used.add(i);
+    const start = border[i].a;
+    const startKey = `${start[0]},${start[1]}`;
+    const ring = [start, border[i].b];
+    let current = border[i].b;
+    while (`${current[0]},${current[1]}` !== startKey) {
+      const next = (adjacency.get(`${current[0]},${current[1]}`) ?? []).find(
+        (candidate) => !used.has(candidate.index),
+      );
+      if (!next) break;
+      used.add(next.index);
+      ring.push(next.to);
+      current = next.to;
+    }
+    if (`${current[0]},${current[1]}` !== startKey) {
+      throw new Error('구 외곽선을 닫힌 링으로 잇지 못했습니다. 원본 위상이 깨졌을 수 있습니다.');
+    }
+    outline.push(ring);
+  }
+  return outline;
+}
+
+/** 여러 링의 면적 가중 중심점. 링 하나의 ringCentroid 를 면적으로 가중 평균한다. */
+function areaWeightedCentroid(rings) {
+  let weight = 0;
+  let cx = 0;
+  let cy = 0;
+  for (const ring of rings) {
+    const area = ringArea(ring);
+    const [x, y] = ringCentroid(ring);
+    weight += area;
+    cx += x * area;
+    cy += y * area;
+  }
+  if (weight === 0) return ringCentroid(rings[0]);
+  return [Number((cx / weight).toFixed(6)), Number((cy / weight).toFixed(6))];
+}
+
+/**
+ * 폴리곤 내부에서 경계로부터 가장 먼 점. 오목한 폴리곤이라 centroid 가 밖으로 나갈 때 쓴다.
+ * bbox 격자를 훑어 내부 점 중 경계 최단거리가 최대인 지점을 고른다.
+ */
+function interiorPoint(rings) {
+  const bbox = [Infinity, Infinity, -Infinity, -Infinity];
+  extendBBox(bbox, rings[0]);
+  const steps = 120;
+  let best = null;
+  let bestDistance = -1;
+  for (let i = 0; i < steps; i += 1) {
+    for (let j = 0; j < steps; j += 1) {
+      const point = [
+        bbox[0] + ((bbox[2] - bbox[0]) * (i + 0.5)) / steps,
+        bbox[1] + ((bbox[3] - bbox[1]) * (j + 0.5)) / steps,
+      ];
+      if (!pointInPolygons([rings], point)) continue;
+      let distance = Infinity;
+      for (const ring of rings) {
+        for (let k = 0; k < ring.length - 1; k += 1) {
+          distance = Math.min(distance, perpendicularDistance(point, ring[k], ring[k + 1]));
+        }
+      }
+      if (distance > bestDistance) {
+        bestDistance = distance;
+        best = point;
+      }
+    }
+  }
+  if (!best) throw new Error('폴리곤 내부점을 찾지 못했습니다.');
+  return [Number(best[0].toFixed(6)), Number(best[1].toFixed(6))];
+}
+
 const sourcePath = process.argv[2];
 if (!sourcePath) {
   console.error('사용법: node scripts/build-hwaseong-districts.mjs <원본 HangJeongDong geojson 경로>');
@@ -125,9 +266,13 @@ if (!sourcePath) {
 
 const source = JSON.parse(readFileSync(sourcePath, 'utf8'));
 const cityBBox = [Infinity, Infinity, -Infinity, -Infinity];
+const cityFocusBBox = [Infinity, Infinity, -Infinity, -Infinity];
 const centroids = [];
+const centerReport = [];
+const focusReport = [];
 let rawPointCount = 0;
 let keptPointCount = 0;
+let outlinePointCount = 0;
 
 const districts = DISTRICTS.map((district) => {
   const features = source.features.filter((feature) => feature.properties.sggnm === district.sggnm);
@@ -166,11 +311,69 @@ const districts = DISTRICTS.map((district) => {
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 
+  // 구 외곽선: 단순화 전 원본 링에서 dissolve 한 뒤 같은 기준으로 단순화한다.
+  const rawRings = features.flatMap((feature) => toPolygons(feature.geometry).flat());
+  const outline = [];
+  for (const ring of dissolveOutline(rawRings)) {
+    const simplified = roundRing(simplify(ring, TOLERANCE));
+    if (simplified.length < 4) continue;
+    if (ringSpan(simplified) < MIN_RING_SPAN) continue;
+    if (
+      simplified[0][0] !== simplified[simplified.length - 1][0] ||
+      simplified[0][1] !== simplified[simplified.length - 1][1]
+    ) {
+      simplified.push(simplified[0]);
+    }
+    outlinePointCount += simplified.length;
+    outline.push(simplified);
+  }
+
+  const allPolygons = areas.flatMap((area) => area.polygons);
+
+  // 클러스터 대표점: 구 전체의 면적 가중 중심점. 구 밖으로 나오면 최대 폴리곤의 내부점으로 대체한다.
+  let center = areaWeightedCentroid(allPolygons.map((rings) => rings[0]));
+  let centerSource = '면적 가중 centroid';
+  if (!pointInPolygons(allPolygons, center)) {
+    const largest = [...allPolygons].sort((a, b) => ringArea(b[0]) - ringArea(a[0]))[0];
+    center = interiorPoint(largest);
+    centerSource = '최대 폴리곤 내부점';
+  }
+  if (!pointInPolygons(allPolygons, center)) {
+    throw new Error(`${district.name} 대표점이 구 폴리곤 밖입니다.`);
+  }
+  centerReport.push({ id: district.id, name: district.name, center, source: centerSource });
+
+  // 확대용 bbox: 면적 기준 상위 폴리곤만으로 만든다. 도서는 데이터에 남기고 화면 범위에서만 뺀다.
+  const focusBBox = [Infinity, Infinity, -Infinity, -Infinity];
+  const sortedByArea = [...allPolygons].sort((a, b) => ringArea(b[0]) - ringArea(a[0]));
+  const totalArea = sortedByArea.reduce((sum, rings) => sum + ringArea(rings[0]), 0);
+  let covered = 0;
+  let focusCount = 0;
+  for (const rings of sortedByArea) {
+    if (covered >= totalArea * FOCUS_AREA_RATIO) break;
+    covered += ringArea(rings[0]);
+    focusCount += 1;
+    extendBBox(focusBBox, rings[0]);
+  }
+  extendBBox(cityFocusBBox, [
+    [focusBBox[0], focusBBox[1]],
+    [focusBBox[2], focusBBox[3]],
+  ]);
+  focusReport.push({
+    name: district.name,
+    kept: focusCount,
+    total: allPolygons.length,
+    bbox: focusBBox.map((value) => Number(value.toFixed(PRECISION))),
+  });
+
   return {
     id: district.id,
     name: district.name,
     sggnm: district.sggnm,
     bbox: districtBBox.map((value) => Number(value.toFixed(PRECISION))),
+    focusBBox: focusBBox.map((value) => Number(value.toFixed(PRECISION))),
+    center,
+    outline,
     areas,
   };
 });
@@ -186,18 +389,27 @@ const output = {
     crs: 'WGS84 (EPSG:4326)',
     generatedBy: 'scripts/build-hwaseong-districts.mjs',
     simplification: `Douglas-Peucker tolerance ${TOLERANCE}도, 좌표 소수점 ${PRECISION}자리 반올림, 대각선 ${MIN_RING_SPAN}도 미만 링 제외`,
-    note: '구 단위 union을 하지 않고 행정동 경계를 소속 구로 그룹핑한 데이터입니다.',
+    note: '행정동 경계를 소속 구로 그룹핑하고, 구 외곽선(outline)은 원본 좌표에서 dissolve 해 별도로 담았습니다.',
   },
   bbox: cityBBox.map((value) => Number(value.toFixed(PRECISION))),
+  focusBBox: cityFocusBBox.map((value) => Number(value.toFixed(PRECISION))),
   districts,
 };
 
 const targetPath = new URL('../src/data/geo/hwaseongDistricts.geo.json', import.meta.url);
 writeFileSync(targetPath, `${JSON.stringify(output)}\n`, 'utf8');
 
-console.log(`좌표 수: ${rawPointCount} → ${keptPointCount}`);
+console.log(`좌표 수: ${rawPointCount} → ${keptPointCount} (구 외곽선 ${outlinePointCount} 별도)`);
 console.log(
-  districts.map((d) => `${d.name}: 행정동 ${d.areas.length}개`).join(', '),
+  districts.map((d) => `${d.name}: 행정동 ${d.areas.length}개, 외곽선 링 ${d.outline.length}개`).join(', '),
 );
+console.log('구 클러스터 대표점 (모두 구 폴리곤 내부 검증됨):');
+for (const item of centerReport) {
+  console.log(`  ${item.name}: ${item.center[0]}, ${item.center[1]} (${item.source})`);
+}
+console.log('구 확대용 focusBBox (도서 제외, 데이터에는 도서 유지):');
+for (const item of focusReport) {
+  console.log(`  ${item.name}: 폴리곤 ${item.kept}/${item.total} 사용 → [${item.bbox.join(', ')}]`);
+}
 console.log('행정동 경계 중심점 (거점 좌표 산출용):');
 console.log(JSON.stringify(centroids, null, 2));

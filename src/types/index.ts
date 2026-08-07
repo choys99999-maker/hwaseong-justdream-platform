@@ -197,5 +197,11 @@ export interface DistrictBoundary {
   id: DistrictId;
   name: string;
   bbox: BoundaryBBox;
+  /** 서해 도서를 제외한 본토 중심 확대 범위. 폴리곤 데이터에는 도서가 그대로 남아 있다. */
+  focusBBox: BoundaryBBox;
+  /** 구 폴리곤 내부가 보장된 대표점 [lng, lat]. 클러스터 오버레이 위치로 쓴다. */
+  center: [number, number];
+  /** 읍면동 경계를 dissolve 한 구 외곽선. 링마다 폴리라인 1개로 그린다. */
+  outline: BoundaryRing[];
   areas: DistrictBoundaryArea[];
 }
