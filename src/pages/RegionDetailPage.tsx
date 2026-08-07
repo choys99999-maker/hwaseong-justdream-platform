@@ -7,6 +7,7 @@ import EmptyState from '../components/common/EmptyState';
 import MonthlySupportChart from '../components/charts/MonthlySupportChart';
 import { useDataStore, findCol, resolveSheet } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
+import { extractEupMyeonDong } from '../utils/address';
 
 const PAGE_SIZE = 20;
 
@@ -15,18 +16,32 @@ export default function RegionDetailPage() {
   const { dataset, isLoading } = useDataStore();
   const regionName = regionId ? decodeURIComponent(regionId) : '';
 
-  const view = dataset ? resolveSheet(dataset, /읍면동|지역|권역/) : null;
+  const view = dataset ? resolveSheet(dataset, /읍면동|지역|권역|주소/) : null;
   const regionCol = view ? findCol(view.columns, /읍면동|지역|권역/) : null;
+  const addressCol = view ? findCol(view.columns, /주소|거주지/) : null;
   const nameCol = view ? findCol(view.columns, /이용자|수혜자|이름|성명/) : null;
   const dateCol = view ? findCol(view.columns, /지원일|날짜|일자/) : null;
   const qtyCol = view ? findCol(view.columns, /수량/) : null;
 
+  function getRegion(r: Record<string, string>): string {
+    if (regionCol) {
+      const v = r[regionCol];
+      if (v) return v;
+    }
+    if (addressCol) {
+      return extractEupMyeonDong(r[addressCol] ?? '') ?? '';
+    }
+    return '';
+  }
+
+  const displayCols = (view?.columns ?? []).filter(
+    (c) => c !== regionCol && c !== addressCol,
+  );
+
   const { regionRecords, monthlyData } = useMemo(() => {
     if (!view) return { regionRecords: [], monthlyData: [] };
 
-    const records = regionCol
-      ? view.records.filter((r) => r[regionCol] === regionName)
-      : view.records;
+    const records = view.records.filter((r) => getRegion(r) === regionName);
 
     const sorted = dateCol
       ? [...records].sort((a, b) => (b[dateCol] ?? '').localeCompare(a[dateCol] ?? ''))
@@ -47,7 +62,8 @@ export default function RegionDetailPage() {
     );
 
     return { regionRecords: sorted, monthlyData: monthly };
-  }, [view, regionCol, dateCol, regionName]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, regionCol, addressCol, dateCol, regionName]);
 
   if (isLoading) return null;
   if (!dataset) {
@@ -107,7 +123,6 @@ export default function RegionDetailPage() {
         <MonthlySupportChart data={monthlyData} />
       )}
 
-      {/* 지원 내역 테이블 */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h3 className="mb-3 text-base font-semibold text-slate-900">
           지원 내역
@@ -119,7 +134,7 @@ export default function RegionDetailPage() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
-                {(view?.columns ?? []).filter((c) => c !== regionCol).map((col) => (
+                {displayCols.map((col) => (
                   <th key={col} className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500">
                     {col}
                   </th>
@@ -129,7 +144,7 @@ export default function RegionDetailPage() {
             <tbody className="divide-y divide-slate-100 bg-white">
               {regionRecords.slice(0, PAGE_SIZE).map((row, i) => (
                 <tr key={i} className="hover:bg-slate-50">
-                  {(view?.columns ?? []).filter((c) => c !== regionCol).map((col) => (
+                  {displayCols.map((col) => (
                     <td key={col} className="whitespace-nowrap px-4 py-2.5 text-slate-700">
                       {col === qtyCol ? `${row[col]}개` : row[col] ?? ''}
                     </td>
@@ -141,7 +156,7 @@ export default function RegionDetailPage() {
         </div>
         {regionRecords.length > PAGE_SIZE && (
           <p className="mt-2 text-right text-xs text-slate-400">
-            {regionRecords.length.toLocaleString()}건 중 {PAGE_SIZE}건 표시 — 전체 내역은 이용·지원 내역 페이지에서 확인하세요.
+            {regionRecords.length.toLocaleString()}건 중 {PAGE_SIZE}건 표시
           </p>
         )}
       </section>
