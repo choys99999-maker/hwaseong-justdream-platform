@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -12,51 +11,50 @@ import {
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import UploadStepper, { type UploadStep } from '../components/upload/UploadStepper';
-import { useDataStore } from '../store/dataStore';
+import ColumnMapper from '../components/upload/ColumnMapper';
+import { autoMapColumns, PLATFORM_COLUMNS } from '../utils/columnMapping';
+import type { ConvertResult, MappedRecord, PlatformColumnKey } from '../types/upload';
 
-interface ExcelPreview {
+interface ExcelInfo {
   fileName: string;
   sheetName: string;
   columns: string[];
-  rows: Record<string, string>[];
+  previewRows: Record<string, string>[];
   totalRows: number;
 }
 
-// 열 이름 → { missing, duplicate, list } 온오프
-type SelectedChecks = Record<string, { missing: boolean; duplicate: boolean; list: boolean }>;
+const PLATFORM_LABEL: Record<PlatformColumnKey, string> = {
+  region: '지역',
+  organization: '기관명',
+  itemName: '품목명',
+  inboundQuantity: '입고수량',
+  outboundQuantity: '출고수량',
+  stock: '현재재고',
+  inboundDate: '입고일',
+  expirationDate: '유통기한',
+};
 
-interface ValidationResult {
-  totalRows: number;
-  missingByColumn: Record<string, number> | null;
-  duplicateByColumn: Record<string, number> | null;
-  listByColumn: Record<string, number> | null;
+function recordValue(record: MappedRecord, key: PlatformColumnKey): string {
+  const val = (record as Record<string, unknown>)[key];
+  if (val === undefined || val === null) return '';
+  return String(val);
 }
 
 export default function DataUploadPage() {
-  const { datasets, addDataset } = useDataStore();
-
   const [step, setStep] = useState<UploadStep>('select');
-  const [preview, setPreview] = useState<ExcelPreview | null>(null);
+  const [excelInfo, setExcelInfo] = useState<ExcelInfo | null>(null);
+  const [columnMappings, setColumnMappings] = useState<Record<string, PlatformColumnKey | null>>({});
+  const [initialMappings, setInitialMappings] = useState<Record<string, PlatformColumnKey | null>>({});
+  const [convertResult, setConvertResult] = useState<ConvertResult | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isParsing, setIsParsing] = useState(false);
-  const [selectedChecks, setSelectedChecks] = useState<SelectedChecks>({});
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
-  const [validationProgress, setValidationProgress] = useState(0);
-  const [isValidating, setIsValidating] = useState(false);
-  const [isApplying, setIsApplying] = useState(false);
-  const [appliedCount, setAppliedCount] = useState<number | null>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [renameValue, setRenameValue] = useState('');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const fileNameRef = useRef('');
-  const columnsRef = useRef<string[]>([]);
-  const addDatasetRef = useRef(addDataset);
-  addDatasetRef.current = addDataset;
-  const chunkedRecordsRef = useRef<Record<string, string>[]>([]);
 
   useEffect(() => {
     const worker = new Worker(
@@ -69,59 +67,33 @@ export default function DataUploadPage() {
       switch (msg.type) {
         case 'parse-done': {
           const cols = msg.columns as string[];
-          columnsRef.current = cols;
-          const initChecks: SelectedChecks = {};
-          for (const col of cols) {
-            initChecks[col] = { missing: true, duplicate: true, list: true };
-          }
-          setSelectedChecks(initChecks);
-          setPreview({
+          const auto = autoMapColumns(cols);
+          setColumnMappings(auto);
+          setInitialMappings(auto);
+          setExcelInfo({
             fileName: fileNameRef.current,
             sheetName: msg.sheetName,
             columns: cols,
-            rows: msg.previewRows,
+            previewRows: msg.previewRows,
             totalRows: msg.totalRows,
           });
           setIsParsing(false);
-          setStep('columns');
+          setStep('mapping');
           break;
         }
-        case 'all-data-chunk': {
-          Array.prototype.push.apply(
-            chunkedRecordsRef.current,
-            msg.chunk as Record<string, string>[],
-          );
-          break;
-        }
-        case 'all-data-done': {
-          const records = chunkedRecordsRef.current;
-          chunkedRecordsRef.current = [];
-          addDatasetRef.current({
-            records,
-            columns: columnsRef.current,
-            fileName: fileNameRef.current,
-            uploadedAt: new Date().toISOString(),
+        case 'convert-done': {
+          setConvertResult({
+            records: msg.records as MappedRecord[],
+            errors: msg.errors,
           });
-          setIsApplying(false);
-          setAppliedCount(records.length);
+          setIsConverting(false);
+          setStep('preview');
           break;
         }
-        case 'validate-progress':
-          setValidationProgress(msg.progress);
-          break;
-        case 'validate-done':
-          setValidationResult({
-            totalRows: msg.totalRows,
-            missingByColumn: msg.missingByColumn,
-            duplicateByColumn: msg.duplicateByColumn,
-            listByColumn: msg.listByColumn,
-          });
-          setIsValidating(false);
-          break;
         case 'error':
           setError(msg.message);
           setIsParsing(false);
-          setIsValidating(false);
+          setIsConverting(false);
           setStep('select');
           break;
       }
@@ -130,7 +102,7 @@ export default function DataUploadPage() {
     worker.onerror = (e) => {
       setError(`처리 중 오류가 발생했습니다: ${e.message}`);
       setIsParsing(false);
-      setIsValidating(false);
+      setIsConverting(false);
       setStep('select');
     };
 
@@ -138,21 +110,7 @@ export default function DataUploadPage() {
     return () => worker.terminate();
   }, []);
 
-  useEffect(() => {
-    if (step === 'validation' && !isValidating && !validationResult) {
-      setIsValidating(true);
-      setValidationProgress(0);
-      const entries = Object.entries(selectedChecks);
-      const workerChecks = {
-        missingColumns: entries.filter(([, v]) => v.missing).map(([k]) => k),
-        duplicateColumns: entries.filter(([, v]) => v.duplicate).map(([k]) => k),
-        listColumns: entries.filter(([, v]) => v.list).map(([k]) => k),
-      };
-      workerRef.current?.postMessage({ type: 'validate', checks: workerChecks });
-    }
-  }, [step, isValidating, validationResult, selectedChecks]);
-
-  function processFile(file: File, overrideName?: string) {
+  function processFile(file: File) {
     if (!workerRef.current) {
       setError('처리 모듈 초기화 중입니다. 잠시 후 다시 시도해 주세요.');
       return;
@@ -165,9 +123,9 @@ export default function DataUploadPage() {
     setError(null);
     setUploadProgress(0);
     setIsParsing(false);
-    setValidationResult(null);
+    setConvertResult(null);
     setStep('uploading');
-    fileNameRef.current = overrideName ?? file.name;
+    fileNameRef.current = file.name;
 
     const reader = new FileReader();
     reader.onprogress = (e) => {
@@ -186,19 +144,9 @@ export default function DataUploadPage() {
     reader.readAsArrayBuffer(file);
   }
 
-  function handleFileSelected(file: File) {
-    const isDuplicate = datasets.some((d) => d.fileName === file.name);
-    if (isDuplicate) {
-        setRenameValue(file.name);
-      setPendingFile(file);
-      return;
-    }
-    processFile(file);
-  }
-
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) handleFileSelected(file);
+    if (file) processFile(file);
     e.target.value = '';
   }
 
@@ -206,119 +154,55 @@ export default function DataUploadPage() {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) handleFileSelected(file);
+    if (file) processFile(file);
   }
 
-  function confirmRename() {
-    if (!pendingFile) return;
-    const name = renameValue.trim() || pendingFile.name;
-    setPendingFile(null);
-    processFile(pendingFile, name);
+  function handleMappingChange(col: string, target: PlatformColumnKey | null) {
+    setColumnMappings((prev) => ({ ...prev, [col]: target }));
+  }
+
+  function handleConvert() {
+    setIsConverting(true);
+    setConvertResult(null);
+    workerRef.current?.postMessage({ type: 'convert', mapping: columnMappings });
   }
 
   function handleReset() {
-    setPreview(null);
+    setExcelInfo(null);
+    setColumnMappings({});
+    setInitialMappings({});
+    setConvertResult(null);
+    setIsConverting(false);
     setError(null);
     setUploadProgress(0);
     setIsParsing(false);
-    setValidationResult(null);
-    setValidationProgress(0);
-    setIsValidating(false);
-    setSelectedChecks({});
-    setIsApplying(false);
-    setAppliedCount(null);
-    chunkedRecordsRef.current = [];
     setStep('select');
   }
 
-  function handleApply() {
-    setIsApplying(true);
-    chunkedRecordsRef.current = [];
-    workerRef.current?.postMessage({ type: 'get-all' });
-  }
+  // 변환된 열 순서 (매핑된 것만)
+  const mappedPlatformCols = PLATFORM_COLUMNS.filter((d) =>
+    Object.values(columnMappings).includes(d.key),
+  );
 
-  function goBackToColumns() {
-    setValidationResult(null);
-    setValidationProgress(0);
-    setIsValidating(false);
-    setStep('columns');
-  }
-
-  function toggleCell(col: string, type: 'missing' | 'duplicate' | 'list') {
-    setSelectedChecks((prev) => ({
-      ...prev,
-      [col]: { ...prev[col], [type]: !prev[col]?.[type] },
-    }));
-  }
-
-  function toggleAllOfType(type: 'missing' | 'duplicate' | 'list') {
-    if (!preview) return;
-    const allOn = preview.columns.every((c) => selectedChecks[c]?.[type]);
-    setSelectedChecks((prev) => {
-      const next = { ...prev };
-      for (const col of preview.columns) {
-        next[col] = { ...next[col], [type]: !allOn };
+  // 중복 매핑 여부
+  const hasDuplicateMapping = (() => {
+    const seen = new Set<PlatformColumnKey>();
+    for (const v of Object.values(columnMappings)) {
+      if (v) {
+        if (seen.has(v)) return true;
+        seen.add(v);
       }
-      return next;
-    });
-  }
+    }
+    return false;
+  })();
 
-  const noChecksSelected =
-    !preview ||
-    !Object.values(selectedChecks).some((v) => v.missing || v.duplicate || v.list);
+  const MAX_PREVIEW_ERRORS = 20;
 
   return (
     <div className="space-y-6">
-      {/* ── 중복 파일명 다이얼로그 ── */}
-      {pendingFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
-            <h3 className="text-base font-semibold text-slate-900">같은 이름의 파일이 있습니다</h3>
-            <p className="mt-1 text-sm text-slate-500">
-              <span className="font-medium text-slate-700">{pendingFile.name}</span> 이름이 이미 등록되어 있습니다.
-            </p>
-            <div className="mt-4">
-              <label className="block text-xs font-medium text-slate-600">새 파일 이름</label>
-              <input
-                type="text"
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && confirmRename()}
-                className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 ${
-                  datasets.some((d) => d.fileName === renameValue.trim()) && renameValue.trim()
-                    ? 'border-red-400 focus:border-red-400 focus:ring-red-400/20'
-                    : 'border-slate-300 focus:border-teal-500 focus:ring-teal-500/20'
-                }`}
-                autoFocus
-              />
-              {datasets.some((d) => d.fileName === renameValue.trim()) && renameValue.trim() && (
-                <p className="mt-1.5 text-xs text-red-500">이미 등록된 파일 이름입니다. 다른 이름으로 바꿔주세요.</p>
-              )}
-            </div>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={confirmRename}
-                disabled={!renameValue.trim() || datasets.some((d) => d.fileName === renameValue.trim())}
-                className="flex-1 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                이 이름으로 올리기
-              </button>
-              <button
-                type="button"
-                onClick={() => setPendingFile(null)}
-                className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
-              >
-                취소
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <PageHeader
         title="데이터 업로드"
-        description="읍면동별 엑셀 자료를 업로드하고 열 구조와 내용을 미리 확인합니다."
+        description="엑셀 파일을 올리고 열을 매핑하여 공통 데이터로 변환합니다."
       />
 
       <div className="rounded-xl border border-slate-200 bg-white p-5">
@@ -347,7 +231,10 @@ export default function DataUploadPage() {
             aria-label="엑셀 파일 선택"
             onClick={() => inputRef.current?.click()}
             onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
-            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragging(true);
+            }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             className={`mt-4 flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed p-10 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
@@ -375,7 +262,7 @@ export default function DataUploadPage() {
         </section>
       )}
 
-      {/* ── 업로드 ── */}
+      {/* ── 파일 읽는 중 ── */}
       {step === 'uploading' && (
         <section className="flex flex-col items-center gap-5 rounded-xl border border-slate-200 bg-white p-10 text-center">
           {!isParsing ? (
@@ -399,9 +286,9 @@ export default function DataUploadPage() {
             <>
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-teal-100 border-t-teal-600" />
               <div>
-                <p className="text-sm font-medium text-slate-800">데이터 분석 중...</p>
+                <p className="text-sm font-medium text-slate-800">열 구조 분석 중...</p>
                 <p className="mt-1 text-xs text-slate-400">
-                  열 구조와 내용을 파악하고 있습니다. 대용량 파일은 시간이 걸릴 수 있습니다.
+                  잠시만 기다려 주세요. 대용량 파일은 시간이 걸릴 수 있습니다.
                 </p>
               </div>
             </>
@@ -409,33 +296,34 @@ export default function DataUploadPage() {
         </section>
       )}
 
-      {/* ── 열 인식 결과 ── */}
-      {step === 'columns' && preview && (
+      {/* ── 열 매핑 ── */}
+      {step === 'mapping' && excelInfo && (
         <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
           {/* 파일 정보 */}
           <div className="flex items-center gap-3">
             <FileSpreadsheet size={24} className="shrink-0 text-teal-600" />
             <div>
-              <p className="text-sm font-semibold text-slate-900">{preview.fileName}</p>
+              <p className="text-sm font-semibold text-slate-900">{excelInfo.fileName}</p>
               <p className="text-xs text-slate-500">
-                시트: {preview.sheetName} · 총 {preview.totalRows.toLocaleString()}행
+                시트: {excelInfo.sheetName} · 총 {excelInfo.totalRows.toLocaleString()}행
               </p>
             </div>
           </div>
 
-          {/* 데이터 미리보기 */}
+          {/* 원본 미리보기 */}
           <div>
             <h3 className="text-sm font-semibold text-slate-700">
-              데이터 미리보기 <span className="font-normal text-slate-400">(최대 10행)</span>
+              원본 데이터 미리보기{' '}
+              <span className="font-normal text-slate-400">(최대 10행)</span>
             </h3>
-            {preview.rows.length === 0 ? (
+            {excelInfo.previewRows.length === 0 ? (
               <p className="mt-2 text-sm text-slate-400">데이터 행이 없습니다.</p>
             ) : (
               <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      {preview.columns.map((col) => (
+                      {excelInfo.columns.map((col) => (
                         <th
                           key={col}
                           className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500"
@@ -446,9 +334,9 @@ export default function DataUploadPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {preview.rows.map((row, i) => (
+                    {excelInfo.previewRows.map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50">
-                        {preview.columns.map((col) => (
+                        {excelInfo.columns.map((col) => (
                           <td key={col} className="whitespace-nowrap px-4 py-2 text-slate-700">
                             {row[col]}
                           </td>
@@ -461,110 +349,30 @@ export default function DataUploadPage() {
             )}
           </div>
 
-          {/* 검사 항목 선택 */}
+          {/* 열 매핑 */}
           <div>
-            <h3 className="text-sm font-semibold text-slate-700">검사 항목 선택</h3>
+            <h3 className="text-sm font-semibold text-slate-700">열 매핑</h3>
             <p className="mt-0.5 text-xs text-slate-400">
-              각 열마다 실행할 검사를 켜고 끄세요. 헤더 체크박스로 열 전체를 한 번에 선택할 수 있습니다.
+              자동으로 연결된 항목을 확인하고 필요에 따라 수정하세요. * 표시는 필수 항목입니다.
             </p>
-
-            <div className="mt-3 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-500">열 이름</th>
-
-                    <th className="px-4 py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-xs font-medium text-amber-600">누락 검사</span>
-                        <input
-                          type="checkbox"
-                          checked={preview.columns.every((c) => selectedChecks[c]?.missing)}
-                          onChange={() => toggleAllOfType('missing')}
-                          className="h-4 w-4 rounded border-slate-300 accent-amber-500"
-                          title="전체 선택/해제"
-                        />
-                      </div>
-                    </th>
-
-                    <th className="px-4 py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-xs font-medium text-orange-600">중복 검사</span>
-                        <input
-                          type="checkbox"
-                          checked={preview.columns.every((c) => selectedChecks[c]?.duplicate)}
-                          onChange={() => toggleAllOfType('duplicate')}
-                          className="h-4 w-4 rounded border-slate-300 accent-orange-500"
-                          title="전체 선택/해제"
-                        />
-                      </div>
-                    </th>
-
-                    <th className="px-4 py-3 text-center">
-                      <div className="flex flex-col items-center gap-1">
-                        <span className="text-xs font-medium text-blue-600">목록 검사</span>
-                        <input
-                          type="checkbox"
-                          checked={preview.columns.every((c) => selectedChecks[c]?.list)}
-                          onChange={() => toggleAllOfType('list')}
-                          className="h-4 w-4 rounded border-slate-300 accent-blue-500"
-                          title="전체 선택/해제"
-                        />
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {preview.columns.map((col) => {
-                    const checks = selectedChecks[col] ?? { missing: false, duplicate: false, list: false };
-                    return (
-                      <tr key={col} className="hover:bg-slate-50">
-                        <td className="whitespace-nowrap px-4 py-3">
-                          <span className="font-medium text-slate-700">{col}</span>
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={checks.missing}
-                            onChange={() => toggleCell(col, 'missing')}
-                            className="h-4 w-4 rounded border-slate-300 accent-amber-500"
-                          />
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={checks.duplicate}
-                            onChange={() => toggleCell(col, 'duplicate')}
-                            className="h-4 w-4 rounded border-slate-300 accent-orange-500"
-                          />
-                        </td>
-
-                        <td className="px-4 py-3 text-center">
-                          <input
-                            type="checkbox"
-                            checked={checks.list}
-                            onChange={() => toggleCell(col, 'list')}
-                            className="h-4 w-4 rounded border-slate-300 accent-blue-500"
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="mt-3">
+              <ColumnMapper
+                excelColumns={excelInfo.columns}
+                mappings={columnMappings}
+                initialMappings={initialMappings}
+                onChange={handleMappingChange}
+              />
             </div>
           </div>
 
           <div className="flex items-center gap-3 pt-1">
             <button
               type="button"
-              onClick={() => setStep('validation')}
-              disabled={noChecksSelected}
+              onClick={handleConvert}
+              disabled={hasDuplicateMapping}
               className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
             >
-              다음 <ArrowRight size={16} />
+              변환 시작 <ArrowRight size={16} />
             </button>
             <button
               type="button"
@@ -577,182 +385,146 @@ export default function DataUploadPage() {
         </section>
       )}
 
-      {/* ── 검증 결과 ── */}
-      {step === 'validation' && (
-        <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
-          <h3 className="text-base font-semibold text-slate-900">데이터 검증 결과</h3>
+      {/* ── 변환 중 ── */}
+      {step === 'mapping' && isConverting && (
+        <section className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white p-8">
+          <div className="h-6 w-6 animate-spin rounded-full border-4 border-teal-100 border-t-teal-600" />
+          <p className="text-sm font-medium text-slate-700">데이터 변환 중...</p>
+        </section>
+      )}
 
-          {isValidating && (
-            <div className="space-y-3 py-2">
-              <div className="mb-1.5 flex justify-between text-xs text-slate-400">
-                <span>검증 중...</span>
-                <span>{validationProgress}%</span>
+      {/* ── 검증 · 미리보기 ── */}
+      {step === 'preview' && excelInfo && convertResult && (
+        <section className="space-y-6 rounded-xl border border-slate-200 bg-white p-5">
+          {/* 요약 */}
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={20} className="text-teal-500" />
+              <span className="text-sm font-medium text-slate-800">
+                총{' '}
+                <strong>{convertResult.records.length.toLocaleString()}행</strong> 변환 완료
+              </span>
+            </div>
+            {convertResult.errors.length > 0 && (
+              <div className="flex items-center gap-2">
+                <AlertCircle size={20} className="text-amber-500" />
+                <span className="text-sm font-medium text-amber-700">
+                  오류 <strong>{convertResult.errors.length.toLocaleString()}건</strong>
+                </span>
               </div>
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-teal-500 transition-all duration-100"
-                  style={{ width: `${validationProgress}%` }}
-                />
+            )}
+          </div>
+
+          {/* 오류 목록 */}
+          {convertResult.errors.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700">검증 오류</h3>
+              <div className="mt-2 overflow-hidden rounded-lg border border-amber-200">
+                <table className="min-w-full divide-y divide-amber-100 text-sm">
+                  <thead className="bg-amber-50">
+                    <tr>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
+                        행 번호
+                      </th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
+                        항목
+                      </th>
+                      <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
+                        내용
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-50 bg-white">
+                    {convertResult.errors.slice(0, MAX_PREVIEW_ERRORS).map((err, i) => (
+                      <tr key={i}>
+                        <td className="px-4 py-2 text-xs tabular-nums text-slate-500">
+                          {err.rowIndex}행
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-2 text-xs font-medium text-slate-600">
+                          {PLATFORM_LABEL[err.field]}
+                        </td>
+                        <td className="px-4 py-2 text-xs text-slate-700">{err.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {convertResult.errors.length > MAX_PREVIEW_ERRORS && (
+                  <div className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-600">
+                    외 {(convertResult.errors.length - MAX_PREVIEW_ERRORS).toLocaleString()}건 더 있습니다.
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-slate-400">
-                전체 {preview?.totalRows.toLocaleString()}행을 분석 중입니다.
-              </p>
             </div>
           )}
 
-          {validationResult && preview && (
-            <>
-              <p className="text-sm text-slate-500">
-                총 <strong className="text-slate-800">{validationResult.totalRows.toLocaleString()}행</strong> 분석 완료
-              </p>
-
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
+          {/* 변환 데이터 미리보기 */}
+          <div>
+            <h3 className="text-sm font-semibold text-slate-700">
+              변환 데이터 미리보기{' '}
+              <span className="font-normal text-slate-400">(최대 50행)</span>
+            </h3>
+            {mappedPlatformCols.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-400">매핑된 열이 없습니다.</p>
+            ) : (
+              <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500">열 이름</th>
-                      {validationResult.missingByColumn && (
-                        <th className="px-4 py-2.5 text-center text-xs font-medium text-amber-600">누락 검사</th>
-                      )}
-                      {validationResult.duplicateByColumn && (
-                        <th className="px-4 py-2.5 text-center text-xs font-medium text-orange-600">중복 검사</th>
-                      )}
-                      {validationResult.listByColumn && (
-                        <th className="px-4 py-2.5 text-center text-xs font-medium text-blue-600">목록 검사</th>
-                      )}
+                      {mappedPlatformCols.map((def) => (
+                        <th
+                          key={def.key}
+                          className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500"
+                        >
+                          {def.label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {preview.columns.map((col) => {
-                      const missing = validationResult.missingByColumn?.[col] ?? null;
-                      const duplicate = validationResult.duplicateByColumn?.[col] ?? null;
-                      const listCount = validationResult.listByColumn
-                        ? col in validationResult.listByColumn
-                          ? validationResult.listByColumn[col]
-                          : null
-                        : null;
-                      const hasIssue =
-                        (missing !== null && missing > 0) ||
-                        (duplicate !== null && duplicate > 0);
-                      return (
-                        <tr key={col} className={hasIssue ? 'bg-amber-50/30' : ''}>
-                          <td className="whitespace-nowrap px-4 py-2.5">
-                            <span className="font-medium text-slate-700">{col}</span>
+                    {convertResult.records.slice(0, 50).map((record, i) => (
+                      <tr key={i} className="hover:bg-slate-50">
+                        {mappedPlatformCols.map((def) => (
+                          <td
+                            key={def.key}
+                            className="whitespace-nowrap px-4 py-2 text-slate-700"
+                          >
+                            {recordValue(record, def.key)}
                           </td>
-                          {validationResult.missingByColumn && (
-                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${
-                              missing === null
-                                ? 'text-slate-200'
-                                : missing > 0
-                                  ? 'text-amber-600'
-                                  : 'text-slate-300'
-                            }`}>
-                              {missing === null ? '–' : missing.toLocaleString()}
-                            </td>
-                          )}
-                          {validationResult.duplicateByColumn && (
-                            <td className={`px-4 py-2.5 text-center tabular-nums font-semibold ${
-                              duplicate === null
-                                ? 'text-slate-200'
-                                : duplicate > 0
-                                  ? 'text-orange-600'
-                                  : 'text-slate-300'
-                            }`}>
-                              {duplicate === null ? '–' : duplicate.toLocaleString()}
-                            </td>
-                          )}
-                          {validationResult.listByColumn && (
-                            <td className="px-4 py-2.5 text-center tabular-nums font-semibold text-blue-600">
-                              {listCount === null ? '–' : `${listCount.toLocaleString()}종`}
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })}
+                        ))}
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
+                {convertResult.records.length > 50 && (
+                  <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-400">
+                    외 {(convertResult.records.length - 50).toLocaleString()}행 더 있습니다.
+                  </div>
+                )}
               </div>
-
-              <div className="flex items-center gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={goBackToColumns}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-                >
-                  <ArrowLeft size={16} /> 이전 단계로
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep('done')}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
-                >
-                  다음 <ArrowRight size={16} />
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-      )}
-
-      {/* ── 완료 ── */}
-      {step === 'done' && (
-        <section className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-white p-10 text-center">
-          <CheckCircle2 size={40} className="text-teal-500" />
-          <div>
-            <p className="text-base font-semibold text-slate-900">검증이 완료되었습니다</p>
-            <p className="mt-1 text-sm text-slate-500">
-              {preview?.totalRows.toLocaleString()}건의 데이터를 시스템에 반영할 수 있습니다.
-            </p>
+            )}
           </div>
 
-          {appliedCount === null ? (
+          <div className="flex items-center gap-3 pt-1">
             <button
               type="button"
-              onClick={handleApply}
-              disabled={isApplying}
-              className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+              onClick={() => {
+                setConvertResult(null);
+                setStep('mapping');
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
             >
-              {isApplying ? (
-                <>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  반영 중...
-                </>
-              ) : (
-                '시스템에 반영하기'
-              )}
+              <ArrowLeft size={16} /> 열 매핑으로
             </button>
-          ) : (
-            <div className="flex flex-col items-center gap-3">
-              <p className="text-sm font-medium text-teal-700">
-                {appliedCount.toLocaleString()}건 반영 완료
-              </p>
-              <div className="flex flex-wrap justify-center gap-2">
-                <Link
-                  to="/support-records"
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-                >
-                  이용·지원 내역 보기
-                </Link>
-                <Link
-                  to="/"
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-                >
-                  대시보드 보기
-                </Link>
-              </div>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={handleReset}
-            className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600"
-          >
-            <RotateCcw size={13} /> 새 파일 선택
-          </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600"
+            >
+              <RotateCcw size={13} /> 새 파일 선택
+            </button>
+          </div>
         </section>
       )}
-
     </div>
   );
 }

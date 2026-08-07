@@ -1,11 +1,6 @@
 /// <reference lib="webworker" />
 import * as XLSX from 'xlsx';
-
-interface WorkerChecks {
-  missingColumns: string[];
-  duplicateColumns: string[];
-  listColumns: string[];
-}
+import type { PlatformColumnKey, MappedRecord, ValidationError } from '../types/upload';
 
 let storedRows: unknown[][] = [];
 let storedHeaders: Array<{ name: string; idx: number }> = [];
@@ -38,112 +33,143 @@ function handleParse(buffer: ArrayBuffer) {
   self.postMessage({
     type: 'parse-done',
     sheetName,
-    sheetNames: wb.SheetNames,
     columns,
     previewRows,
     totalRows: storedRows.length - 1,
   });
 }
 
-function handleValidate(checks: WorkerChecks) {
-  const dataRows = storedRows.slice(1);
-  const total = dataRows.length;
+function parseDate(val: unknown): string | null {
+  if (val === '' || val === null || val === undefined) return null;
 
-  const missingSet = new Set(checks.missingColumns);
-  const missingByColumn: Record<string, number> = {};
-  for (const col of checks.missingColumns) missingByColumn[col] = 0;
-
-  const dupSet = new Set(checks.duplicateColumns);
-  const dupHeadersMeta = storedHeaders.filter((h) => dupSet.has(h.name));
-  const colFreqs: Map<string, number>[] = dupHeadersMeta.map(() => new Map());
-
-  const listHeadersMeta = checks.listColumns
-    .map((colName) => {
-      const h = storedHeaders.find((s) => s.name === colName);
-      return h ? { colName, idx: h.idx } : null;
-    })
-    .filter((x): x is NonNullable<typeof x> => x !== null);
-  const listUniques: Map<string, Set<string>> = new Map();
-  for (const { colName } of listHeadersMeta) listUniques.set(colName, new Set());
-
-  const CHUNK = 50_000;
-
-  for (let i = 0; i < total; i += CHUNK) {
-    const end = Math.min(i + CHUNK, total);
-
-    for (let j = i; j < end; j++) {
-      const arr = dataRows[j] as unknown[];
-
-      for (const { name, idx } of storedHeaders) {
-        if (missingSet.has(name) && String(arr[idx] ?? '').trim() === '')
-          missingByColumn[name]++;
-      }
-
-      for (let k = 0; k < dupHeadersMeta.length; k++) {
-        const val = String(arr[dupHeadersMeta[k].idx] ?? '');
-        const freq = colFreqs[k];
-        freq.set(val, (freq.get(val) ?? 0) + 1);
-      }
-
-      for (const { colName, idx } of listHeadersMeta) {
-        const val = String(arr[idx] ?? '').trim();
-        if (val) listUniques.get(colName)!.add(val);
-      }
+  // Excel serial number (days since Dec 30 1899)
+  if (typeof val === 'number' && val > 0) {
+    const utcMs = (val - 25569) * 86400000;
+    const d = new Date(utcMs);
+    if (!isNaN(d.getTime())) {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
     }
-
-    self.postMessage({ type: 'validate-progress', progress: Math.round((end / total) * 100) });
   }
 
-  const duplicateByColumn: Record<string, number> = {};
-  for (let k = 0; k < dupHeadersMeta.length; k++) {
-    let dupCount = 0;
-    for (const cnt of colFreqs[k].values()) {
-      if (cnt > 1) dupCount += cnt;
-    }
-    duplicateByColumn[dupHeadersMeta[k].name] = dupCount;
+  const s = String(val).trim();
+  if (!s) return null;
+
+  // YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD
+  const isoMatch = s.match(/^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
   }
 
-  const listByColumn: Record<string, number> = {};
-  for (const [colName, uniqSet] of listUniques) {
-    listByColumn[colName] = uniqSet.size;
+  // YYYYMMDD
+  if (/^\d{8}$/.test(s)) {
+    return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
   }
 
-  self.postMessage({
-    type: 'validate-done',
-    totalRows: total,
-    missingByColumn: checks.missingColumns.length > 0 ? missingByColumn : null,
-    duplicateByColumn: checks.duplicateColumns.length > 0 ? duplicateByColumn : null,
-    listByColumn: listHeadersMeta.length > 0 ? listByColumn : null,
-  });
+  // 한국식: 2026년 8월 30일
+  const korMatch = s.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
+  if (korMatch) {
+    const [, y, m, d] = korMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // 마지막 수단: Date.parse
+  const parsed = new Date(s);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+
+  return null;
 }
 
-function handleGetAll() {
-  const CHUNK = 20_000;
-  const dataRows = storedRows.slice(1);
-  const total = dataRows.length;
+const NUMBER_FIELDS = new Set<PlatformColumnKey>(['inboundQuantity', 'outboundQuantity', 'stock']);
+const DATE_FIELDS = new Set<PlatformColumnKey>(['inboundDate', 'expirationDate']);
+const FIELD_LABELS: Record<PlatformColumnKey, string> = {
+  region: '지역',
+  organization: '기관명',
+  itemName: '품목명',
+  inboundQuantity: '입고수량',
+  outboundQuantity: '출고수량',
+  stock: '현재재고',
+  inboundDate: '입고일',
+  expirationDate: '유통기한',
+};
 
-  for (let i = 0; i < total; i += CHUNK) {
-    const end = Math.min(i + CHUNK, total);
-    const chunk: Record<string, string>[] = [];
-    for (let j = i; j < end; j++) {
-      const arr = dataRows[j] as unknown[];
-      chunk.push(
-        Object.fromEntries(
-          storedHeaders.map(({ name, idx }) => [name, String(arr[idx] ?? '')]),
-        ),
-      );
-    }
-    self.postMessage({ type: 'all-data-chunk', chunk, offset: i, total });
+function handleConvert(mapping: Record<string, string | null>) {
+  const dataRows = storedRows.slice(1);
+  const records: MappedRecord[] = [];
+  const errors: ValidationError[] = [];
+
+  // 플랫폼 키 → 헤더 인덱스
+  const colMap = new Map<PlatformColumnKey, number>();
+  for (const header of storedHeaders) {
+    const target = mapping[header.name];
+    if (target) colMap.set(target as PlatformColumnKey, header.idx);
   }
-  self.postMessage({ type: 'all-data-done', total });
+
+  for (let i = 0; i < dataRows.length; i++) {
+    const arr = dataRows[i] as unknown[];
+    const rowIndex = i + 2; // 2행부터 시작 (1행은 헤더)
+    const record: MappedRecord = {};
+
+    for (const [key, idx] of colMap) {
+      const rawVal = arr[idx];
+      const strVal = String(rawVal ?? '').trim();
+
+      if (key === 'itemName') {
+        if (!strVal) {
+          errors.push({ rowIndex, field: 'itemName', message: '품목명이 비어있습니다.' });
+        } else {
+          record.itemName = strVal;
+        }
+      } else if (key === 'region' || key === 'organization') {
+        if (strVal) (record as Record<string, unknown>)[key] = strVal;
+      } else if (NUMBER_FIELDS.has(key)) {
+        if (strVal) {
+          const num = Number(strVal.replace(/,/g, ''));
+          if (isNaN(num)) {
+            errors.push({
+              rowIndex,
+              field: key,
+              message: `${FIELD_LABELS[key]} 값이 숫자가 아닙니다: "${strVal}"`,
+            });
+          } else if (key === 'stock' && num < 0) {
+            errors.push({ rowIndex, field: 'stock', message: `재고가 음수입니다: ${num}` });
+          } else {
+            (record as Record<string, unknown>)[key] = num;
+          }
+        }
+      } else if (DATE_FIELDS.has(key)) {
+        if (strVal) {
+          const dateStr = parseDate(rawVal);
+          if (!dateStr) {
+            errors.push({
+              rowIndex,
+              field: key,
+              message: `${FIELD_LABELS[key]} 날짜를 인식할 수 없습니다: "${strVal}"`,
+            });
+          } else {
+            (record as Record<string, unknown>)[key] = dateStr;
+          }
+        }
+      }
+    }
+
+    records.push(record);
+  }
+
+  self.postMessage({ type: 'convert-done', records, errors });
 }
 
 self.onmessage = (e: MessageEvent) => {
-  const msg = e.data as { type: string; buffer?: ArrayBuffer; checks?: WorkerChecks };
+  const msg = e.data as {
+    type: string;
+    buffer?: ArrayBuffer;
+    mapping?: Record<string, string | null>;
+  };
   try {
     if (msg.type === 'parse' && msg.buffer) handleParse(msg.buffer);
-    else if (msg.type === 'validate' && msg.checks) handleValidate(msg.checks);
-    else if (msg.type === 'get-all') handleGetAll();
+    else if (msg.type === 'convert') handleConvert(msg.mapping ?? {});
   } catch (err) {
     self.postMessage({
       type: 'error',
