@@ -39,13 +39,18 @@ export interface SupportRecord {
 
 export type InventoryStatus = '정상' | '임박' | '부족' | '확인 필요';
 
+export type ItemCategory = '식품' | '위생용품' | '생필품' | '영유아용품' | '기타';
+
 export interface InventoryItem {
   id: string;
   name: string;
+  category: ItemCategory;
   regionId: RegionId;
   regionName: string;
+  baseStock: number;
   inboundQuantity: number;
   outboundQuantity: number;
+  discardQuantity: number;
   currentStock: number;
   expiryDate: string;
   status: InventoryStatus;
