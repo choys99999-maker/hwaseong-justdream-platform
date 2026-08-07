@@ -3,16 +3,16 @@ import { Link } from 'react-router-dom';
 import { FileUp, Search } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
-import { useDataStore, findCol } from '../store/dataStore';
+import { useDataStore, getField } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 export default function InventoryPage() {
   const { dataset, isLoading } = useDataStore();
   const [keyword, setKeyword] = useState('');
 
-  const itemCol = dataset ? findCol(dataset.columns, /지원품목|품목|물품/) : null;
-  const qtyCol = dataset ? findCol(dataset.columns, /수량/) : null;
-  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
+  const itemCol = getField(dataset, 'item');
+  const qtyCol = getField(dataset, 'quantity');
+  const regionCol = getField(dataset, 'region');
 
   const itemStats = useMemo(() => {
     if (!dataset || !itemCol) return [];
@@ -36,7 +36,8 @@ export default function InventoryPage() {
     return kw ? itemStats.filter((i) => i.name.toLowerCase().includes(kw)) : itemStats;
   }, [itemStats, keyword]);
 
-  if (!isLoading && !dataset) {
+  if (isLoading && !dataset) return null;
+  if (!dataset) {
     return (
       <div className="space-y-6">
         <PageHeader title="지원품목 현황" description="지원 물품별 배부 현황을 확인합니다." />

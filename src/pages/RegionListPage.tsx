@@ -3,15 +3,15 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, FileUp, MapPin } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
-import { useDataStore, findCol } from '../store/dataStore';
+import { useDataStore, getField } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 export default function RegionListPage() {
   const { dataset, isLoading } = useDataStore();
 
-  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
-  const nameCol = dataset ? findCol(dataset.columns, /이용자|수혜자|이름|성명/) : null;
-  const itemCol = dataset ? findCol(dataset.columns, /지원품목|품목|물품/) : null;
+  const regionCol = getField(dataset, 'region');
+  const nameCol = getField(dataset, 'name');
+  const itemCol = getField(dataset, 'item');
 
   const regions = useMemo(() => {
     if (!dataset || !regionCol) return [];
@@ -30,7 +30,8 @@ export default function RegionListPage() {
     );
   }, [dataset, regionCol, nameCol, itemCol]);
 
-  if (!isLoading && !dataset) {
+  if (isLoading && !dataset) return null;
+  if (!dataset) {
     return (
       <div className="space-y-6">
         <PageHeader title="지역별 현황" description="읍면동별 지원 현황을 확인합니다." />

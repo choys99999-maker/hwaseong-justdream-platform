@@ -5,7 +5,7 @@ import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
 import EmptyState from '../components/common/EmptyState';
 import MonthlySupportChart from '../components/charts/MonthlySupportChart';
-import { useDataStore, findCol } from '../store/dataStore';
+import { useDataStore, getField } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 const PAGE_SIZE = 20;
@@ -15,10 +15,10 @@ export default function RegionDetailPage() {
   const { dataset, isLoading } = useDataStore();
   const regionName = regionId ? decodeURIComponent(regionId) : '';
 
-  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
-  const nameCol = dataset ? findCol(dataset.columns, /이용자|수혜자|이름|성명/) : null;
-  const dateCol = dataset ? findCol(dataset.columns, /지원일|날짜/) : null;
-  const qtyCol = dataset ? findCol(dataset.columns, /수량/) : null;
+  const regionCol = getField(dataset, 'region');
+  const nameCol = getField(dataset, 'name');
+  const dateCol = getField(dataset, 'date');
+  const qtyCol = getField(dataset, 'quantity');
 
   const { regionRecords, monthlyData } = useMemo(() => {
     if (!dataset) return { regionRecords: [], monthlyData: [] };
@@ -48,7 +48,8 @@ export default function RegionDetailPage() {
     return { regionRecords: sorted, monthlyData: monthly };
   }, [dataset, regionCol, dateCol, regionName]);
 
-  if (!isLoading && !dataset) {
+  if (isLoading && !dataset) return null;
+  if (!dataset) {
     return (
       <div className="space-y-6">
         <Link to="/regions" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-teal-600">

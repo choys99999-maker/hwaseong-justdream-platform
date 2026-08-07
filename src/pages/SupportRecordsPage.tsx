@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { FileUp, Search } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
-import { useDataStore, findCol } from '../store/dataStore';
+import { useDataStore, getField } from '../store/dataStore';
 
 const PAGE_SIZE = 50;
 
@@ -13,7 +13,7 @@ export default function SupportRecordsPage() {
   const [regionFilter, setRegionFilter] = useState('all');
   const [page, setPage] = useState(1);
 
-  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
+  const regionCol = getField(dataset, 'region');
 
   const uniqueRegions = useMemo(() => {
     if (!dataset || !regionCol) return [];
@@ -38,7 +38,8 @@ export default function SupportRecordsPage() {
     [filtered, page],
   );
 
-  if (!isLoading && !dataset) {
+  if (isLoading && !dataset) return null;
+  if (!dataset) {
     return (
       <div className="space-y-6">
         <PageHeader title="이용·지원 내역" description="이용자별 지원 물품과 지원 현황을 확인합니다." />

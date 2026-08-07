@@ -6,7 +6,7 @@ import StatCard from '../components/common/StatCard';
 import EmptyState from '../components/common/EmptyState';
 import MonthlySupportChart from '../components/charts/MonthlySupportChart';
 import RegionUserChart from '../components/charts/RegionUserChart';
-import { useDataStore, findCol } from '../store/dataStore';
+import { useDataStore, getField } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 export default function DashboardPage() {
@@ -14,12 +14,12 @@ export default function DashboardPage() {
 
   const stats = useMemo(() => {
     if (!dataset) return null;
-    const { records, columns } = dataset;
+    const { records } = dataset;
 
-    const nameCol = findCol(columns, /이용자|수혜자|이름|성명/);
-    const regionCol = findCol(columns, /읍면동|지역|권역/);
-    const dateCol = findCol(columns, /지원일|날짜/);
-    const itemCol = findCol(columns, /지원품목|품목|물품/);
+    const nameCol = getField(dataset, 'name');
+    const regionCol = getField(dataset, 'region');
+    const dateCol = getField(dataset, 'date');
+    const itemCol = getField(dataset, 'item');
 
     const uniqueUsers = nameCol ? new Set(records.map((r) => r[nameCol])).size : records.length;
     const uniqueRegions = regionCol ? new Set(records.map((r) => r[regionCol]).filter(Boolean)).size : 0;
@@ -83,7 +83,8 @@ export default function DashboardPage() {
     };
   }, [dataset]);
 
-  if (!isLoading && (!dataset || !stats)) {
+  if (isLoading && !dataset) return null;
+  if (!dataset || !stats) {
     return (
       <div className="space-y-6">
         <PageHeader title="통합 대시보드" description="화성시 전체 그냥드림 운영 현황을 한눈에 확인합니다." />

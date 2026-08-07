@@ -1,19 +1,12 @@
-import { CheckCircle2, Columns3, FileUp, Loader2, ShieldCheck, type LucideIcon } from 'lucide-react';
+import { Check } from 'lucide-react';
 
-export type UploadStep = 'select' | 'uploading' | 'columns' | 'validation' | 'done';
+export type UploadStep = 'select' | 'uploading' | 'review' | 'importing' | 'done';
 
-interface StepMeta {
-  key: UploadStep;
-  label: string;
-  icon: LucideIcon;
-}
-
-const STEPS: StepMeta[] = [
-  { key: 'select', label: '파일 선택', icon: FileUp },
-  { key: 'uploading', label: '업로드', icon: Loader2 },
-  { key: 'columns', label: '열 인식 결과', icon: Columns3 },
-  { key: 'validation', label: '누락·중복·오류 확인', icon: ShieldCheck },
-  { key: 'done', label: '통합 반영 완료', icon: CheckCircle2 },
+/** 화면에 보이는 단계는 3개뿐이다. 파일을 읽는 중·가져오는 중은 앞뒤 단계에 묶인다. */
+const STEPS: Array<{ label: string; covers: UploadStep[] }> = [
+  { label: '파일 선택', covers: ['select', 'uploading'] },
+  { label: '확인', covers: ['review', 'importing'] },
+  { label: '완료', covers: ['done'] },
 ];
 
 interface UploadStepperProps {
@@ -21,29 +14,36 @@ interface UploadStepperProps {
 }
 
 export default function UploadStepper({ currentStep }: UploadStepperProps) {
-  const currentIndex = STEPS.findIndex((step) => step.key === currentStep);
+  const currentIndex = STEPS.findIndex((step) => step.covers.includes(currentStep));
 
   return (
-    <ol className="flex flex-wrap items-center gap-2">
+    <ol className="flex items-center gap-3">
       {STEPS.map((step, index) => {
-        const Icon = step.icon;
         const isCompleted = index < currentIndex;
         const isCurrent = index === currentIndex;
         return (
-          <li key={step.key} className="flex items-center gap-2">
-            <div
-              className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium ${
-                isCurrent
-                  ? 'bg-teal-600 text-white'
-                  : isCompleted
-                    ? 'bg-teal-50 text-teal-700'
-                    : 'bg-slate-100 text-slate-400'
-              }`}
-            >
-              <Icon size={16} className={isCurrent && step.key === 'uploading' ? 'animate-spin' : ''} />
-              {step.label}
+          <li key={step.label} className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span
+                className={`flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
+                  isCurrent
+                    ? 'bg-teal-600 text-white'
+                    : isCompleted
+                      ? 'bg-teal-100 text-teal-700'
+                      : 'bg-slate-100 text-slate-400'
+                }`}
+              >
+                {isCompleted ? <Check size={12} strokeWidth={3} /> : index + 1}
+              </span>
+              <span
+                className={`text-sm ${
+                  isCurrent ? 'font-medium text-slate-900' : 'text-slate-400'
+                }`}
+              >
+                {step.label}
+              </span>
             </div>
-            {index < STEPS.length - 1 && <div className="h-px w-6 bg-slate-200" />}
+            {index < STEPS.length - 1 && <div className="h-px w-8 bg-slate-200" />}
           </li>
         );
       })}
