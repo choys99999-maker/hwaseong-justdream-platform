@@ -33,7 +33,7 @@ interface ValidationResult {
 }
 
 export default function DataUploadPage() {
-  const { addDataset } = useDataStore();
+  const { datasets, addDataset } = useDataStore();
 
   const [step, setStep] = useState<UploadStep>('select');
   const [preview, setPreview] = useState<ExcelPreview | null>(null);
