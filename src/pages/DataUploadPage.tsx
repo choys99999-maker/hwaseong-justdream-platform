@@ -48,6 +48,8 @@ export default function DataUploadPage() {
   const [isValidating, setIsValidating] = useState(false);
   const [isApplying, setIsApplying] = useState(false);
   const [appliedCount, setAppliedCount] = useState<number | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const inputRef = useRef<HTMLInputElement>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -151,7 +153,7 @@ export default function DataUploadPage() {
     }
   }, [step, isValidating, validationResult, selectedChecks]);
 
-  function processFile(file: File) {
+  function processFile(file: File, overrideName?: string) {
     if (!workerRef.current) {
       setError('처리 모듈 초기화 중입니다. 잠시 후 다시 시도해 주세요.');
       return;
@@ -166,7 +168,7 @@ export default function DataUploadPage() {
     setIsParsing(false);
     setValidationResult(null);
     setStep('uploading');
-    fileNameRef.current = file.name;
+    fileNameRef.current = overrideName ?? file.name;
 
     const reader = new FileReader();
     reader.onprogress = (e) => {
@@ -185,9 +187,21 @@ export default function DataUploadPage() {
     reader.readAsArrayBuffer(file);
   }
 
+  function handleFileSelected(file: File) {
+    const isDuplicate = datasets.some((d) => d.fileName === file.name);
+    if (isDuplicate) {
+      const base = file.name.replace(/\.[^.]+$/, '');
+      const ext = file.name.match(/(\.[^.]+)$/)?.[1] ?? '';
+      setRenameValue(`${base}_복사본${ext}`);
+      setPendingFile(file);
+      return;
+    }
+    processFile(file);
+  }
+
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) processFile(file);
+    if (file) handleFileSelected(file);
     e.target.value = '';
   }
 
@@ -195,7 +209,14 @@ export default function DataUploadPage() {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) processFile(file);
+    if (file) handleFileSelected(file);
+  }
+
+  function confirmRename() {
+    if (!pendingFile) return;
+    const name = renameValue.trim() || pendingFile.name;
+    setPendingFile(null);
+    processFile(pendingFile, name);
   }
 
   function handleReset() {
@@ -251,6 +272,46 @@ export default function DataUploadPage() {
 
   return (
     <div className="space-y-6">
+      {/* ── 중복 파일명 다이얼로그 ── */}
+      {pendingFile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl">
+            <h3 className="text-base font-semibold text-slate-900">같은 이름의 파일이 있습니다</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              <span className="font-medium text-slate-700">{pendingFile.name}</span> 이름이 이미 등록되어 있습니다.
+            </p>
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-slate-600">새 파일 이름</label>
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && confirmRename()}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                autoFocus
+              />
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={confirmRename}
+                disabled={!renameValue.trim()}
+                className="flex-1 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                이 이름으로 올리기
+              </button>
+              <button
+                type="button"
+                onClick={() => setPendingFile(null)}
+                className="flex-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <PageHeader
         title="데이터 업로드"
         description="읍면동별 엑셀 자료를 업로드하고 열 구조와 내용을 미리 확인합니다."
