@@ -624,7 +624,7 @@ export default function DataUploadPage() {
                         <table className="min-w-full divide-y divide-amber-100 text-sm">
                           <thead className="bg-amber-50">
                             <tr>
-                              <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">행 번호</th>
+                              <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">셀</th>
                               <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">항목</th>
                               <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">내용</th>
                             </tr>
@@ -632,7 +632,7 @@ export default function DataUploadPage() {
                           <tbody className="divide-y divide-amber-50 bg-white">
                             {activeResult.errors.slice(0, MAX_PREVIEW_ERRORS).map((err, i) => (
                               <tr key={i}>
-                                <td className="px-4 py-2 text-xs tabular-nums text-slate-500">{err.rowIndex}행</td>
+                                <td className="px-4 py-2 font-mono text-xs tabular-nums text-slate-500">{err.cellAddress ?? `${err.rowIndex}행`}</td>
                                 <td className="whitespace-nowrap px-4 py-2 text-xs font-medium text-slate-600">
                                   {ALL_FIELD_LABELS[err.field] ?? err.field}
                                 </td>

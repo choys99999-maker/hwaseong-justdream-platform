@@ -57,6 +57,7 @@ export interface ValidationError {
   rowIndex: number;
   field: string;
   message: string;
+  cellAddress?: string;
 }
 
 export interface SheetConvertResult {

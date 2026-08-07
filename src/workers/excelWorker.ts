@@ -54,6 +54,17 @@ const FIELD_LABELS: Partial<Record<PlatformColumnKey, string>> = {
   inboundDate: '입고일', expirationDate: '유통기한',
 };
 
+function colLetter(idx: number): string {
+  let letter = '';
+  let n = idx + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letter;
+}
+
 function hasKorean(s: string): boolean {
   return /[가-힣]/.test(s);
 }
@@ -243,11 +254,13 @@ function handleConvert(sheetMappings: Record<string, Record<string, string | nul
         const rawVal = arr[idx];
         const strVal = String(rawVal ?? '').trim();
 
+        const cell = `${colLetter(idx)}${rowIndex}`;
+
         if (key === 'birthDate') {
           if (strVal) {
             const dateStr = parseBirthDate(rawVal);
             if (!dateStr) {
-              errors.push({ rowIndex, field: key, message: `생년월일을 인식할 수 없습니다: "${strVal}"` });
+              errors.push({ rowIndex, field: key, cellAddress: cell, message: `생년월일을 인식할 수 없습니다: "${strVal}"` });
             } else {
               record[key] = dateStr;
             }
@@ -259,10 +272,11 @@ function handleConvert(sheetMappings: Record<string, Record<string, string | nul
               errors.push({
                 rowIndex,
                 field: key,
+                cellAddress: cell,
                 message: `${FIELD_LABELS[key] ?? key} 값이 숫자가 아닙니다: "${strVal}"`,
               });
             } else if (key === 'stock' && num < 0) {
-              errors.push({ rowIndex, field: key, message: `재고가 음수입니다: ${num}` });
+              errors.push({ rowIndex, field: key, cellAddress: cell, message: `재고가 음수입니다: ${num}` });
             } else {
               record[key] = num;
             }
@@ -274,6 +288,7 @@ function handleConvert(sheetMappings: Record<string, Record<string, string | nul
               errors.push({
                 rowIndex,
                 field: key,
+                cellAddress: cell,
                 message: `${FIELD_LABELS[key] ?? key} 날짜를 인식할 수 없습니다: "${strVal}"`,
               });
             } else {
