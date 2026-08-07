@@ -149,6 +149,30 @@ export default function KakaoDistrictMap({
     map.setBounds(bounds, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING);
   }, []);
 
+  /** 현재 필터·구 선택 기준으로 표시 중인 마커에 맞춰 지도 범위를 조정한다. */
+  const handleFitToVisible = useCallback(() => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+
+    const fn = filterFnRef.current;
+    const selectedDist = handlersRef.current.selectedDistrict;
+    const visible = markersRef.current.filter(({ site }) => {
+      const districtVisible = selectedDist === null || site.district === selectedDist;
+      return districtVisible && (!fn || fn(site));
+    });
+
+    if (visible.length === 0) {
+      fitBounds(selectedDist);
+      return;
+    }
+
+    const first = new maps.LatLng(visible[0].site.latitude, visible[0].site.longitude);
+    const bounds = new maps.LatLngBounds(first, first);
+    visible.slice(1).forEach(({ site }) => bounds.extend(new maps.LatLng(site.latitude, site.longitude)));
+    map.setBounds(bounds, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING, BOUNDS_PADDING);
+  }, [fitBounds]);
+
   // 1) SDK 로드 + 지도 생성. 재시도할 때만 다시 실행한다.
   useEffect(() => {
     let mounted = true;
@@ -194,6 +218,7 @@ export default function KakaoDistrictMap({
               const onClick = () => {
                 maps.event.preventMap();
                 handlersRef.current.onSelectDistrict(district.id);
+                fitBounds(district.id);
               };
               const onOver = () => {
                 hoveredDistrictRef.current = district.id;
@@ -330,8 +355,7 @@ export default function KakaoDistrictMap({
       overlay.setMap(count > 0 ? mapRef.current : null);
     });
 
-    fitBounds(selectedDistrict);
-  }, [phase, selectedDistrict, filterFn, clusterMode, paintPolygons, fitBounds]);
+  }, [phase, selectedDistrict, filterFn, clusterMode, paintPolygons]);
 
   // 3) 거점 선택 표시
   useEffect(() => {
@@ -355,8 +379,13 @@ export default function KakaoDistrictMap({
       frame = requestAnimationFrame(() => mapRef.current?.relayout());
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
+        const center = mapRef.current?.getCenter();
+        const level = mapRef.current?.getLevel();
         mapRef.current?.relayout();
-        fitBounds(handlersRef.current.selectedDistrict);
+        if (center !== undefined && level !== undefined) {
+          mapRef.current?.setCenter(center);
+          mapRef.current?.setLevel(level);
+        }
       }, RELAYOUT_DEBOUNCE_MS);
     });
     observer.observe(container);
@@ -366,7 +395,7 @@ export default function KakaoDistrictMap({
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [phase, fitBounds]);
+  }, [phase]);
 
   const handleRetry = () => {
     resetKakaoMapsLoader();
@@ -381,6 +410,16 @@ export default function KakaoDistrictMap({
         aria-label="화성특례시 4개 구 거점 운영 지도"
         className="h-full w-full"
       />
+
+      {phase === 'ready' && (
+        <button
+          type="button"
+          onClick={handleFitToVisible}
+          className="absolute bottom-3 left-3 z-10 inline-flex items-center rounded-md border border-slate-200 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-600 shadow-sm hover:bg-white hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          전체 보기
+        </button>
+      )}
 
       {phase === 'loading' && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50" aria-live="polite">
