@@ -15,14 +15,14 @@ const POLYGON_STYLE = {
 } as const;
 
 /**
- * 구 경계선. 읍면동 경계(strokeWeight 1~3)보다 확실히 굵고 어둡게 그려서 4개 구가 구분되게 한다.
- * 상태 색상(fill)은 그대로 두고 경계선만 얹으므로 기존 색 규칙과 충돌하지 않는다.
+ * 구 경계선. 읍면동 경계(strokeWeight 1~3)보다는 굵되, 카카오맵 지명·도로를 덮지 않도록
+ * 중간 회색·반투명으로 눌러 둔다. 상태 색상(fill)은 그대로 두고 경계선만 얹는다.
  */
-const DISTRICT_OUTLINE_COLOR = '#1e293b';
+const DISTRICT_OUTLINE_COLOR = '#475569';
 const DISTRICT_OUTLINE_STYLE = {
-  base: { strokeWeight: 5, strokeOpacity: 0.85, zIndex: 6 },
-  selected: { strokeWeight: 6, strokeOpacity: 1, zIndex: 8 },
-  dimmed: { strokeWeight: 3, strokeOpacity: 0.3, zIndex: 6 },
+  base: { strokeWeight: 3, strokeOpacity: 0.75, zIndex: 6 },
+  selected: { strokeWeight: 4, strokeOpacity: 0.9, zIndex: 8 },
+  dimmed: { strokeWeight: 2, strokeOpacity: 0.25, zIndex: 6 },
 } as const;
 
 const BOUNDS_PADDING = 24;
