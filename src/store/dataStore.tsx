@@ -108,3 +108,16 @@ export function useDataStore(): DataStoreValue {
 export function findCol(columns: string[], pattern: RegExp): string | null {
   return columns.find((c) => pattern.test(c)) ?? null;
 }
+
+export interface DatasetView {
+  records: Record<string, string>[];
+  columns: string[];
+}
+
+export function resolveSheet(dataset: UploadedDataset, columnPattern: RegExp): DatasetView {
+  if (dataset.sheets && dataset.sheets.length > 0) {
+    const match = dataset.sheets.find((s) => findCol(s.columns, columnPattern));
+    if (match) return { records: match.records, columns: match.columns };
+  }
+  return { records: dataset.records, columns: dataset.columns };
+}

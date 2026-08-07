@@ -5,7 +5,7 @@ import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
 import EmptyState from '../components/common/EmptyState';
 import MonthlySupportChart from '../components/charts/MonthlySupportChart';
-import { useDataStore, findCol } from '../store/dataStore';
+import { useDataStore, findCol, resolveSheet } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 const PAGE_SIZE = 20;
@@ -15,17 +15,18 @@ export default function RegionDetailPage() {
   const { dataset, isLoading } = useDataStore();
   const regionName = regionId ? decodeURIComponent(regionId) : '';
 
-  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
-  const nameCol = dataset ? findCol(dataset.columns, /이용자|수혜자|이름|성명/) : null;
-  const dateCol = dataset ? findCol(dataset.columns, /지원일|날짜/) : null;
-  const qtyCol = dataset ? findCol(dataset.columns, /수량/) : null;
+  const view = dataset ? resolveSheet(dataset, /읍면동|지역|권역/) : null;
+  const regionCol = view ? findCol(view.columns, /읍면동|지역|권역/) : null;
+  const nameCol = view ? findCol(view.columns, /이용자|수혜자|이름|성명/) : null;
+  const dateCol = view ? findCol(view.columns, /지원일|날짜|일자/) : null;
+  const qtyCol = view ? findCol(view.columns, /수량/) : null;
 
   const { regionRecords, monthlyData } = useMemo(() => {
-    if (!dataset) return { regionRecords: [], monthlyData: [] };
+    if (!view) return { regionRecords: [], monthlyData: [] };
 
     const records = regionCol
-      ? dataset.records.filter((r) => r[regionCol] === regionName)
-      : dataset.records;
+      ? view.records.filter((r) => r[regionCol] === regionName)
+      : view.records;
 
     const sorted = dateCol
       ? [...records].sort((a, b) => (b[dateCol] ?? '').localeCompare(a[dateCol] ?? ''))
@@ -46,7 +47,7 @@ export default function RegionDetailPage() {
     );
 
     return { regionRecords: sorted, monthlyData: monthly };
-  }, [dataset, regionCol, dateCol, regionName]);
+  }, [view, regionCol, dateCol, regionName]);
 
   if (isLoading) return null;
   if (!dataset) {
@@ -118,7 +119,7 @@ export default function RegionDetailPage() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
-                {dataset.columns.filter((c) => c !== regionCol).map((col) => (
+                {(view?.columns ?? []).filter((c) => c !== regionCol).map((col) => (
                   <th key={col} className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500">
                     {col}
                   </th>
@@ -128,7 +129,7 @@ export default function RegionDetailPage() {
             <tbody className="divide-y divide-slate-100 bg-white">
               {regionRecords.slice(0, PAGE_SIZE).map((row, i) => (
                 <tr key={i} className="hover:bg-slate-50">
-                  {dataset.columns.filter((c) => c !== regionCol).map((col) => (
+                  {(view?.columns ?? []).filter((c) => c !== regionCol).map((col) => (
                     <td key={col} className="whitespace-nowrap px-4 py-2.5 text-slate-700">
                       {col === qtyCol ? `${row[col]}개` : row[col] ?? ''}
                     </td>

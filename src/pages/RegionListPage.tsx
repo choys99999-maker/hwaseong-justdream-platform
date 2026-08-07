@@ -3,20 +3,21 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, FileUp, MapPin } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
-import { useDataStore, findCol } from '../store/dataStore';
+import { useDataStore, findCol, resolveSheet } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 export default function RegionListPage() {
   const { dataset, isLoading } = useDataStore();
 
-  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
-  const nameCol = dataset ? findCol(dataset.columns, /이용자|수혜자|이름|성명/) : null;
-  const itemCol = dataset ? findCol(dataset.columns, /지원품목|품목|물품/) : null;
+  const view = dataset ? resolveSheet(dataset, /읍면동|지역|권역/) : null;
+  const regionCol = view ? findCol(view.columns, /읍면동|지역|권역/) : null;
+  const nameCol = view ? findCol(view.columns, /이용자|수혜자|이름|성명/) : null;
+  const itemCol = view ? findCol(view.columns, /지원품목|품목|물품/) : null;
 
   const regions = useMemo(() => {
-    if (!dataset || !regionCol) return [];
+    if (!view || !regionCol) return [];
     const map = new Map<string, { count: number; users: Set<string>; items: Set<string> }>();
-    for (const r of dataset.records) {
+    for (const r of view.records) {
       const name = r[regionCol] ?? '';
       if (!name) continue;
       if (!map.has(name)) map.set(name, { count: 0, users: new Set(), items: new Set() });
@@ -28,7 +29,7 @@ export default function RegionListPage() {
     return Array.from(map, ([name, data]) => ({ name, ...data })).sort(
       (a, b) => b.count - a.count,
     );
-  }, [dataset, regionCol, nameCol, itemCol]);
+  }, [view, regionCol, nameCol, itemCol]);
 
   if (isLoading) return null;
   if (!dataset) {
