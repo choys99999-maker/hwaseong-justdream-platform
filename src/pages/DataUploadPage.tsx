@@ -190,9 +190,7 @@ export default function DataUploadPage() {
   function handleFileSelected(file: File) {
     const isDuplicate = datasets.some((d) => d.fileName === file.name);
     if (isDuplicate) {
-      const base = file.name.replace(/\.[^.]+$/, '');
-      const ext = file.name.match(/(\.[^.]+)$/)?.[1] ?? '';
-      setRenameValue(`${base}_복사본${ext}`);
+        setRenameValue(file.name);
       setPendingFile(file);
       return;
     }
