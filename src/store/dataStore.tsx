@@ -7,6 +7,8 @@ export interface UploadedDataset {
   columns: string[];
   fileName: string;
   uploadedAt: string;
+  sheetName?: string;
+  sheetType?: string;
 }
 
 interface DataStoreValue {

@@ -7,45 +7,60 @@ import {
   FileSpreadsheet,
   FolderOpen,
   RotateCcw,
+  Save,
   Upload,
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import UploadStepper, { type UploadStep } from '../components/upload/UploadStepper';
 import ColumnMapper from '../components/upload/ColumnMapper';
-import { autoMapColumns, PLATFORM_COLUMNS } from '../utils/columnMapping';
-import type { ConvertResult, MappedRecord, PlatformColumnKey } from '../types/upload';
+import {
+  autoMapColumns,
+  getColumnsForType,
+  PERFORMANCE_COLUMNS,
+  REFERRAL_COLUMNS,
+  GENERIC_COLUMNS,
+} from '../utils/columnMapping';
+import { useDataStore } from '../store/dataStore';
+import type {
+  SheetParseResult,
+  SheetConvertResult,
+  SheetType,
+  PlatformColumnKey,
+} from '../types/upload';
 
-interface ExcelInfo {
-  fileName: string;
-  sheetName: string;
-  columns: string[];
-  previewRows: Record<string, string>[];
-  totalRows: number;
+const ALL_FIELD_LABELS: Record<string, string> = {};
+for (const def of [...PERFORMANCE_COLUMNS, ...REFERRAL_COLUMNS, ...GENERIC_COLUMNS]) {
+  if (!ALL_FIELD_LABELS[def.key]) ALL_FIELD_LABELS[def.key] = def.label;
 }
 
-const PLATFORM_LABEL: Record<PlatformColumnKey, string> = {
-  region: '지역',
-  organization: '기관명',
-  itemName: '품목명',
-  inboundQuantity: '입고수량',
-  outboundQuantity: '출고수량',
-  stock: '현재재고',
-  inboundDate: '입고일',
-  expirationDate: '유통기한',
-};
-
-function recordValue(record: MappedRecord, key: PlatformColumnKey): string {
-  const val = (record as Record<string, unknown>)[key];
-  if (val === undefined || val === null) return '';
-  return String(val);
+function sheetTypeLabel(type: SheetType): string {
+  if (type === 'performance') return '실적';
+  if (type === 'referral') return '연계';
+  return '일반';
 }
+
+function sheetTypeBadgeClass(type: SheetType): string {
+  if (type === 'performance') return 'bg-blue-100 text-blue-700';
+  if (type === 'referral') return 'bg-purple-100 text-purple-700';
+  return 'bg-slate-100 text-slate-600';
+}
+
+const MAX_PREVIEW_ERRORS = 20;
 
 export default function DataUploadPage() {
+  const { addDataset } = useDataStore();
+
   const [step, setStep] = useState<UploadStep>('select');
-  const [excelInfo, setExcelInfo] = useState<ExcelInfo | null>(null);
-  const [columnMappings, setColumnMappings] = useState<Record<string, PlatformColumnKey | null>>({});
-  const [initialMappings, setInitialMappings] = useState<Record<string, PlatformColumnKey | null>>({});
-  const [convertResult, setConvertResult] = useState<ConvertResult | null>(null);
+  const [sheets, setSheets] = useState<SheetParseResult[]>([]);
+  const [activeSheetIdx, setActiveSheetIdx] = useState(0);
+  const [sheetMappings, setSheetMappings] = useState<
+    Record<string, Record<string, PlatformColumnKey | null>>
+  >({});
+  const [initialMappings, setInitialMappings] = useState<
+    Record<string, Record<string, PlatformColumnKey | null>>
+  >({});
+  const [convertResults, setConvertResults] = useState<SheetConvertResult[]>([]);
+  const [isSaved, setIsSaved] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -66,32 +81,27 @@ export default function DataUploadPage() {
       const msg = e.data;
       switch (msg.type) {
         case 'parse-done': {
-          const cols = msg.columns as string[];
-          const auto = autoMapColumns(cols);
-          setColumnMappings(auto);
+          const parsedSheets = msg.sheets as SheetParseResult[];
+          const auto: Record<string, Record<string, PlatformColumnKey | null>> = {};
+          for (const sheet of parsedSheets) {
+            auto[sheet.sheetName] = autoMapColumns(sheet.columns, sheet.sheetType);
+          }
+          setSheets(parsedSheets);
+          setSheetMappings(auto);
           setInitialMappings(auto);
-          setExcelInfo({
-            fileName: fileNameRef.current,
-            sheetName: msg.sheetName,
-            columns: cols,
-            previewRows: msg.previewRows,
-            totalRows: msg.totalRows,
-          });
+          setActiveSheetIdx(0);
           setIsParsing(false);
           setStep('mapping');
           break;
         }
         case 'convert-done': {
-          setConvertResult({
-            records: msg.records as MappedRecord[],
-            errors: msg.errors,
-          });
+          setConvertResults(msg.sheets as SheetConvertResult[]);
           setIsConverting(false);
           setStep('preview');
           break;
         }
         case 'error':
-          setError(msg.message);
+          setError(msg.message as string);
           setIsParsing(false);
           setIsConverting(false);
           setStep('select');
@@ -123,7 +133,8 @@ export default function DataUploadPage() {
     setError(null);
     setUploadProgress(0);
     setIsParsing(false);
-    setConvertResult(null);
+    setConvertResults([]);
+    setIsSaved(false);
     setStep('uploading');
     fileNameRef.current = file.name;
 
@@ -157,21 +168,61 @@ export default function DataUploadPage() {
     if (file) processFile(file);
   }
 
-  function handleMappingChange(col: string, target: PlatformColumnKey | null) {
-    setColumnMappings((prev) => ({ ...prev, [col]: target }));
+  function handleMappingChange(sheetName: string, col: string, target: PlatformColumnKey | null) {
+    setSheetMappings((prev) => ({
+      ...prev,
+      [sheetName]: { ...prev[sheetName], [col]: target },
+    }));
   }
 
   function handleConvert() {
     setIsConverting(true);
-    setConvertResult(null);
-    workerRef.current?.postMessage({ type: 'convert', mapping: columnMappings });
+    setConvertResults([]);
+    workerRef.current?.postMessage({ type: 'convert', sheetMappings });
+  }
+
+  function handleSave() {
+    const now = new Date().toISOString();
+    for (const result of convertResults) {
+      const sheet = sheets.find((s) => s.sheetName === result.sheetName);
+      if (!sheet) continue;
+
+      const columnDefs = getColumnsForType(sheet.sheetType);
+      const mapping = sheetMappings[result.sheetName] ?? {};
+      const mappedKeys = new Set(
+        Object.values(mapping).filter((v): v is PlatformColumnKey => v !== null),
+      );
+      const orderedDefs = columnDefs.filter((d) => mappedKeys.has(d.key));
+      const columns = orderedDefs.map((d) => d.label);
+
+      const records = result.records.map((r) => {
+        const obj: Record<string, string> = {};
+        for (const def of orderedDefs) {
+          const val = (r as Record<string, unknown>)[def.key];
+          if (val !== undefined) obj[def.label] = String(val);
+        }
+        return obj;
+      });
+
+      addDataset({
+        records,
+        columns,
+        fileName: `${fileNameRef.current} — ${result.sheetName}`,
+        uploadedAt: now,
+        sheetName: result.sheetName,
+        sheetType: sheet.sheetType,
+      });
+    }
+    setIsSaved(true);
   }
 
   function handleReset() {
-    setExcelInfo(null);
-    setColumnMappings({});
+    setSheets([]);
+    setActiveSheetIdx(0);
+    setSheetMappings({});
     setInitialMappings({});
-    setConvertResult(null);
+    setConvertResults([]);
+    setIsSaved(false);
     setIsConverting(false);
     setError(null);
     setUploadProgress(0);
@@ -179,24 +230,30 @@ export default function DataUploadPage() {
     setStep('select');
   }
 
-  // 변환된 열 순서 (매핑된 것만)
-  const mappedPlatformCols = PLATFORM_COLUMNS.filter((d) =>
-    Object.values(columnMappings).includes(d.key),
-  );
-
-  // 중복 매핑 여부
-  const hasDuplicateMapping = (() => {
+  // 전체 시트 중복 매핑 검사
+  const hasDuplicateMapping = sheets.some((sheet) => {
+    const mapping = sheetMappings[sheet.sheetName] ?? {};
     const seen = new Set<PlatformColumnKey>();
-    for (const v of Object.values(columnMappings)) {
+    for (const v of Object.values(mapping)) {
       if (v) {
         if (seen.has(v)) return true;
         seen.add(v);
       }
     }
     return false;
-  })();
+  });
 
-  const MAX_PREVIEW_ERRORS = 20;
+  const activeSheet = sheets[activeSheetIdx];
+  const activeResult = convertResults.find((r) => r.sheetName === activeSheet?.sheetName);
+  const activeMapping = sheetMappings[activeSheet?.sheetName ?? ''] ?? {};
+  const activeInitialMapping = initialMappings[activeSheet?.sheetName ?? ''] ?? {};
+  const activeColumnDefs = getColumnsForType(activeSheet?.sheetType ?? 'generic');
+  const activeMappedDefs = activeColumnDefs.filter((d) =>
+    Object.values(activeMapping).includes(d.key),
+  );
+
+  const totalErrors = convertResults.reduce((sum, r) => sum + r.errors.length, 0);
+  const totalRecords = convertResults.reduce((sum, r) => sum + r.records.length, 0);
 
   return (
     <div className="space-y-6">
@@ -286,7 +343,7 @@ export default function DataUploadPage() {
             <>
               <div className="h-10 w-10 animate-spin rounded-full border-4 border-teal-100 border-t-teal-600" />
               <div>
-                <p className="text-sm font-medium text-slate-800">열 구조 분석 중...</p>
+                <p className="text-sm font-medium text-slate-800">시트 구조 분석 중...</p>
                 <p className="mt-1 text-xs text-slate-400">
                   잠시만 기다려 주세요. 대용량 파일은 시간이 걸릴 수 있습니다.
                 </p>
@@ -297,232 +354,336 @@ export default function DataUploadPage() {
       )}
 
       {/* ── 열 매핑 ── */}
-      {step === 'mapping' && excelInfo && (
-        <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-5">
+      {step === 'mapping' && activeSheet && (
+        <section className="rounded-xl border border-slate-200 bg-white">
           {/* 파일 정보 */}
-          <div className="flex items-center gap-3">
-            <FileSpreadsheet size={24} className="shrink-0 text-teal-600" />
+          <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+            <FileSpreadsheet size={22} className="shrink-0 text-teal-600" />
             <div>
-              <p className="text-sm font-semibold text-slate-900">{excelInfo.fileName}</p>
+              <p className="text-sm font-semibold text-slate-900">{fileNameRef.current}</p>
               <p className="text-xs text-slate-500">
-                시트: {excelInfo.sheetName} · 총 {excelInfo.totalRows.toLocaleString()}행
+                시트 {sheets.length}개 · 총{' '}
+                {sheets.reduce((s, sh) => s + sh.totalRows, 0).toLocaleString()}행
               </p>
             </div>
           </div>
 
-          {/* 원본 미리보기 */}
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700">
-              원본 데이터 미리보기{' '}
-              <span className="font-normal text-slate-400">(최대 10행)</span>
-            </h3>
-            {excelInfo.previewRows.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-400">데이터 행이 없습니다.</p>
-            ) : (
-              <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      {excelInfo.columns.map((col) => (
-                        <th
-                          key={col}
-                          className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500"
-                        >
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {excelInfo.previewRows.map((row, i) => (
-                      <tr key={i} className="hover:bg-slate-50">
-                        {excelInfo.columns.map((col) => (
-                          <td key={col} className="whitespace-nowrap px-4 py-2 text-slate-700">
-                            {row[col]}
-                          </td>
+          {/* 시트 탭 */}
+          <div className="flex overflow-x-auto border-b border-slate-200 px-5 pt-3">
+            {sheets.map((sheet, idx) => (
+              <button
+                key={sheet.sheetName}
+                type="button"
+                onClick={() => setActiveSheetIdx(idx)}
+                className={`mr-1 flex shrink-0 items-center gap-1.5 rounded-t-lg border border-b-0 px-3 py-2 text-xs font-medium transition-colors ${
+                  activeSheetIdx === idx
+                    ? 'border-slate-200 bg-white text-slate-800 shadow-[0_1px_0_white]'
+                    : 'border-transparent text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                <span className="max-w-[120px] truncate">{sheet.sheetName}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sheetTypeBadgeClass(sheet.sheetType)}`}
+                >
+                  {sheetTypeLabel(sheet.sheetType)}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {sheet.totalRows.toLocaleString()}행
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-5 p-5">
+            {/* 원본 미리보기 */}
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700">
+                원본 데이터 미리보기{' '}
+                <span className="font-normal text-slate-400">(최대 10행)</span>
+              </h3>
+              {activeSheet.columns.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-400">
+                  열을 인식할 수 없습니다. 파일 구조를 확인해 주세요.
+                </p>
+              ) : activeSheet.previewRows.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-400">데이터 행이 없습니다.</p>
+              ) : (
+                <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        {activeSheet.columns.map((col) => (
+                          <th
+                            key={col}
+                            className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500"
+                          >
+                            {col}
+                          </th>
                         ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 bg-white">
+                      {activeSheet.previewRows.map((row, i) => (
+                        <tr key={i} className="hover:bg-slate-50">
+                          {activeSheet.columns.map((col) => (
+                            <td key={col} className="whitespace-nowrap px-4 py-2 text-slate-700">
+                              {row[col]}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
 
-          {/* 열 매핑 */}
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700">열 매핑</h3>
-            <p className="mt-0.5 text-xs text-slate-400">
-              자동으로 연결된 항목을 확인하고 필요에 따라 수정하세요. * 표시는 필수 항목입니다.
-            </p>
-            <div className="mt-3">
-              <ColumnMapper
-                excelColumns={excelInfo.columns}
-                mappings={columnMappings}
-                initialMappings={initialMappings}
-                onChange={handleMappingChange}
-              />
+            {/* 열 매핑 */}
+            <div>
+              <h3 className="text-sm font-semibold text-slate-700">열 매핑</h3>
+              <p className="mt-0.5 text-xs text-slate-400">
+                자동으로 연결된 항목을 확인하고 필요에 따라 수정하세요. * 표시는 필수 항목입니다.
+              </p>
+              <div className="mt-3">
+                <ColumnMapper
+                  excelColumns={activeSheet.columns}
+                  mappings={activeMapping}
+                  initialMappings={activeInitialMapping}
+                  columnDefs={activeColumnDefs}
+                  onChange={(col, target) => handleMappingChange(activeSheet.sheetName, col, target)}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleConvert}
+                disabled={hasDuplicateMapping || isConverting}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+              >
+                {isConverting ? (
+                  <>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    변환 중...
+                  </>
+                ) : (
+                  <>
+                    변환 시작 <ArrowRight size={16} />
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+              >
+                <RotateCcw size={16} /> 새 파일 선택
+              </button>
             </div>
           </div>
-
-          <div className="flex items-center gap-3 pt-1">
-            <button
-              type="button"
-              onClick={handleConvert}
-              disabled={hasDuplicateMapping}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
-            >
-              변환 시작 <ArrowRight size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            >
-              <RotateCcw size={16} /> 새 파일 선택
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* ── 변환 중 ── */}
-      {step === 'mapping' && isConverting && (
-        <section className="flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white p-8">
-          <div className="h-6 w-6 animate-spin rounded-full border-4 border-teal-100 border-t-teal-600" />
-          <p className="text-sm font-medium text-slate-700">데이터 변환 중...</p>
         </section>
       )}
 
       {/* ── 검증 · 미리보기 ── */}
-      {step === 'preview' && excelInfo && convertResult && (
-        <section className="space-y-6 rounded-xl border border-slate-200 bg-white p-5">
-          {/* 요약 */}
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 size={20} className="text-teal-500" />
-              <span className="text-sm font-medium text-slate-800">
-                총{' '}
-                <strong>{convertResult.records.length.toLocaleString()}행</strong> 변환 완료
-              </span>
-            </div>
-            {convertResult.errors.length > 0 && (
-              <div className="flex items-center gap-2">
-                <AlertCircle size={20} className="text-amber-500" />
-                <span className="text-sm font-medium text-amber-700">
-                  오류 <strong>{convertResult.errors.length.toLocaleString()}건</strong>
-                </span>
+      {step === 'preview' && convertResults.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white">
+          {/* 저장 완료 상태 */}
+          {isSaved ? (
+            <div className="flex flex-col items-center gap-4 p-10 text-center">
+              <CheckCircle2 size={40} className="text-teal-500" />
+              <div>
+                <p className="text-base font-semibold text-slate-900">저장 완료!</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  시트 {convertResults.length}개 데이터가 저장되었습니다.
+                </p>
               </div>
-            )}
-          </div>
-
-          {/* 오류 목록 */}
-          {convertResult.errors.length > 0 && (
-            <div>
-              <h3 className="text-sm font-semibold text-slate-700">검증 오류</h3>
-              <div className="mt-2 overflow-hidden rounded-lg border border-amber-200">
-                <table className="min-w-full divide-y divide-amber-100 text-sm">
-                  <thead className="bg-amber-50">
-                    <tr>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
-                        행 번호
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
-                        항목
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
-                        내용
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-amber-50 bg-white">
-                    {convertResult.errors.slice(0, MAX_PREVIEW_ERRORS).map((err, i) => (
-                      <tr key={i}>
-                        <td className="px-4 py-2 text-xs tabular-nums text-slate-500">
-                          {err.rowIndex}행
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2 text-xs font-medium text-slate-600">
-                          {PLATFORM_LABEL[err.field]}
-                        </td>
-                        <td className="px-4 py-2 text-xs text-slate-700">{err.message}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {convertResult.errors.length > MAX_PREVIEW_ERRORS && (
-                  <div className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-600">
-                    외 {(convertResult.errors.length - MAX_PREVIEW_ERRORS).toLocaleString()}건 더 있습니다.
+              <button
+                type="button"
+                onClick={handleReset}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50"
+              >
+                <RotateCcw size={16} /> 새 파일 업로드
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* 요약 헤더 */}
+              <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 px-5 py-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={18} className="text-teal-500" />
+                  <span className="text-sm font-medium text-slate-800">
+                    총 <strong>{totalRecords.toLocaleString()}행</strong> 변환 완료
+                  </span>
+                </div>
+                {totalErrors > 0 && (
+                  <div className="flex items-center gap-2">
+                    <AlertCircle size={18} className="text-amber-500" />
+                    <span className="text-sm font-medium text-amber-700">
+                      오류 <strong>{totalErrors.toLocaleString()}건</strong>
+                    </span>
                   </div>
                 )}
               </div>
-            </div>
-          )}
 
-          {/* 변환 데이터 미리보기 */}
-          <div>
-            <h3 className="text-sm font-semibold text-slate-700">
-              변환 데이터 미리보기{' '}
-              <span className="font-normal text-slate-400">(최대 50행)</span>
-            </h3>
-            {mappedPlatformCols.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-400">매핑된 열이 없습니다.</p>
-            ) : (
-              <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      {mappedPlatformCols.map((def) => (
-                        <th
-                          key={def.key}
-                          className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500"
+              {/* 시트 탭 */}
+              <div className="flex overflow-x-auto border-b border-slate-200 px-5 pt-3">
+                {convertResults.map((result, idx) => {
+                  const sheet = sheets.find((s) => s.sheetName === result.sheetName);
+                  return (
+                    <button
+                      key={result.sheetName}
+                      type="button"
+                      onClick={() => setActiveSheetIdx(idx)}
+                      className={`mr-1 flex shrink-0 items-center gap-1.5 rounded-t-lg border border-b-0 px-3 py-2 text-xs font-medium transition-colors ${
+                        activeSheetIdx === idx
+                          ? 'border-slate-200 bg-white text-slate-800 shadow-[0_1px_0_white]'
+                          : 'border-transparent text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      <span className="max-w-[120px] truncate">{result.sheetName}</span>
+                      {sheet && (
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sheetTypeBadgeClass(sheet.sheetType)}`}
                         >
-                          {def.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {convertResult.records.slice(0, 50).map((record, i) => (
-                      <tr key={i} className="hover:bg-slate-50">
-                        {mappedPlatformCols.map((def) => (
-                          <td
-                            key={def.key}
-                            className="whitespace-nowrap px-4 py-2 text-slate-700"
-                          >
-                            {recordValue(record, def.key)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {convertResult.records.length > 50 && (
-                  <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-400">
-                    외 {(convertResult.records.length - 50).toLocaleString()}행 더 있습니다.
-                  </div>
-                )}
+                          {sheetTypeLabel(sheet.sheetType)}
+                        </span>
+                      )}
+                      {result.errors.length > 0 && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                          오류 {result.errors.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-            )}
-          </div>
 
-          <div className="flex items-center gap-3 pt-1">
-            <button
-              type="button"
-              onClick={() => {
-                setConvertResult(null);
-                setStep('mapping');
-              }}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            >
-              <ArrowLeft size={16} /> 열 매핑으로
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600"
-            >
-              <RotateCcw size={13} /> 새 파일 선택
-            </button>
-          </div>
+              {activeResult && (
+                <div className="space-y-5 p-5">
+                  {/* 오류 목록 */}
+                  {activeResult.errors.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-700">검증 오류</h3>
+                      <div className="mt-2 overflow-hidden rounded-lg border border-amber-200">
+                        <table className="min-w-full divide-y divide-amber-100 text-sm">
+                          <thead className="bg-amber-50">
+                            <tr>
+                              <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
+                                행 번호
+                              </th>
+                              <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
+                                항목
+                              </th>
+                              <th className="px-4 py-2.5 text-left text-xs font-medium text-amber-700">
+                                내용
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-amber-50 bg-white">
+                            {activeResult.errors.slice(0, MAX_PREVIEW_ERRORS).map((err, i) => (
+                              <tr key={i}>
+                                <td className="px-4 py-2 text-xs tabular-nums text-slate-500">
+                                  {err.rowIndex}행
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-2 text-xs font-medium text-slate-600">
+                                  {ALL_FIELD_LABELS[err.field] ?? err.field}
+                                </td>
+                                <td className="px-4 py-2 text-xs text-slate-700">
+                                  {err.message}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {activeResult.errors.length > MAX_PREVIEW_ERRORS && (
+                          <div className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-600">
+                            외{' '}
+                            {(activeResult.errors.length - MAX_PREVIEW_ERRORS).toLocaleString()}건
+                            더 있습니다.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 변환 데이터 미리보기 */}
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-700">
+                      변환 데이터 미리보기{' '}
+                      <span className="font-normal text-slate-400">(최대 50행)</span>
+                    </h3>
+                    {activeMappedDefs.length === 0 ? (
+                      <p className="mt-2 text-sm text-slate-400">매핑된 열이 없습니다.</p>
+                    ) : (
+                      <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200">
+                        <table className="min-w-full divide-y divide-slate-200 text-sm">
+                          <thead className="bg-slate-50">
+                            <tr>
+                              {activeMappedDefs.map((def) => (
+                                <th
+                                  key={def.key}
+                                  className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500"
+                                >
+                                  {def.label}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {activeResult.records.slice(0, 50).map((record, i) => (
+                              <tr key={i} className="hover:bg-slate-50">
+                                {activeMappedDefs.map((def) => (
+                                  <td
+                                    key={def.key}
+                                    className="whitespace-nowrap px-4 py-2 text-slate-700"
+                                  >
+                                    {String((record as Record<string, unknown>)[def.key] ?? '')}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {activeResult.records.length > 50 && (
+                          <div className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-xs text-slate-400">
+                            외 {(activeResult.records.length - 50).toLocaleString()}행 더 있습니다.
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 border-t border-slate-100 px-5 py-4">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+                >
+                  <Save size={16} /> 전체 저장
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConvertResults([]);
+                    setStep('mapping');
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                >
+                  <ArrowLeft size={16} /> 열 매핑으로
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  <RotateCcw size={13} /> 새 파일 선택
+                </button>
+              </div>
+            </>
+          )}
         </section>
       )}
     </div>

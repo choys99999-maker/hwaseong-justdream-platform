@@ -1,11 +1,11 @@
 import { CheckCircle2, ChevronDown } from 'lucide-react';
-import { PLATFORM_COLUMNS } from '../../utils/columnMapping';
-import type { PlatformColumnKey } from '../../types/upload';
+import type { PlatformColumnDef, PlatformColumnKey } from '../../types/upload';
 
 interface ColumnMapperProps {
   excelColumns: string[];
   mappings: Record<string, PlatformColumnKey | null>;
   initialMappings: Record<string, PlatformColumnKey | null>;
+  columnDefs: PlatformColumnDef[];
   onChange: (excelCol: string, target: PlatformColumnKey | null) => void;
 }
 
@@ -13,15 +13,15 @@ export default function ColumnMapper({
   excelColumns,
   mappings,
   initialMappings,
+  columnDefs,
   onChange,
 }: ColumnMapperProps) {
-  // 중복 사용된 플랫폼 항목 감지
   const targetCount = new Map<PlatformColumnKey, number>();
   for (const target of Object.values(mappings)) {
     if (target) targetCount.set(target, (targetCount.get(target) ?? 0) + 1);
   }
 
-  const requiredMissing = PLATFORM_COLUMNS.filter(
+  const requiredMissing = columnDefs.filter(
     (d) => d.required && !Array.from(targetCount.keys()).includes(d.key),
   );
 
@@ -54,8 +54,7 @@ export default function ColumnMapper({
             {excelColumns.map((col) => {
               const current = mappings[col] ?? null;
               const isDuplicate = current !== null && (targetCount.get(current) ?? 0) > 1;
-              const isAuto =
-                initialMappings[col] !== null && current === initialMappings[col];
+              const isAuto = initialMappings[col] !== null && current === initialMappings[col];
 
               return (
                 <tr key={col} className={isDuplicate ? 'bg-red-50/40' : ''}>
@@ -78,7 +77,7 @@ export default function ColumnMapper({
                         }`}
                       >
                         <option value="">사용 안 함</option>
-                        {PLATFORM_COLUMNS.map((def) => (
+                        {columnDefs.map((def) => (
                           <option key={def.key} value={def.key}>
                             {def.label}
                             {def.required ? ' *' : ''}
