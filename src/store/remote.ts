@@ -2,7 +2,7 @@
 // worker가 만든 camelCase 정규화 레코드를 그대로 RPC(jsonb)로 넘기고,
 // 조회 시에는 화면(기존 미리보기 표)이 쓰는 label-keyed 형태로 되돌려준다.
 import { supabase } from '../lib/supabase';
-import { getColumnsForType } from '../utils/columnMapping';
+import { getColumnsForType } from '../utils/excel/schema';
 import { sheetTypeLabel, type TypeSummary } from '../utils/submission';
 import type { MappedRecord, PlatformColumnKey, SheetType } from '../types/upload';
 

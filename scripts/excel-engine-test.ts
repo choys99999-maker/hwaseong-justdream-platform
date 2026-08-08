@@ -1,0 +1,735 @@
+// 엑셀 해석 엔진 v2 회귀 테스트.
+//
+// 형태가 서로 다른 합성 Excel을 만들어 실제로 해석시키고, 기대값과 비교한다.
+// 통과 기준은 "오류가 없다"가 아니라 "조용히 소실되거나 잘못 변환되는 값이 없다"이다.
+// 자동 인식이 안 되는 것은 실패해도 되지만, 반드시 사용자에게 알려야 한다.
+//
+//   npm run test:excel
+import * as XLSX from 'xlsx';
+import type { MappedRecord, PlatformColumnKey } from '../src/types/upload';
+import { analyzeWorkbook, convertSheet, defaultMapping } from '../src/utils/excel/engine';
+
+// ── 합성 파일 만들기 ──────────────────────────────────────
+
+interface SheetSpec {
+  name: string;
+  aoa: unknown[][];
+  merges?: XLSX.Range[];
+}
+
+function buildWorkbook(sheets: SheetSpec[]): ArrayBuffer {
+  const wb = XLSX.utils.book_new();
+  for (const spec of sheets) {
+    const ws = XLSX.utils.aoa_to_sheet(spec.aoa);
+    if (spec.merges) ws['!merges'] = spec.merges;
+    XLSX.utils.book_append_sheet(wb, ws, spec.name);
+  }
+  // SheetJS 는 버전에 따라 ArrayBuffer 또는 Uint8Array 를 돌려준다.
+  const out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer | Uint8Array;
+  if (out instanceof Uint8Array) {
+    return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+  }
+  return out;
+}
+
+/** 병합 범위 (0-based) */
+function merge(r1: number, c1: number, r2: number, c2: number): XLSX.Range {
+  return { s: { r: r1, c: c1 }, e: { r: r2, c: c2 } };
+}
+
+/** 엑셀 날짜 일련번호 */
+function serial(y: number, m: number, d: number): number {
+  return Math.round(Date.UTC(y, m - 1, d) / 86400000) + 25569;
+}
+
+// ── 기대값 ────────────────────────────────────────────────
+
+interface SheetExpect {
+  sheetName: string;
+  type?: string;
+  role?: string;
+  /** 1-based 헤더 행 */
+  headerRow?: number;
+  headerRowCount?: number;
+  isCumulative?: boolean;
+  recordCount?: number;
+  /** 표준 항목 → 연결되어야 할 원본 열 이름 */
+  mapped?: Partial<Record<PlatformColumnKey, string>>;
+  /** 이 원본 열들은 "확인 필요"(미인식/중복)로 표시되어야 한다 */
+  needsAttention?: string[];
+  /** 이 원본 열들은 "저장 대상 아님"으로 표시되어야 한다 */
+  ignoredColumns?: string[];
+  /** 첫 레코드부터 순서대로 부분 비교 */
+  records?: Array<Partial<MappedRecord>>;
+  /** 값 오류가 있어야 할 셀 주소 */
+  errorCells?: string[];
+  /** 데이터 행이 아니라고 뺀 행 번호 */
+  skippedRowNumbers?: number[];
+  filledRegion?: string | null;
+}
+
+interface Case {
+  id: string;
+  title: string;
+  sheets: SheetSpec[];
+  expect: SheetExpect[];
+}
+
+const ITEM_HEADER = ['품목명', '입고수량', '출고수량', '현재재고', '유통기한'];
+
+const CASES: Case[] = [
+  {
+    id: 'A',
+    title: '표준형',
+    sheets: [
+      {
+        name: '물품현황',
+        aoa: [
+          ITEM_HEADER,
+          ['쌀', 100, 30, 70, '2026-12-31'],
+          ['라면', 50, 20, 30, '2026-09-30'],
+          ['김치', 40, 40, 0, '2026-08-20'],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '물품현황',
+        type: 'generic',
+        role: 'data',
+        headerRow: 1,
+        headerRowCount: 1,
+        recordCount: 3,
+        mapped: {
+          itemName: '품목명',
+          inboundQuantity: '입고수량',
+          outboundQuantity: '출고수량',
+          stock: '현재재고',
+          expirationDate: '유통기한',
+        },
+        needsAttention: [],
+        records: [
+          { itemName: '쌀', inboundQuantity: 100, outboundQuantity: 30, stock: 70, expirationDate: '2026-12-31' },
+          { itemName: '라면', inboundQuantity: 50, outboundQuantity: 20, stock: 30, expirationDate: '2026-09-30' },
+          { itemName: '김치', inboundQuantity: 40, outboundQuantity: 40, stock: 0, expirationDate: '2026-08-20' },
+        ],
+      },
+    ],
+  },
+
+  {
+    id: 'B',
+    title: '제목 1행',
+    sheets: [
+      {
+        name: '현황',
+        aoa: [
+          ['2026년 8월 그냥드림 물품 현황'],
+          ITEM_HEADER,
+          ['쌀', 100, 30, 70, '2026-12-31'],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '현황',
+        type: 'generic',
+        headerRow: 2,
+        recordCount: 1,
+        mapped: { itemName: '품목명', inboundQuantity: '입고수량' },
+        records: [{ itemName: '쌀', inboundQuantity: 100 }],
+      },
+    ],
+  },
+
+  {
+    id: 'C',
+    title: '제목 3행 (제목·기관·공백)',
+    sheets: [
+      {
+        name: '현황',
+        aoa: [
+          ['2026년 8월 그냥드림 물품 현황'],
+          ['봉담읍'],
+          [],
+          ['품목', '입고량', '출고량', '재고'],
+          ['쌀', 100, 30, 70],
+          ['라면', 50, 20, 30],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '현황',
+        type: 'generic',
+        headerRow: 4,
+        recordCount: 2,
+        mapped: { itemName: '품목', inboundQuantity: '입고량', outboundQuantity: '출고량', stock: '재고' },
+        // 지역 열이 없으므로 제목에서 찾은 읍면동을 채운다 (채웠다는 사실을 화면에 표시)
+        filledRegion: '봉담읍',
+        records: [{ itemName: '쌀', inboundQuantity: 100, region: '봉담읍' }],
+      },
+    ],
+  },
+
+  {
+    id: 'D',
+    title: '시트명 임의 — 이름이 아니라 내용으로 판별',
+    sheets: [
+      {
+        name: '8월 최종본(수정)',
+        aoa: [ITEM_HEADER, ['쌀', 10, 5, 5, '2026-12-31']],
+      },
+      {
+        name: 'Sheet1',
+        aoa: [['품목', '입고량', '재고'], ['라면', 3, 3]],
+      },
+    ],
+    expect: [
+      { sheetName: '8월 최종본(수정)', type: 'generic', role: 'data', recordCount: 1 },
+      { sheetName: 'Sheet1', type: 'generic', role: 'data', recordCount: 1 },
+    ],
+  },
+
+  {
+    id: 'E',
+    title: '컬럼 alias 변경',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['물품', '입고 수량', '배부수량', '소비기한'],
+          ['쌀', '1,000', 300, '2026.12.31'],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        type: 'generic',
+        recordCount: 1,
+        mapped: {
+          itemName: '물품',
+          inboundQuantity: '입고 수량',
+          outboundQuantity: '배부수량',
+          expirationDate: '소비기한',
+        },
+        needsAttention: [],
+        records: [{ itemName: '쌀', inboundQuantity: 1000, outboundQuantity: 300, expirationDate: '2026-12-31' }],
+      },
+    ],
+  },
+
+  {
+    id: 'F',
+    title: '컬럼 순서 변경',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['유통기한', '현재재고', '품목명', '출고수량', '입고수량'],
+          ['2026-12-31', 70, '쌀', 30, 100],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 1,
+        mapped: {
+          itemName: '품목명',
+          inboundQuantity: '입고수량',
+          outboundQuantity: '출고수량',
+          stock: '현재재고',
+          expirationDate: '유통기한',
+        },
+        records: [{ itemName: '쌀', inboundQuantity: 100, outboundQuantity: 30, stock: 70, expirationDate: '2026-12-31' }],
+      },
+    ],
+  },
+
+  {
+    id: 'G',
+    title: '불필요 컬럼 추가 (비고·담당자)',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['품목명', '입고수량', '비고', '담당자'],
+          ['쌀', 100, '기부받음', '홍길동'],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 1,
+        mapped: { itemName: '품목명', inboundQuantity: '입고수량' },
+        ignoredColumns: ['비고', '담당자'],
+        needsAttention: [],
+      },
+    ],
+  },
+
+  {
+    id: 'H',
+    title: '현재재고 열 없음',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['품목명', '입고수량', '출고수량'],
+          ['쌀', 100, 30],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 1,
+        mapped: { itemName: '품목명', inboundQuantity: '입고수량', outboundQuantity: '출고수량' },
+        needsAttention: [],
+        records: [{ itemName: '쌀', inboundQuantity: 100, outboundQuantity: 30 }],
+      },
+    ],
+  },
+
+  {
+    id: 'I',
+    title: '여러 기관 포함',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['기관명', '품목명', '입고수량'],
+          ['봉담읍 행복나눔', '쌀', 100],
+          ['향남읍 그냥드림', '라면', 50],
+          ['동탄1동 나눔가게', '김치', 20],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 3,
+        mapped: { organization: '기관명', itemName: '품목명', inboundQuantity: '입고수량' },
+        records: [
+          { organization: '봉담읍 행복나눔', itemName: '쌀' },
+          { organization: '향남읍 그냥드림', itemName: '라면' },
+          { organization: '동탄1동 나눔가게', itemName: '김치' },
+        ],
+      },
+    ],
+  },
+
+  {
+    id: 'J',
+    title: '세로 병합된 지역 셀',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['지역', '품목명', '입고수량'],
+          ['봉담읍', '쌀', 100],
+          ['', '라면', 50],
+          ['향남읍', '김치', 20],
+          ['', '두부', 10],
+        ],
+        merges: [merge(1, 0, 2, 0), merge(3, 0, 4, 0)],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 4,
+        mapped: { region: '지역', itemName: '품목명' },
+        records: [
+          { region: '봉담읍', itemName: '쌀' },
+          { region: '봉담읍', itemName: '라면' },
+          { region: '향남읍', itemName: '김치' },
+          { region: '향남읍', itemName: '두부' },
+        ],
+      },
+    ],
+  },
+
+  {
+    id: 'K',
+    title: '합계·소계 행 포함',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['품목명', '입고수량', '출고수량'],
+          ['쌀', 100, 30],
+          ['라면', 50, 20],
+          ['소계', 150, 50],
+          ['김치', 40, 10],
+          ['합계', 190, 60],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 3,
+        skippedRowNumbers: [4, 6],
+        records: [{ itemName: '쌀' }, { itemName: '라면' }, { itemName: '김치' }],
+      },
+    ],
+  },
+
+  {
+    id: 'L',
+    title: '날짜 형식 혼합 — 읽을 수 있는 것만 읽고 나머지는 알린다',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['품목명', '유통기한'],
+          ['가', '2026-08-03'],
+          ['나', '2026.08.03'],
+          ['다', '2026/08/03'],
+          ['라', '2026년 8월 3일'],
+          ['마', serial(2026, 8, 3)],
+          ['바', '20260803'],
+          ['사', '8/3'],
+          ['아', '2026'],
+          ['자', '미정'],
+          ['차', ''],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 10,
+        records: [
+          { itemName: '가', expirationDate: '2026-08-03' },
+          { itemName: '나', expirationDate: '2026-08-03' },
+          { itemName: '다', expirationDate: '2026-08-03' },
+          { itemName: '라', expirationDate: '2026-08-03' },
+          { itemName: '마', expirationDate: '2026-08-03' },
+          { itemName: '바', expirationDate: '2026-08-03' },
+          { itemName: '사' },
+          { itemName: '아' },
+          { itemName: '자' },
+          { itemName: '차' },
+        ],
+        // 8/3, 2026, 미정 → 추측하지 않고 오류로 알린다. 빈칸은 오류가 아니다.
+        errorCells: ['B8', 'B9', 'B10'],
+      },
+    ],
+  },
+
+  {
+    id: 'M',
+    title: '누계 + 주별 (이중 집계 방지)',
+    sheets: [
+      {
+        name: '주별 실적',
+        aoa: [
+          ['구분', '이용자', '기본 상담', '상담 연계 의뢰', '연계완료'],
+          ['봉담읍', 100, 40, 12, 8],
+        ],
+      },
+      {
+        name: '누계 실적',
+        aoa: [
+          ['구분', '이용자', '기본 상담', '상담 연계 의뢰', '연계완료'],
+          ['봉담읍', 850, 320, 96, 71],
+        ],
+      },
+    ],
+    expect: [
+      { sheetName: '주별 실적', type: 'performance', isCumulative: false, recordCount: 1 },
+      { sheetName: '누계 실적', type: 'performance', isCumulative: true, recordCount: 1 },
+    ],
+  },
+
+  {
+    id: 'N',
+    title: '미인식 컬럼 포함 — 조용히 버리지 않는다',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['품목명', '입고수량', '특수관리코드', '보관위치'],
+          ['쌀', 100, 'A-102', '창고1'],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 1,
+        mapped: { itemName: '품목명', inboundQuantity: '입고수량' },
+        needsAttention: ['특수관리코드', '보관위치'],
+      },
+    ],
+  },
+
+  {
+    id: 'O',
+    title: '다중 시트 + 안내 시트',
+    sheets: [
+      {
+        name: '작성 안내',
+        aoa: [
+          ['그냥드림 자료 작성 안내'],
+          ['1. 품목명은 정확히 적어주세요.'],
+          ['2. 수량은 숫자만 적어주세요.'],
+        ],
+      },
+      {
+        name: '물품',
+        aoa: [ITEM_HEADER, ['쌀', 100, 30, 70, '2026-12-31']],
+      },
+      {
+        name: '연계',
+        aoa: [
+          ['연번', '대상자 이름', '생년월일', '주소', '상담일자', '2차 연계처'],
+          [1, '홍길동', '850101', '경기도 화성시 봉담읍 봉담로 12', '2026-08-03', '봉담읍'],
+        ],
+      },
+    ],
+    expect: [
+      { sheetName: '작성 안내', role: 'guide' },
+      { sheetName: '물품', type: 'generic', role: 'data', recordCount: 1 },
+      {
+        sheetName: '연계',
+        type: 'referral',
+        role: 'data',
+        recordCount: 1,
+        records: [{ clientName: '홍길동', birthDate: '1985-01-01', consultDate: '2026-08-03' }],
+      },
+    ],
+  },
+
+  {
+    id: 'P',
+    title: '시트명은 "연계"인데 내용은 물품 — 내용이 이긴다',
+    sheets: [
+      {
+        name: '연계 현황(8월)',
+        aoa: [ITEM_HEADER, ['쌀', 100, 30, 70, '2026-12-31']],
+      },
+    ],
+    expect: [{ sheetName: '연계 현황(8월)', type: 'generic', role: 'data', recordCount: 1 }],
+  },
+
+  {
+    id: 'Q',
+    title: '2줄 머리글 (가로 병합만, 세로 병합 없음)',
+    sheets: [
+      {
+        name: '실적',
+        aoa: [
+          ['구분', '연계완료', '', '', '검토중'],
+          ['', '기초생활', '차상위', '긴급복지', ''],
+          ['봉담읍', 3, 2, 1, 4],
+          ['향남읍', 1, 0, 2, 1],
+        ],
+        // '연계완료'만 가로로 묶여 있고, '구분'·'검토중'은 아랫줄이 비어 있다.
+        // 한 줄만 읽으면 두 열이 통째로 사라지므로 2줄을 합쳐 읽어야 한다.
+        merges: [merge(0, 1, 0, 3)],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '실적',
+        type: 'performance',
+        headerRow: 1,
+        headerRowCount: 2,
+        recordCount: 2,
+        mapped: {
+          institution: '구분',
+          basicLivelihood: '기초생활',
+          nearPoverty: '차상위',
+          emergencyWelfare: '긴급복지',
+          underReview: '검토중',
+        },
+        needsAttention: [],
+        records: [{ institution: '봉담읍', basicLivelihood: 3, nearPoverty: 2, emergencyWelfare: 1, underReview: 4 }],
+      },
+    ],
+  },
+
+  {
+    id: 'S',
+    title: '세로까지 병합된 2줄 머리글',
+    sheets: [
+      {
+        name: '실적',
+        aoa: [
+          ['구분', '연계완료', '', '', '검토중'],
+          ['', '기초생활', '차상위', '긴급복지', ''],
+          ['봉담읍', 3, 2, 1, 4],
+          ['향남읍', 1, 0, 2, 1],
+        ],
+        merges: [merge(0, 1, 0, 3), merge(0, 0, 1, 0), merge(0, 4, 1, 4)],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '실적',
+        type: 'performance',
+        // 세로 병합이 풀리면 둘째 줄만으로 완전한 머리글이 된다.
+        headerRow: 2,
+        headerRowCount: 1,
+        recordCount: 2,
+        mapped: {
+          institution: '구분',
+          basicLivelihood: '기초생활',
+          nearPoverty: '차상위',
+          emergencyWelfare: '긴급복지',
+          underReview: '검토중',
+        },
+        needsAttention: [],
+        records: [{ institution: '봉담읍', basicLivelihood: 3, nearPoverty: 2, emergencyWelfare: 1, underReview: 4 }],
+      },
+    ],
+  },
+
+  {
+    id: 'R',
+    title: '숫자에 단위·쉼표·각주 행 섞임',
+    sheets: [
+      {
+        name: '자료',
+        aoa: [
+          ['품목명', '입고수량', '출고수량'],
+          ['쌀', '1,000개', '300 개'],
+          ['라면', '50박스', '20박스'],
+          ['김치', '열 박스', 5],
+          ['※ 수량은 박스 단위로 기재합니다.'],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '자료',
+        recordCount: 3,
+        records: [
+          { itemName: '쌀', inboundQuantity: 1000, outboundQuantity: 300 },
+          { itemName: '라면', inboundQuantity: 50, outboundQuantity: 20 },
+          { itemName: '김치', outboundQuantity: 5 },
+        ],
+        errorCells: ['B4'],
+        skippedRowNumbers: [5],
+      },
+    ],
+  },
+];
+
+// ── 실행 ──────────────────────────────────────────────────
+
+const failures: string[] = [];
+let checks = 0;
+
+function check(caseId: string, label: string, actual: unknown, expected: unknown) {
+  checks++;
+  const a = JSON.stringify(actual);
+  const e = JSON.stringify(expected);
+  if (a !== e) failures.push(`[${caseId}] ${label}\n      기대: ${e}\n      실제: ${a}`);
+}
+
+function pad(s: string, n: number): string {
+  const width = [...s].reduce((sum, ch) => sum + (/[가-힣ㄱ-ㅎ]/.test(ch) ? 2 : 1), 0);
+  return s + ' '.repeat(Math.max(0, n - width));
+}
+
+for (const testCase of CASES) {
+  const buffer = buildWorkbook(testCase.sheets);
+  const analyzed = analyzeWorkbook(buffer);
+
+  console.log(`\n━━ ${testCase.id}. ${testCase.title}`);
+
+  for (const sheet of analyzed) {
+    const parsed = sheet.result;
+    const mapping = defaultMapping(parsed);
+    const converted = convertSheet(sheet, mapping);
+
+    const mappedPairs: Record<string, string> = {};
+    for (const diag of parsed.columnDiagnostics) {
+      if (diag.mapped) mappedPairs[diag.mapped] = diag.name;
+    }
+    const attention = parsed.columnDiagnostics
+      .filter((d) => d.status === 'unmapped' || d.status === 'duplicate')
+      .map((d) => d.name);
+    const ignored = parsed.columnDiagnostics.filter((d) => d.status === 'ignored').map((d) => d.name);
+    const suggested = parsed.columnDiagnostics.filter((d) => d.status === 'suggested').map((d) => d.name);
+
+    console.log(
+      `   ${pad(parsed.sheetName, 18)} 유형=${pad(parsed.sheetType, 12)} 역할=${pad(parsed.role, 8)}` +
+        ` 헤더=${parsed.headerRow}행(${parsed.headerRowCount}줄) 열=${parsed.columns.length}` +
+        ` 인식=${Object.keys(mappedPairs).length} 확인필요=${attention.length}` +
+        ` 저장제외열=${ignored.length} 레코드=${converted.records.length}` +
+        ` 오류=${converted.errors.length} 제외행=${converted.skippedRows.length}`,
+    );
+    if (suggested.length) console.log(`      추천(확인 필요): ${suggested.join(', ')}`);
+    if (attention.length) console.log(`      미인식: ${attention.join(', ')}`);
+    if (converted.filledRegion) console.log(`      지역 채움: ${converted.filledRegion}`);
+    for (const skipped of converted.skippedRows) {
+      console.log(`      제외 ${skipped.rowNumber}행 [${skipped.kind}] ${skipped.message}`);
+    }
+    for (const err of converted.errors.slice(0, 5)) {
+      console.log(`      오류 ${err.cellAddress} ${err.message}`);
+    }
+
+    const expected = testCase.expect.find((e) => e.sheetName === parsed.sheetName);
+    if (!expected) continue;
+
+    const id = `${testCase.id}/${parsed.sheetName}`;
+    if (expected.type !== undefined) check(id, '시트 유형', parsed.sheetType, expected.type);
+    if (expected.role !== undefined) check(id, '시트 역할', parsed.role, expected.role);
+    if (expected.headerRow !== undefined) check(id, '헤더 행', parsed.headerRow, expected.headerRow);
+    if (expected.headerRowCount !== undefined) {
+      check(id, '헤더 줄 수', parsed.headerRowCount, expected.headerRowCount);
+    }
+    if (expected.isCumulative !== undefined) {
+      check(id, '누계 여부', parsed.isCumulative, expected.isCumulative);
+    }
+    if (expected.recordCount !== undefined) {
+      check(id, '레코드 수', converted.records.length, expected.recordCount);
+    }
+    if (expected.mapped) {
+      for (const [key, column] of Object.entries(expected.mapped)) {
+        check(id, `매핑 ${key}`, mappedPairs[key] ?? null, column);
+      }
+    }
+    if (expected.needsAttention) {
+      check(id, '확인 필요 열', attention.sort(), [...expected.needsAttention].sort());
+    }
+    if (expected.ignoredColumns) {
+      check(id, '저장 제외 열', ignored.sort(), [...expected.ignoredColumns].sort());
+    }
+    if (expected.records) {
+      expected.records.forEach((want, i) => {
+        const got = converted.records[i] ?? {};
+        for (const [key, value] of Object.entries(want)) {
+          check(id, `${i + 1}번째 레코드 ${key}`, got[key] ?? null, value);
+        }
+      });
+    }
+    if (expected.errorCells) {
+      check(id, '오류 셀', converted.errors.map((e) => e.cellAddress).sort(), [...expected.errorCells].sort());
+    }
+    if (expected.skippedRowNumbers) {
+      check(id, '제외 행', converted.skippedRows.map((s) => s.rowNumber).sort((a, b) => a - b), expected.skippedRowNumbers);
+    }
+    if (expected.filledRegion !== undefined) {
+      check(id, '지역 채움', converted.filledRegion, expected.filledRegion);
+    }
+  }
+}
+
+console.log(`\n${'─'.repeat(70)}`);
+if (failures.length === 0) {
+  console.log(`✅ ${CASES.length}개 파일 / ${checks}개 검사 모두 통과`);
+  process.exit(0);
+} else {
+  console.log(`❌ ${checks}개 검사 중 ${failures.length}건 실패\n`);
+  for (const failure of failures) console.log(`   ${failure}\n`);
+  process.exit(1);
+}

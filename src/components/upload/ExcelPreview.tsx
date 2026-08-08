@@ -18,10 +18,9 @@ type SheetMappings = Record<string, Record<string, PlatformColumnKey | null>>;
 
 // ── 시트 고르기 ───────────────────────────────────────────
 // '작성 안내' 같은 설명 시트는 업무 시트가 아니다. 기본 선택에서 빼고 맨 뒤로 보낸다.
-const GUIDE_NAME = /안내|설명|사용법|가이드|읽어|주의사항|목차|표지|서식/;
-
+// 판정은 해석 엔진이 내용을 보고 이미 해뒀다. (이름만 보고 다시 판단하지 않는다)
 export function isGuideSheet(sheet: SheetParseResult): boolean {
-  return GUIDE_NAME.test(sheet.sheetName) || sheet.columns.length === 0 || sheet.totalRows === 0;
+  return sheet.role === 'guide' || sheet.columns.length === 0 || sheet.totalRows === 0;
 }
 
 /** 실제 데이터가 있는 첫 업무 시트. 없으면 있는 것 중 앞의 것. */
