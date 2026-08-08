@@ -1,0 +1,99 @@
+// 중앙 DB에서 읽어온 제출 자료를 화면 문구로 바꾸는 helper.
+// 값을 새로 만들지 않는다. 이미 저장된 값에서 계산할 수 있는 것만 돌려준다.
+import { extractEupMyeonDong } from './address';
+
+const SHEET_TYPE_LABELS: Record<string, string> = {
+  performance: '주간 실적',
+  referral: '복지 연계',
+  generic: '물품·재고',
+};
+
+export function sheetTypeLabel(type?: string): string {
+  return SHEET_TYPE_LABELS[type ?? ''] ?? '기타 자료';
+}
+
+export interface TypeSummary {
+  type: string;
+  label: string;
+  count: number;
+}
+
+// ── 기간 ──────────────────────────────────────────────────
+function dayDiff(from: string, to: string): number {
+  return Math.round((Date.parse(to) - Date.parse(from)) / 86400000);
+}
+
+export function formatPeriod(minIso: string, maxIso: string): string {
+  const [, minM, minD] = minIso.split('-').map(Number);
+  const [, maxM, maxD] = maxIso.split('-').map(Number);
+
+  if (minIso === maxIso) return `${maxM}월 ${maxD}일`;
+  // 한 주 안에 들어오면 주차로 읽는 편이 업무 감각에 맞다.
+  if (minM === maxM && dayDiff(minIso, maxIso) <= 6) {
+    return `${maxM}월 ${Math.ceil(maxD / 7)}주`;
+  }
+  return `${minM}월 ${minD}일 ~ ${maxM}월 ${maxD}일`;
+}
+
+function startOfDay(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/** 목록의 "업데이트" 칸. 오늘/어제는 상대 표기가 읽기 쉽다. */
+export function formatUpdatedAt(iso: string, now: Date = new Date()): string {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return '—';
+
+  const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / 86400000);
+  if (diffDays === 0) {
+    return `오늘 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  }
+  if (diffDays === 1) return '어제';
+  if (date.getFullYear() === now.getFullYear()) {
+    return `${date.getMonth() + 1}월 ${date.getDate()}일`;
+  }
+  return `${date.getFullYear()}. ${date.getMonth() + 1}. ${date.getDate()}.`;
+}
+
+/** 월요일 시작 기준 이번 주에 올라온 자료인지. */
+export function isSubmittedThisWeek(iso: string, now: Date = new Date()): boolean {
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return false;
+  const weekday = (now.getDay() + 6) % 7; // 월=0
+  const weekStart = startOfDay(now) - weekday * 86400000;
+  return date.getTime() >= weekStart;
+}
+
+// ── 개인정보 ──────────────────────────────────────────────
+// 자료 관리·지역 상세는 다른 지역 담당자도 보는 화면이다. 집계·운영 값은 그대로
+// 보여주되 개인 식별 항목은 가려서 내보낸다.
+const NAME_COL = /이름|성명|대상자/;
+const BIRTH_COL = /생년월일/;
+const ADDRESS_COL = /주소|거주지/;
+const CONTACT_COL = /연락처|전화|휴대폰/;
+
+export function isPersonalColumn(column: string): boolean {
+  return (
+    NAME_COL.test(column) ||
+    BIRTH_COL.test(column) ||
+    ADDRESS_COL.test(column) ||
+    CONTACT_COL.test(column)
+  );
+}
+
+function maskPersonalValue(column: string, value: string): string {
+  const v = (value ?? '').trim();
+  if (!v) return '';
+  if (NAME_COL.test(column)) {
+    return v.length <= 1 ? v : v[0] + '*'.repeat(v.length - 1);
+  }
+  if (ADDRESS_COL.test(column)) {
+    return extractEupMyeonDong(v) ?? '비공개';
+  }
+  if (BIRTH_COL.test(column) || CONTACT_COL.test(column)) return '비공개';
+  return v;
+}
+
+export function displayCellValue(column: string, value: string): string {
+  return isPersonalColumn(column) ? maskPersonalValue(column, value) : (value ?? '');
+}

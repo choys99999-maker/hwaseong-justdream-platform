@@ -6,7 +6,9 @@ import RegionDetailPage from './pages/RegionDetailPage';
 import PerformancePage from './pages/PerformancePage';
 import InventoryPage from './pages/InventoryPage';
 import ForecastPage from './pages/ForecastPage';
+import DataLibraryPage from './pages/DataLibraryPage';
 import DataUploadPage from './pages/DataUploadPage';
+import SubmissionDetailPage from './pages/SubmissionDetailPage';
 
 export default function App() {
   return (
@@ -18,7 +20,11 @@ export default function App() {
         <Route path="/performance" element={<PerformancePage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/forecast" element={<ForecastPage />} />
-        <Route path="/upload" element={<DataUploadPage />} />
+        <Route path="/files" element={<DataLibraryPage />} />
+        <Route path="/files/upload" element={<DataUploadPage />} />
+        <Route path="/files/:submissionId" element={<SubmissionDetailPage />} />
+        {/* 예전 업로드 경로로 들어오면 자료 관리 안의 업로드 화면으로 보낸다. */}
+        <Route path="/upload" element={<Navigate to="/files/upload" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
