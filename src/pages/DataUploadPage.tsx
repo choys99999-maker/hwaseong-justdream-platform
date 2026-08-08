@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertCircle,
+  ArrowLeft,
   Check,
   ChevronDown,
   FolderOpen,
@@ -18,12 +19,12 @@ import {
   REFERRAL_COLUMNS,
   GENERIC_COLUMNS,
 } from '../utils/columnMapping';
+import { sheetTypeLabel } from '../utils/submission';
 import { useDataStore } from '../store/dataStore';
 import type { SheetEntry } from '../store/dataStore';
 import type {
   SheetParseResult,
   SheetConvertResult,
-  SheetType,
   PlatformColumnKey,
   PlatformColumnDef,
 } from '../types/upload';
@@ -33,23 +34,10 @@ for (const def of [...PERFORMANCE_COLUMNS, ...REFERRAL_COLUMNS, ...GENERIC_COLUM
   if (!ALL_FIELD_LABELS[def.key]) ALL_FIELD_LABELS[def.key] = def.label;
 }
 
-function sheetTypeLabel(type: SheetType): string {
-  if (type === 'performance') return '실적';
-  if (type === 'referral') return '연계';
-  return '일반';
-}
-
-function sheetTypeBadgeClass(type: SheetType): string {
-  if (type === 'performance') return 'bg-blue-100 text-blue-700';
-  if (type === 'referral') return 'bg-purple-100 text-purple-700';
-  return 'bg-slate-100 text-slate-600';
-}
-
 const MAX_PREVIEW_ERRORS = 20;
 const PREVIEW_ROWS = 5;
-const SHOWN_FIELD_CHIPS = 4;
 
-/** 자동으로 연결하지 못한 필수 항목. 이것만 기본 화면에서 물어본다. */
+/** 자동으로 연결하지 못한 필수 항목. 기본 화면에서는 요약만, 연결은 고급 설정에서. */
 interface AttentionItem {
   sheetName: string;
   def: PlatformColumnDef;
@@ -73,6 +61,7 @@ export default function DataUploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isParsing, setIsParsing] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -86,7 +75,7 @@ export default function DataUploadPage() {
   const addDatasetRef = useRef(addDataset);
   addDatasetRef.current = addDataset;
 
-  /** 변환 결과를 하나의 파일로 저장한다. (원격 구현 유지) */
+  /** 변환 결과를 하나의 자료로 저장한다. (기존 저장 구조 유지) */
   function saveResults(results: SheetConvertResult[]) {
     const now = new Date().toISOString();
     const sheetEntries: SheetEntry[] = [];
@@ -124,6 +113,7 @@ export default function DataUploadPage() {
       sheetName: first?.sheetName,
       sheetType: first?.sheetType,
       sheets: sheetEntries,
+      issueCount: results.reduce((sum, r) => sum + r.errors.length, 0),
     });
 
     setSavedSheetCount(sheetEntries.length);
@@ -156,6 +146,7 @@ export default function DataUploadPage() {
           setActiveSheetIdx(firstWithData >= 0 ? firstWithData : 0);
           setError(null);
           setIsParsing(false);
+          setShowPreview(false);
           setStep('review');
           break;
         }
@@ -223,7 +214,7 @@ export default function DataUploadPage() {
 
   function handleFileSelected(file: File) {
     if (datasets.some((d) => d.fileName === file.name)) {
-      setError(`"${file.name}" 파일은 이미 등록되어 있습니다. 파일 관리에서 지운 뒤 다시 올려주세요.`);
+      setError(`"${file.name}" 자료는 이미 올라와 있습니다. 자료 관리에서 지운 뒤 다시 올려주세요.`);
       return;
     }
     processFile(file);
@@ -249,7 +240,7 @@ export default function DataUploadPage() {
     }));
   }
 
-  /** 확인 필요 카드에서 고른 엑셀 열을 해당 항목에 연결한다. */
+  /** 고급 설정에서 고른 엑셀 열을 해당 항목에 연결한다. */
   function resolveAttention(sheetName: string, key: PlatformColumnKey, excelCol: string) {
     setSheetMappings((prev) => {
       const sheetMap = { ...(prev[sheetName] ?? {}) };
@@ -262,7 +253,7 @@ export default function DataUploadPage() {
     });
   }
 
-  function handleImport() {
+  function handleSave() {
     setError(null);
     setConvertResults([]);
     setStep('importing');
@@ -279,10 +270,11 @@ export default function DataUploadPage() {
     setError(null);
     setUploadProgress(0);
     setIsParsing(false);
+    setShowPreview(false);
     setStep('select');
   }
 
-  // 전체 시트 중복 매핑 검사 (원격 동작 유지 — 중복이면 가져오기 차단)
+  // 전체 시트 중복 매핑 검사 (중복이면 저장 차단)
   const hasDuplicateMapping = sheets.some((sheet) => {
     const mapping = sheetMappings[sheet.sheetName] ?? {};
     const seen = new Set<PlatformColumnKey>();
@@ -306,22 +298,16 @@ export default function DataUploadPage() {
 
   const totalErrors = convertResults.reduce((sum, r) => sum + r.errors.length, 0);
   const totalRecords = convertResults.reduce((sum, r) => sum + r.records.length, 0);
-  const totalRows = sheets.reduce((s, sh) => s + sh.totalRows, 0);
+  const filledSheets = sheets.filter((s) => s.columns.length > 0 && s.totalRows > 0);
+  const totalRows = filledSheets.reduce((s, sh) => s + sh.totalRows, 0);
 
-  // 자동으로 연결된 항목 수 (전체 시트 합계)
-  const connectedCount = sheets.reduce((sum, sheet) => {
-    const mapping = sheetMappings[sheet.sheetName] ?? {};
-    return sum + Object.values(mapping).filter(Boolean).length;
-  }, 0);
-
-  const connectedLabels: string[] = [];
-  for (const sheet of sheets) {
-    const mapping = sheetMappings[sheet.sheetName] ?? {};
-    for (const def of getColumnsForType(sheet.sheetType)) {
-      if (Object.values(mapping).includes(def.key) && !connectedLabels.includes(def.label)) {
-        connectedLabels.push(def.label);
-      }
-    }
+  // 자료 유형별 건수 — 사용자가 "내가 올린 게 맞나" 확인하는 데 필요한 만큼만.
+  const typeSummary: Array<{ label: string; count: number }> = [];
+  for (const sheet of filledSheets) {
+    const label = sheetTypeLabel(sheet.sheetType);
+    const found = typeSummary.find((t) => t.label === label);
+    if (found) found.count += sheet.totalRows;
+    else typeSummary.push({ label, count: sheet.totalRows });
   }
 
   // 자동으로 못 찾은 필수 항목만 모은다.
@@ -337,12 +323,9 @@ export default function DataUploadPage() {
     }
   }
 
-  const shownLabels = connectedLabels.slice(0, SHOWN_FIELD_CHIPS);
-  const hiddenLabelCount = connectedLabels.length - shownLabels.length;
-
   function renderSheetTabs(onSelect: (idx: number) => void, results?: SheetConvertResult[]) {
     return (
-      <div className="flex overflow-x-auto border-b border-slate-200">
+      <div className="flex flex-wrap gap-1.5">
         {sheets.map((sheet, idx) => {
           const result = results?.find((r) => r.sheetName === sheet.sheetName);
           return (
@@ -350,26 +333,17 @@ export default function DataUploadPage() {
               key={sheet.sheetName}
               type="button"
               onClick={() => onSelect(idx)}
-              className={`mr-1 flex shrink-0 items-center gap-1.5 rounded-t-lg border border-b-0 px-3 py-2 text-xs font-medium transition-colors ${
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
                 activeSheetIdx === idx
-                  ? 'border-slate-200 bg-white text-slate-800 shadow-[0_1px_0_white]'
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
+                  ? 'bg-slate-100 text-slate-800'
+                  : 'text-slate-500 hover:bg-slate-50'
               }`}
             >
-              <span className="max-w-[120px] truncate">{sheet.sheetName}</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${sheetTypeBadgeClass(sheet.sheetType)}`}
-              >
-                {sheetTypeLabel(sheet.sheetType)}
-              </span>
+              <span className="max-w-[160px] truncate">{sheet.sheetName}</span>
               {result && result.errors.length > 0 ? (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                  확인 {result.errors.length}
-                </span>
+                <span className="text-amber-600">확인 {result.errors.length}</span>
               ) : (
-                <span className="text-[10px] text-slate-400">
-                  {sheet.totalRows.toLocaleString()}행
-                </span>
+                <span className="text-slate-400">{sheet.totalRows.toLocaleString()}</span>
               )}
             </button>
           );
@@ -379,10 +353,19 @@ export default function DataUploadPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-[1080px]">
+      <div className="mb-4">
+        <Link
+          to="/files"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-teal-600"
+        >
+          <ArrowLeft size={16} /> 자료 관리
+        </Link>
+      </div>
+
       <PageHeader
-        title="데이터 올리기"
-        description="엑셀 파일을 올리면 자동으로 확인해 시스템에 반영합니다."
+        title="자료 올리기"
+        description="표준 양식으로 작성한 Excel 파일을 올려주세요. 올린 자료는 통합 현황에 자동으로 반영됩니다."
       />
 
       <div className="rounded-xl border border-slate-200 bg-white px-6 py-4">
@@ -391,12 +374,7 @@ export default function DataUploadPage() {
 
       {/* ── 1. 파일 선택 ── */}
       {step === 'select' && (
-        <section className="rounded-2xl border border-slate-200 bg-white px-8 py-8">
-          <h2 className="text-lg font-semibold text-slate-900">엑셀 파일을 올려주세요</h2>
-          <p className="mt-1.5 text-sm text-slate-500">
-            파일을 올리면 어떤 내용인지 자동으로 확인해 드립니다.
-          </p>
-
+        <section className="mt-4 rounded-2xl border border-slate-200 bg-white px-8 py-8">
           <input
             ref={inputRef}
             type="file"
@@ -408,7 +386,7 @@ export default function DataUploadPage() {
           <div
             role="button"
             tabIndex={0}
-            aria-label="엑셀 파일 선택"
+            aria-label="Excel 파일 선택"
             onClick={() => inputRef.current?.click()}
             onKeyDown={(e) => e.key === 'Enter' && inputRef.current?.click()}
             onDragOver={(e) => {
@@ -417,7 +395,7 @@ export default function DataUploadPage() {
             }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
-            className={`mt-6 flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed p-12 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+            className={`flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed p-14 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
               isDragging
                 ? 'border-teal-400 bg-teal-50'
                 : 'border-slate-200 hover:border-teal-300 hover:bg-teal-50/30'
@@ -427,7 +405,7 @@ export default function DataUploadPage() {
             <div>
               <p className="flex items-center justify-center gap-1.5 text-sm font-medium text-slate-700">
                 <Upload size={14} className="text-slate-400" />
-                파일을 끌어다 놓거나 클릭해서 선택
+                Excel 파일을 여기에 놓기 또는 파일 선택
               </p>
               <p className="mt-1 text-xs text-slate-400">.xlsx, .xls 파일</p>
             </div>
@@ -444,7 +422,7 @@ export default function DataUploadPage() {
 
       {/* ── 2. 파일 읽는 중 ── */}
       {step === 'uploading' && (
-        <section className="flex flex-col items-center gap-5 rounded-2xl border border-slate-200 bg-white px-8 py-16 text-center">
+        <section className="mt-4 flex flex-col items-center gap-5 rounded-2xl border border-slate-200 bg-white px-8 py-16 text-center">
           {!isParsing ? (
             <>
               <p className="text-sm font-medium text-slate-800">파일을 읽고 있어요</p>
@@ -474,11 +452,13 @@ export default function DataUploadPage() {
       {/* ── 3. 확인 ── */}
       {step === 'review' && sheets.length > 0 && (
         <>
-          <section className="rounded-2xl border border-slate-200 bg-white px-8 py-8">
-            <h2 className="text-xl font-semibold text-slate-900">데이터를 준비했어요</h2>
+          <section className="mt-4 rounded-2xl border border-slate-200 bg-white px-8 py-8">
+            <h2 className="text-xl font-semibold text-slate-900">자료를 확인했어요</h2>
             <p className="mt-2 text-sm text-slate-500">
-              <span className="font-medium text-slate-700">{fileNameRef.current}</span> · 시트{' '}
-              {sheets.length}개 · 총 {totalRows.toLocaleString()}행을 확인했습니다.
+              <span className="font-medium text-slate-700">{fileNameRef.current}</span>
+            </p>
+            <p className="mt-0.5 text-sm text-slate-500">
+              {filledSheets.length}개 시트 · {totalRows.toLocaleString()}건
             </p>
 
             {error && (
@@ -488,122 +468,101 @@ export default function DataUploadPage() {
               </div>
             )}
 
-            {connectedCount > 0 && (
-              <div className="mt-7">
-                <p className="text-sm text-slate-600">
-                  {connectedCount}개 항목을 자동으로 연결했습니다.
-                </p>
-                <ul className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
-                  {shownLabels.map((label) => (
-                    <li key={label} className="flex items-center gap-1.5 text-sm text-slate-700">
-                      <Check size={15} className="text-teal-600" strokeWidth={2.5} />
-                      {label}
-                    </li>
-                  ))}
-                  {hiddenLabelCount > 0 && (
-                    <li className="text-sm text-slate-400">+{hiddenLabelCount}개</li>
-                  )}
-                </ul>
-              </div>
+            {typeSummary.length > 0 && (
+              <dl className="mt-7 max-w-md space-y-2.5">
+                {typeSummary.map((t) => (
+                  <div
+                    key={t.label}
+                    className="flex items-center justify-between border-b border-slate-100 pb-2.5 last:border-0"
+                  >
+                    <dt className="text-sm text-slate-600">{t.label}</dt>
+                    <dd className="text-sm font-semibold tabular-nums text-slate-800">
+                      {t.count.toLocaleString()}건
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             )}
 
-            {/* 자동으로 찾지 못한 필수 항목만 물어본다. */}
-            {attentionItems.map((item) => {
-              const sheet = sheets.find((s) => s.sheetName === item.sheetName);
-              const mapping = sheetMappings[item.sheetName] ?? {};
-              const currentCol =
-                Object.entries(mapping).find(([, v]) => v === item.def.key)?.[0] ?? '';
-              return (
-                <div
-                  key={`${item.sheetName}-${item.def.key}`}
-                  className="mt-6 rounded-xl border border-amber-200 bg-amber-50/50 px-6 py-5"
-                >
-                  <h3 className="text-base font-semibold text-slate-900">
-                    {item.def.label} 항목을 확인해주세요
-                  </h3>
-                  <p className="mt-1.5 text-sm text-slate-600">
-                    {sheets.length > 1 && (
-                      <span className="font-medium text-slate-700">‘{item.sheetName}’ 시트</span>
-                    )}
-                    {sheets.length > 1 ? '에서 ' : ''}
-                    {item.def.label} 정보를 자동으로 찾지 못했습니다.
-                  </p>
-                  <label className="mt-4 block max-w-sm">
-                    <span className="block text-xs font-medium text-slate-500">
-                      {item.def.label}
-                    </span>
-                    <select
-                      aria-label={`${item.def.label} 항목 선택`}
-                      value={currentCol}
-                      onChange={(e) =>
-                        resolveAttention(item.sheetName, item.def.key, e.target.value)
-                      }
-                      className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                    >
-                      <option value="">선택해주세요</option>
-                      {(sheet?.columns ?? []).map((col) => (
-                        <option key={col} value={col}>
-                          {col}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              );
-            })}
-
-            {hasDuplicateMapping && (
-              <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50/50 px-6 py-5">
-                <h3 className="text-base font-semibold text-slate-900">
-                  같은 항목이 두 번 연결되어 있어요
-                </h3>
-                <p className="mt-1.5 text-sm text-slate-600">
-                  아래 고급 설정에서 중복으로 연결된 항목을 하나만 남겨주세요.
+            {/* 시스템이 판단할 수 없는 항목이 있을 때만 알린다. 값을 추측하지는 않는다. */}
+            {(attentionItems.length > 0 || hasDuplicateMapping) && (
+              <div className="mt-7 rounded-xl border border-amber-200 bg-amber-50/50 px-6 py-5">
+                <p className="text-sm font-medium text-slate-800">
+                  {hasDuplicateMapping
+                    ? '같은 항목이 두 번 연결되어 있습니다.'
+                    : '이 파일의 일부 항목을 확인할 수 없습니다.'}
                 </p>
+                <p className="mt-1.5 text-sm text-slate-600">
+                  {hasDuplicateMapping
+                    ? '고급 설정에서 중복으로 연결된 항목을 하나만 남겨주세요.'
+                    : '표준 양식이 맞는지 확인하시거나, 고급 설정에서 직접 연결할 수 있습니다.'}
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleReset}
+                    className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                  >
+                    다른 파일 선택
+                  </button>
+                  <a
+                    href="#advanced"
+                    className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 underline-offset-4 transition-colors hover:text-slate-900 hover:underline"
+                  >
+                    고급 설정에서 직접 연결
+                  </a>
+                </div>
               </div>
             )}
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={handleImport}
+                onClick={handleSave}
                 disabled={hasDuplicateMapping}
                 className="rounded-lg bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
               >
-                데이터 가져오기
+                자료 저장
               </button>
               <button
                 type="button"
-                onClick={handleReset}
-                className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                onClick={() => setShowPreview((v) => !v)}
+                aria-expanded={showPreview}
+                className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               >
-                다른 파일 선택
+                미리보기
               </button>
+              {/* 위 안내 카드에 이미 같은 버튼이 있으면 반복하지 않는다. */}
+              {attentionItems.length === 0 && !hasDuplicateMapping && (
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                >
+                  다른 파일 선택
+                </button>
+              )}
             </div>
           </section>
 
-          {/* 원본 데이터 보기 (기본은 접혀 있음) */}
-          <details className="group rounded-2xl border border-slate-200 bg-white">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-8 py-5 text-sm font-medium text-slate-700">
-              원본 데이터 보기
-              <ChevronDown
-                size={16}
-                className="text-slate-400 transition-transform group-open:rotate-180"
-              />
-            </summary>
-            <div className="border-t border-slate-100 px-8 py-5">
-              {sheets.length > 1 && renderSheetTabs(setActiveSheetIdx)}
+          {/* 미리보기 — 올린 파일이 맞는지 확인하는 용도 */}
+          {showPreview && (
+            <section className="mt-4 rounded-2xl border border-slate-200 bg-white px-8 py-6">
+              <h3 className="text-base font-semibold text-slate-900">미리보기</h3>
+              {sheets.length > 1 && (
+                <div className="mt-3">{renderSheetTabs(setActiveSheetIdx)}</div>
+              )}
               {activeSheet && (
-                <div className={sheets.length > 1 ? 'pt-4' : ''}>
+                <div className="mt-4">
                   {activeSheet.columns.length === 0 ? (
                     <p className="text-sm text-slate-400">
-                      항목 이름을 인식할 수 없습니다. 파일 구조를 확인해 주세요.
+                      항목 이름을 인식할 수 없는 시트입니다.
                     </p>
                   ) : activeSheet.previewRows.length === 0 ? (
                     <p className="text-sm text-slate-400">데이터 줄이 없습니다.</p>
                   ) : (
                     <>
-                      <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
+                      <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
                         <table className="min-w-full divide-y divide-slate-100 text-sm">
                           <thead className="sticky top-0 bg-slate-50">
                             <tr>
@@ -634,27 +593,64 @@ export default function DataUploadPage() {
                         </table>
                       </div>
                       <p className="mt-2.5 text-xs text-slate-400">
-                        처음 {Math.min(PREVIEW_ROWS, activeSheet.previewRows.length)}줄만
-                        보여드립니다. 전체 {activeSheet.totalRows.toLocaleString()}줄
+                        전체 {activeSheet.totalRows.toLocaleString()}건 중 처음{' '}
+                        {Math.min(PREVIEW_ROWS, activeSheet.previewRows.length)}건
                       </p>
                     </>
                   )}
                 </div>
               )}
-            </div>
-          </details>
+            </section>
+          )}
 
-          {/* 고급 설정 — 기존 열 매핑 UI를 그대로 담는다 (기본은 접혀 있음) */}
-          <details className="group rounded-2xl border border-slate-200 bg-white">
-            <summary className="flex cursor-pointer list-none items-center justify-between px-8 py-5 text-sm font-medium text-slate-700">
-              고급 설정
+          {/* 고급 설정 — 비표준 파일 직접 연결 (기본은 접혀 있음) */}
+          <details id="advanced" className="group mt-4 rounded-2xl border border-slate-200 bg-white">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-8 py-5 text-sm font-medium text-slate-600">
+              고급 설정 · 비표준 파일 직접 연결
               <ChevronDown
                 size={16}
                 className="text-slate-400 transition-transform group-open:rotate-180"
               />
             </summary>
             <div className="border-t border-slate-100 px-8 py-7">
-              <h3 className="text-sm font-medium text-slate-700">직접 항목 연결하기</h3>
+              {attentionItems.length > 0 && (
+                <div className="mb-7 space-y-4">
+                  {attentionItems.map((item) => {
+                    const sheet = sheets.find((s) => s.sheetName === item.sheetName);
+                    const mapping = sheetMappings[item.sheetName] ?? {};
+                    const currentCol =
+                      Object.entries(mapping).find(([, v]) => v === item.def.key)?.[0] ?? '';
+                    return (
+                      <label
+                        key={`${item.sheetName}-${item.def.key}`}
+                        className="block max-w-md"
+                      >
+                        <span className="block text-xs font-medium text-slate-500">
+                          {sheets.length > 1 && `‘${item.sheetName}’ 시트 · `}
+                          {item.def.label}
+                        </span>
+                        <select
+                          aria-label={`${item.sheetName} ${item.def.label} 항목 선택`}
+                          value={currentCol}
+                          onChange={(e) =>
+                            resolveAttention(item.sheetName, item.def.key, e.target.value)
+                          }
+                          className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        >
+                          <option value="">선택해주세요</option>
+                          {(sheet?.columns ?? []).map((col) => (
+                            <option key={col} value={col}>
+                              {col}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+
+              <h3 className="text-sm font-medium text-slate-700">항목 직접 연결하기</h3>
               <p className="mt-1 text-xs text-slate-400">
                 자동으로 연결된 항목도 여기서 바꿀 수 있습니다. * 표시는 꼭 필요한 항목입니다.
               </p>
@@ -684,13 +680,13 @@ export default function DataUploadPage() {
         </>
       )}
 
-      {/* ── 4. 가져오는 중 ── */}
+      {/* ── 4. 저장 중 ── */}
       {step === 'importing' && (
-        <section className="flex flex-col items-center gap-5 rounded-2xl border border-slate-200 bg-white px-8 py-16 text-center">
+        <section className="mt-4 flex flex-col items-center gap-5 rounded-2xl border border-slate-200 bg-white px-8 py-16 text-center">
           <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-teal-100 border-t-teal-600" />
           <div>
-            <p className="text-sm font-medium text-slate-800">데이터를 가져오고 있어요</p>
-            <p className="mt-3 text-xs text-slate-400">전체 {totalRows.toLocaleString()}행</p>
+            <p className="text-sm font-medium text-slate-800">자료를 저장하고 있어요</p>
+            <p className="mt-3 text-xs text-slate-400">전체 {totalRows.toLocaleString()}건</p>
           </div>
         </section>
       )}
@@ -698,71 +694,53 @@ export default function DataUploadPage() {
       {/* ── 5. 완료 ── */}
       {step === 'done' && (
         <>
-          <section className="rounded-2xl border border-slate-200 bg-white px-8 py-8">
+          <section className="mt-4 rounded-2xl border border-slate-200 bg-white px-8 py-8">
             <div className="flex items-center gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-50">
                 <Check size={20} className="text-teal-600" strokeWidth={2.5} />
               </span>
-              <h2 className="text-xl font-semibold text-slate-900">
-                {totalRecords.toLocaleString()}건을 가져왔어요
-              </h2>
+              <h2 className="text-xl font-semibold text-slate-900">자료를 저장했어요</h2>
             </div>
-            <p className="mt-2 text-sm text-slate-500">
-              {fileNameRef.current}
-              {savedSheetCount > 1 ? ` · 시트 ${savedSheetCount}개` : ''}
-            </p>
 
-            <dl className="mt-7 space-y-2.5">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 sm:max-w-sm">
-                <dt className="text-sm text-slate-500">가져온 데이터</dt>
-                <dd className="text-sm font-semibold tabular-nums text-slate-800">
-                  {totalRecords.toLocaleString()}건
-                </dd>
-              </div>
-              <div className="flex items-center justify-between sm:max-w-sm">
-                <dt className="text-sm text-slate-500">확인이 필요한 값</dt>
-                <dd
-                  className={`text-sm font-semibold tabular-nums ${
-                    totalErrors > 0 ? 'text-amber-600' : 'text-slate-800'
-                  }`}
-                >
-                  {totalErrors.toLocaleString()}건
-                </dd>
-              </div>
-            </dl>
+            <p className="mt-4 text-sm text-slate-600">
+              {savedSheetCount}개 시트 · {totalRecords.toLocaleString()}건
+            </p>
+            <p className="mt-0.5 text-sm text-slate-500">통합 현황에 반영되었습니다.</p>
+
             {totalErrors > 0 && (
-              <p className="mt-3 text-xs text-slate-400">
-                값을 인식하지 못한 칸입니다. 아래에서 엑셀 위치와 함께 확인할 수 있습니다.
+              <p className="mt-4 text-sm text-amber-600">
+                값을 인식하지 못한 칸이 {totalErrors.toLocaleString()}건 있습니다. 아래에서 엑셀
+                위치와 함께 확인할 수 있습니다.
               </p>
             )}
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
-                to="/"
+                to="/files"
                 className="rounded-lg bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
               >
-                대시보드에서 확인
+                자료 관리로 돌아가기
               </Link>
               <Link
-                to="/files"
+                to="/"
                 className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               >
-                파일 관리
+                통합 대시보드 보기
               </Link>
               <button
                 type="button"
                 onClick={handleReset}
                 className="inline-flex items-center gap-1.5 px-2 py-2.5 text-sm text-slate-400 transition-colors hover:text-slate-600"
               >
-                <RotateCcw size={14} /> 다른 파일 올리기
+                <RotateCcw size={14} /> 다른 자료 올리기
               </button>
             </div>
           </section>
 
           {/* 시트별 상세 — 변환 결과와 검증 오류(엑셀 셀 위치 포함) */}
           {convertResults.length > 0 && (
-            <details className="group rounded-2xl border border-slate-200 bg-white">
-              <summary className="flex cursor-pointer list-none items-center justify-between px-8 py-5 text-sm font-medium text-slate-700">
+            <details className="group mt-4 rounded-2xl border border-slate-200 bg-white">
+              <summary className="flex cursor-pointer list-none items-center justify-between px-8 py-5 text-sm font-medium text-slate-600">
                 시트별 결과 자세히 보기
                 <ChevronDown
                   size={16}
@@ -775,7 +753,7 @@ export default function DataUploadPage() {
                 {activeResult && (
                   <div className={`space-y-6 ${sheets.length > 1 ? 'pt-4' : ''}`}>
                     <div>
-                      <h3 className="text-sm font-medium text-slate-700">가져온 데이터</h3>
+                      <h3 className="text-sm font-medium text-slate-700">저장된 자료</h3>
                       {activeMappedDefs.length === 0 ? (
                         <p className="mt-2 text-sm text-slate-400">연결된 항목이 없습니다.</p>
                       ) : (

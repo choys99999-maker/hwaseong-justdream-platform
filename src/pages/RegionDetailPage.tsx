@@ -76,7 +76,7 @@ export default function RegionDetailPage() {
         <EmptyState
           icon={FileUp}
           title="업로드된 데이터가 없습니다"
-          message="데이터 업로드 페이지에서 엑셀 파일을 업로드해 주세요."
+          message="자료 관리에서 Excel 파일을 올려주세요."
         />
       </div>
     );

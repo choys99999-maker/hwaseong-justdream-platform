@@ -42,17 +42,17 @@ export default function SupportRecordsPage() {
   if (!dataset) {
     return (
       <div className="space-y-6">
-        <PageHeader title="이용·지원 내역" description="이용자별 지원 물품과 지원 현황을 확인합니다." />
+        <PageHeader title="실적·복지연계" description="이용자별 지원 물품과 지원 현황을 확인합니다." />
         <EmptyState
           icon={FileUp}
           title="업로드된 데이터가 없습니다"
-          message="데이터 업로드 페이지에서 엑셀 파일을 업로드하면 내역을 확인할 수 있습니다."
+          message="자료 관리에서 Excel 파일을 올리면 내역을 확인할 수 있습니다."
         />
         <Link
-          to="/upload"
+          to="/files/upload"
           className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700"
         >
-          <FileUp size={16} /> 데이터 업로드하러 가기
+          <FileUp size={16} /> 자료 올리기
         </Link>
       </div>
     );
@@ -61,7 +61,7 @@ export default function SupportRecordsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="이용·지원 내역"
+        title="실적·복지연계"
         description={`${dataset.fileName} · 총 ${dataset.records.length.toLocaleString()}건`}
       />
 

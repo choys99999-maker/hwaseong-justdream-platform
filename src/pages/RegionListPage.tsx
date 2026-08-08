@@ -61,13 +61,13 @@ export default function RegionListPage() {
         <EmptyState
           icon={MapPin}
           title="업로드된 데이터가 없습니다"
-          message="데이터 업로드 페이지에서 엑셀 파일을 업로드하면 지역별 현황을 확인할 수 있습니다."
+          message="자료 관리에서 Excel 파일을 올리면 지역별 현황을 확인할 수 있습니다."
         />
         <Link
-          to="/upload"
+          to="/files/upload"
           className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700"
         >
-          <FileUp size={16} /> 데이터 업로드하러 가기
+          <FileUp size={16} /> 자료 올리기
         </Link>
       </div>
     );

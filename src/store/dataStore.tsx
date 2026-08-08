@@ -17,6 +17,8 @@ export interface UploadedDataset {
   sheetName?: string;
   sheetType?: string;
   sheets?: SheetEntry[];
+  /** 저장 시점에 검증이 잡아낸 값 오류 건수. 예전에 저장된 자료에는 없다. */
+  issueCount?: number;
 }
 
 interface DataStoreValue {

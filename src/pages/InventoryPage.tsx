@@ -40,17 +40,17 @@ export default function InventoryPage() {
   if (!dataset) {
     return (
       <div className="space-y-6">
-        <PageHeader title="지원품목 현황" description="지원 물품별 배부 현황을 확인합니다." />
+        <PageHeader title="물품·재고 관리" description="지원 물품별 배부 현황을 확인합니다." />
         <EmptyState
           icon={FileUp}
           title="업로드된 데이터가 없습니다"
-          message="데이터 업로드 페이지에서 엑셀 파일을 업로드하면 품목 현황을 확인할 수 있습니다."
+          message="자료 관리에서 Excel 파일을 올리면 품목 현황을 확인할 수 있습니다."
         />
         <Link
-          to="/upload"
+          to="/files/upload"
           className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-700"
         >
-          <FileUp size={16} /> 데이터 업로드하러 가기
+          <FileUp size={16} /> 자료 올리기
         </Link>
       </div>
     );
@@ -59,7 +59,7 @@ export default function InventoryPage() {
   if (!itemCol) {
     return (
       <div className="space-y-6">
-        <PageHeader title="지원품목 현황" />
+        <PageHeader title="물품·재고 관리" />
         <EmptyState
           title="품목 열을 찾을 수 없습니다"
           message="업로드된 파일에 '지원품목' 또는 '품목' 열이 있어야 품목 현황을 표시할 수 있습니다."
@@ -71,7 +71,7 @@ export default function InventoryPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="지원품목 현황"
+        title="물품·재고 관리"
         description={`${dataset.fileName} 기준 · ${itemStats.length}종 품목`}
       />
 
