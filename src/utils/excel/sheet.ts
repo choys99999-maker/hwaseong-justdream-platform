@@ -8,8 +8,10 @@ import { extractEupMyeonDong } from '../address';
 import { matchColumn, scoreHeadersForType, SUGGEST_THRESHOLD } from './match';
 import { NUMBER_FIELDS, SHEET_TYPES } from './schema';
 import {
+  colLetter,
   hasKorean,
   headerKeyLoose,
+  headerKeyStrict,
   looksLikeDateHeader,
   looksNumeric,
   normalizeSpace,
@@ -36,26 +38,37 @@ export interface SheetMatrix {
  * (빈칸을 "위와 같음"으로 넘겨짚는 일은 하지 않는다)
  */
 export function readSheetMatrix(ws: XLSX.WorkSheet): SheetMatrix {
+  // sheet_to_json 은 '!ref' 시작점을 0행 0열로 삼아 상대 좌표로 돌려준다.
+  // 실제 파일에는 '!ref' 가 A3 부터 시작하는 시트가 있고("주별 실적 보고(누계)"),
+  // 그러면 '!merges'(절대 좌표)와 행 번호가 통째로 어긋난다.
+  // 범위를 A1 부터로 늘려 읽어서 배열 좌표 = 엑셀 좌표가 되게 맞춘다.
+  let readRange: XLSX.Range | undefined;
+  try {
+    if (ws['!ref']) {
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      range.s.r = 0;
+      range.s.c = 0;
+      readRange = range;
+    }
+  } catch {
+    // '!ref' 가 깨진 파일은 기본 동작에 맡긴다.
+  }
+
   const parsed = XLSX.utils.sheet_to_json<unknown[]>(ws, {
     header: 1,
     defval: '',
     raw: true,
     blankrows: true,
+    ...(readRange ? { range: readRange } : {}),
   });
 
   let rowCount = parsed.length;
   let colCount = 0;
   for (const row of parsed) colCount = Math.max(colCount, row.length);
 
-  const ref = ws['!ref'];
-  if (ref) {
-    try {
-      const range = XLSX.utils.decode_range(ref);
-      rowCount = Math.max(rowCount, range.e.r + 1);
-      colCount = Math.max(colCount, range.e.c + 1);
-    } catch {
-      // !ref 가 깨진 파일은 sheet_to_json 결과만 쓴다.
-    }
+  if (readRange) {
+    rowCount = Math.max(rowCount, readRange.e.r + 1);
+    colCount = Math.max(colCount, readRange.e.c + 1);
   }
 
   const rows: unknown[][] = [];
@@ -174,6 +187,44 @@ function buildColumns(matrix: SheetMatrix, startRow: number, rowCount: number): 
   }
 
   return columns;
+}
+
+/** 머리글이 비어 있는 열에 붙일 이름. 이름이 없다고 열을 없애지는 않는다. */
+export function headerlessColumnName(index: number): string {
+  return `(머리글 없는 ${colLetter(index)}열)`;
+}
+
+/**
+ * 머리글은 비었는데 아래에 값이 있는 열을 찾아 목록에 넣는다.
+ *
+ * 이름이 없다고 빼버리면 그 열의 값이 통째로, 그것도 아무 표시 없이 사라진다.
+ * (행 전체가 그 열에만 채워져 있으면 행 자체가 "빈 행"으로 지워진다)
+ * 이름을 붙여 목록에 남기면 자연스럽게 "미인식 열"로 화면에 드러난다.
+ */
+export function appendHeaderlessColumns(
+  matrix: SheetMatrix,
+  columns: HeaderColumn[],
+  dataStartIndex: number,
+): HeaderColumn[] {
+  const known = new Set(columns.map((c) => c.index));
+  const extras: HeaderColumn[] = [];
+
+  for (let c = 0; c < matrix.colCount; c++) {
+    if (known.has(c)) continue;
+    let hasValue = false;
+    for (let r = dataStartIndex; r < matrix.rowCount; r++) {
+      if (toText(matrix.rows[r]?.[c]).trim() !== '') {
+        hasValue = true;
+        break;
+      }
+    }
+    if (!hasValue) continue;
+    const name = headerlessColumnName(c);
+    extras.push({ index: c, rawName: name, name, candidates: [] });
+  }
+
+  if (extras.length === 0) return columns;
+  return [...columns, ...extras].sort((a, b) => a.index - b.index);
 }
 
 /** 마지막 헤더 줄이 사실은 데이터 행이 아닌지. 숫자가 많으면 데이터다. */
@@ -319,7 +370,9 @@ export function classifySheet(
  * 이름에 안 드러나는 경우를 위해 '누적'과 머리글의 누계 표시를 추가로 본다.
  */
 export function detectCumulative(sheetName: string, columnNames: string[]): boolean {
-  const name = headerKeyLoose(sheetName);
+  // 시트 이름은 괄호를 지우지 않고 본다. "주별 실적 보고(누계)" 처럼 괄호 안에만
+  // 누계 표시가 있는 양식이 실제로 쓰인다. (괄호를 지우면 이중 집계를 놓친다)
+  const name = headerKeyStrict(sheetName);
   if (name.includes('누계') || name.includes('누적')) return true;
   return columnNames.some((col) => {
     const key = headerKeyLoose(col);
@@ -327,7 +380,9 @@ export function detectCumulative(sheetName: string, columnNames: string[]): bool
   });
 }
 
-export function detectWeekly(sheetName: string): boolean {
+/** 주별 자료인지. 누계로 판정된 시트는 주별로 세지 않는다. */
+export function detectWeekly(sheetName: string, isCumulative = false): boolean {
+  if (isCumulative) return false;
   return /주별|주간|\d+\s*주\s*차?|주차/.test(sheetName);
 }
 
@@ -378,6 +433,10 @@ const SECTION_PREFIX = /^[[〈<【■●○◆▣◇□]/;
  * 데이터 행인지 가려낸다.
  * 애매하면 지우지 않고 'uncertain'으로 분류해 사용자 확인 대상으로 넘긴다.
  *
+ * 판단은 "연결된 열"만 보고 한다. 표 옆에 붙은 잡음 열(예: 전 행이 0으로 채워진 칸)이
+ * 있으면 빈 줄도, 각주 줄도 "값이 두 칸 이상 있는 행"처럼 보여서 데이터로 오인된다.
+ * 저장될 값이 들어 있는 칸만 보면 그런 잡음에 흔들리지 않는다.
+ *
  * requiredColumnIndexes: 그 시트에서 꼭 있어야 하는 항목(품목명·대상자 이름 등)이
  * 연결된 열. 이 칸 하나만 채워진 행은 "값이 하나뿐인 정상 데이터"로 본다.
  * (유통기한이 비어 있는 품목 행을 통째로 버리지 않기 위해)
@@ -387,11 +446,15 @@ export function classifyRow(
   columns: HeaderColumn[],
   labelColumnIndexes: number[],
   requiredColumnIndexes: number[] = [],
+  mappedColumnIndexes?: number[],
 ): RowClassification {
   const allIndexes = columns.map((c) => c.index);
-  const filled = nonEmptyIndexes(row, allIndexes);
+  const filledAll = nonEmptyIndexes(row, allIndexes);
+  if (filledAll.length === 0) return { kind: 'empty', message: '' };
 
-  if (filled.length === 0) return { kind: 'empty', message: '' };
+  // 연결된 열이 하나도 없으면(=아직 매핑 전) 전체 열로 판단할 수밖에 없다.
+  const scope = mappedColumnIndexes && mappedColumnIndexes.length > 0 ? mappedColumnIndexes : allIndexes;
+  const filled = nonEmptyIndexes(row, scope);
 
   // 집계 행: 이름 칸에 "합계/소계/총계"가 적혀 있다.
   for (const index of labelColumnIndexes) {
@@ -402,6 +465,35 @@ export function classifyRow(
     if (AGGREGATE_EXACT.has(key) || AGGREGATE_SUFFIX.test(key)) {
       return { kind: 'aggregate', message: `집계 행("${text}")이라 저장하지 않습니다` };
     }
+  }
+
+  // 각주·구역 제목은 이름 칸의 글머리로 가린다.
+  // 옆 칸에 잡음 숫자가 끼어 있어도 각주는 각주다. (채워진 칸 수로 판단하지 않는다)
+  for (const index of labelColumnIndexes) {
+    const text = normalizeSpace(row[index]);
+    if (!text) continue;
+    if (NOTE_PREFIX.test(text)) {
+      return { kind: 'note', message: '설명·각주 행이라 저장하지 않습니다' };
+    }
+    if (SECTION_PREFIX.test(text)) {
+      return { kind: 'note', message: `구역 제목 행("${text}")이라 저장하지 않습니다` };
+    }
+  }
+
+  if (filled.length === 0) {
+    return {
+      kind: 'uncertain',
+      message: '연결된 열에는 값이 없고, 연결하지 않은 열에만 값이 있습니다',
+    };
+  }
+
+  // 표가 끝난 아래쪽에 숫자만 흩어져 있는 줄이 있다. 꼭 있어야 하는 항목(기관명·품목명 등)이
+  // 비어 있으면 그 줄은 이 표의 데이터가 아니다. 지우지 않고 확인 대상으로 올린다.
+  if (requiredColumnIndexes.length > 0 && nonEmptyIndexes(row, requiredColumnIndexes).length === 0) {
+    return {
+      kind: 'uncertain',
+      message: '꼭 있어야 하는 항목이 비어 있어 이 표의 데이터인지 판단할 수 없습니다',
+    };
   }
 
   if (filled.length === 1) {
@@ -422,6 +514,17 @@ export function classifyRow(
   }
 
   return { kind: 'data', message: '' };
+}
+
+/**
+ * 파일이 스스로 적어둔 "합계" 행인지.
+ * 이 행의 숫자는 우리가 읽은 값이 맞는지 대조할 검산 기준이 된다.
+ * (소계는 구간 합이라 전체와 비교할 수 없으므로 여기서는 총합만 본다)
+ */
+export function isGrandTotalLabel(text: string): boolean {
+  const key = headerKeyLoose(text);
+  return key === '합계' || key === '총계' || key === '총합' || key === '총합계' ||
+    key === '전체합계' || key === 'total' || key === 'sum' || key === 'grandtotal';
 }
 
 /**

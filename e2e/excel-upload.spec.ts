@@ -54,8 +54,14 @@ const MESSY_FILE = writeWorkbook('봉담읍_8월.xlsx', [
   },
 ]);
 
+/**
+ * 업로드 화면까지는 URL 을 직접 치지 않고 화면 안의 링크를 눌러서 간다.
+ * 라우터 방식(Browser/Hash)이나 배포 base 경로가 바뀌어도 테스트가 따라 깨지지 않는다.
+ */
 async function upload(page: import('@playwright/test').Page, filePath: string) {
-  await page.goto('/files/upload');
+  await page.goto('/');
+  await page.getByRole('link', { name: '자료 관리', exact: true }).first().click();
+  await page.getByRole('link', { name: '자료 올리기' }).click();
   await expect(page.getByRole('heading', { name: '자료 올리기' })).toBeVisible();
   await page.setInputFiles('input[type="file"]', filePath);
 }

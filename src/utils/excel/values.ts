@@ -16,10 +16,16 @@ export interface ParsedValue<T> {
   message?: string;
 }
 
-/** "값 없음"을 뜻하는 것이 분명한 표기. 오류가 아니다. */
+/**
+ * 숫자·날짜 칸에서 "값 없음"을 뜻하는 것이 분명한 표기. 오류가 아니다.
+ *
+ * 문자 칸에는 쓰지 않는다. 실제 서식에서 O/X 는 "예/아니오"라는 값이고,
+ * '-' 나 '.' 도 그 자체가 기재 내용일 수 있다. 문자 칸에서 이걸 빈 값으로 지우면
+ * 사용자가 적은 답이 조용히 사라진다.
+ */
 const BLANK_TOKENS = new Set([
-  '', '-', '–', '—', 'ㅡ', '.', '..', '...', 'x', 'X', '/', '없음', '해당없음',
-  '미해당', '해당사항없음', 'na', 'n/a', 'null', 'nil', '0건없음',
+  '', '-', '–', '—', 'ㅡ', '.', '..', '...', '없음', '해당없음',
+  '미해당', '해당사항없음', 'na', 'n/a', 'null', 'nil',
 ]);
 
 function isBlankToken(s: string): boolean {
@@ -28,10 +34,13 @@ function isBlankToken(s: string): boolean {
 
 // ── 문자 ──────────────────────────────────────────────────
 
-/** 앞뒤 공백 제거 + 내부 연속 공백 한 칸. 값 자체는 바꾸지 않는다. */
+/**
+ * 앞뒤 공백 제거 + 내부 연속 공백 한 칸. 값 자체는 바꾸지 않는다.
+ * 빈칸이 아닌 것은 무엇이든 값으로 본다. (문자 칸에서는 무엇도 임의로 지우지 않는다)
+ */
 export function parseTextValue(raw: unknown): ParsedValue<string> {
   const s = toText(raw).normalize('NFKC').replace(/\s+/g, ' ').trim();
-  if (isBlankToken(s)) return { value: null, state: 'empty' };
+  if (s === '') return { value: null, state: 'empty' };
   return { value: s, state: 'ok' };
 }
 

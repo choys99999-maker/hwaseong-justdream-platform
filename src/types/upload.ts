@@ -144,6 +144,23 @@ export interface ValidationError {
   cellAddress?: string;
 }
 
+/**
+ * 파일이 스스로 적어둔 합계와, 우리가 읽은 값의 합을 맞춰본 결과.
+ *
+ * 정답 파일을 따로 두지 않고도 "제대로 읽었는가"를 파일 자신에게 물어보는 장치다.
+ * 어긋나면 어딘가를 잘못 읽었거나 행을 빠뜨렸다는 뜻이므로 사용자에게 알린다.
+ */
+export interface TotalsCheck {
+  field: string;
+  /** 파일의 합계 행에 적힌 값 */
+  declared: number;
+  /** 우리가 읽은 레코드들의 합 */
+  computed: number;
+  matches: boolean;
+  /** 합계 행의 엑셀 행 번호 */
+  rowNumber: number;
+}
+
 export interface SheetConvertResult {
   sheetName: string;
   sheetType: SheetType;
@@ -157,4 +174,6 @@ export interface SheetConvertResult {
   emptyRowCount: number;
   /** 지역 열이 없어 시트 정보로 채운 값. 채웠다는 사실을 반드시 보여준다. */
   filledRegion: string | null;
+  /** 파일의 합계 행과 대조한 결과. 합계 행이 없으면 빈 배열이다. */
+  totalsChecks: TotalsCheck[];
 }

@@ -15,7 +15,7 @@ import PageHeader from '../components/common/PageHeader';
 import ColumnMapper from '../components/upload/ColumnMapper';
 import ConversionPreview from '../components/upload/ConversionPreview';
 import ExcelPreview, { pickDefaultSheetName } from '../components/upload/ExcelPreview';
-import { getColumnsForType } from '../utils/excel/schema';
+import { fieldLabel, getColumnsForType } from '../utils/excel/schema';
 import { defaultMapping } from '../utils/excel/engine';
 import { sheetTypeLabel } from '../utils/submission';
 import { isCentralStoreEnabled } from '../lib/supabase';
@@ -380,7 +380,12 @@ export default function DataUploadPage() {
         .map((row) => ({ sheetName: r.sheetName, ...row })),
     );
 
-    return { unmappedColumns, suggestedColumns, unknownSheets, skippedRows };
+    // 파일이 스스로 적어둔 합계와 우리가 읽은 값의 합이 다르면 어딘가를 잘못 읽은 것이다.
+    const totalsMismatches = (checkResults ?? []).flatMap((r) =>
+      r.totalsChecks.filter((c) => !c.matches).map((c) => ({ sheetName: r.sheetName, ...c })),
+    );
+
+    return { unmappedColumns, suggestedColumns, unknownSheets, skippedRows, totalsMismatches };
   }, [dataSheets, sheetMappings, checkResults]);
 
   const errorItems: ErrorItem[] = useMemo(() => {
@@ -402,7 +407,8 @@ export default function DataUploadPage() {
     attention.unmappedColumns.length +
     attention.suggestedColumns.length +
     attention.unknownSheets.length +
-    attention.skippedRows.length;
+    attention.skippedRows.length +
+    attention.totalsMismatches.length;
   const needsConfirm = attentionCount > 0 || errorItems.length > 0;
   const canRead = recognizedSheets.length > 0;
 
@@ -674,6 +680,33 @@ export default function DataUploadPage() {
                   </p>
                   <p className="mt-1 text-sm text-slate-500">
                     {attention.suggestedColumns.map((c) => c.name).join(', ')}
+                  </p>
+                </div>
+              )}
+
+              {attention.totalsMismatches.length > 0 && (
+                <div className="mt-5">
+                  <p className="text-sm font-medium text-slate-700">
+                    파일에 적힌 합계와 읽은 값의 합이 다릅니다
+                  </p>
+                  <ul className="mt-2 space-y-1">
+                    {attention.totalsMismatches.map((check) => (
+                      <li
+                        key={`${check.sheetName}-${check.field}`}
+                        className="text-sm text-slate-600"
+                      >
+                        <span className="tabular-nums text-slate-400">
+                          {check.sheetName} · {check.rowNumber}행
+                        </span>{' '}
+                        — {fieldLabel(check.field)}: 파일의 합계{' '}
+                        <span className="font-medium">{check.declared.toLocaleString()}</span> vs 읽은
+                        값의 합 <span className="font-medium">{check.computed.toLocaleString()}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs text-slate-400">
+                    빠뜨린 줄이 있거나 열이 잘못 연결되었을 수 있습니다. 열 연결과 저장될 내용을
+                    확인해 주세요.
                   </p>
                 </div>
               )}

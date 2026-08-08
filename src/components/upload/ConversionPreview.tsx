@@ -120,6 +120,13 @@ export default function ConversionPreview({ sheet, result, mappings }: Props) {
         )}
       </div>
 
+      {result && result.totalsChecks.length > 0 && result.totalsChecks.every((c) => c.matches) && (
+        <p className="flex items-center gap-1.5 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+          <Check size={14} className="shrink-0" />
+          파일에 적힌 합계와 읽은 값의 합이 일치합니다 ({result.totalsChecks.length}개 항목 검산)
+        </p>
+      )}
+
       {result?.filledRegion && (
         <p className="rounded-lg bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
           지역 열이 없어 표 위 제목에서 찾은 <span className="font-semibold">{result.filledRegion}</span>
