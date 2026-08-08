@@ -51,6 +51,14 @@ export function detectSheetType(sheetName: string): SheetType {
   return 'generic';
 }
 
+/**
+ * 누계 시트인지. 주별 실적과 누계 실적을 함께 더하면 같은 값을 두 번 세게 되므로
+ * 집계에서 빼려면 이 판정이 필요하다. (DB의 create_submission도 같은 규칙을 갖고 있다)
+ */
+export function isCumulativeSheet(sheetName: string): boolean {
+  return sheetName.includes('누계');
+}
+
 export function getColumnsForType(type: SheetType): PlatformColumnDef[] {
   if (type === 'performance') return PERFORMANCE_COLUMNS;
   if (type === 'referral') return REFERRAL_COLUMNS;

@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ClipboardCheck, FileUp, MapPin, Users } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
@@ -6,85 +5,52 @@ import StatCard from '../components/common/StatCard';
 import EmptyState from '../components/common/EmptyState';
 import MonthlySupportChart from '../components/charts/MonthlySupportChart';
 import RegionUserChart from '../components/charts/RegionUserChart';
-import { useDataStore, findCol } from '../store/dataStore';
+import { useCentralData } from '../hooks/useCentralData';
+import {
+  getCityOverview,
+  listMonthlyActivity,
+  listRegionUsage,
+  listSubmissionStatus,
+  monthLabel,
+} from '../store/analytics';
 import { formatNumber } from '../utils/format';
+import { formatPeriod, formatUpdatedAt } from '../utils/submission';
+
+const TOP_REGIONS = 10;
+const RECENT_SUBMISSIONS = 5;
 
 export default function DashboardPage() {
-  const { dataset, isLoading } = useDataStore();
-
-  const stats = useMemo(() => {
-    if (!dataset) return null;
-    const { records, columns } = dataset;
-
-    const nameCol = findCol(columns, /이용자|수혜자|이름|성명/);
-    const regionCol = findCol(columns, /읍면동|지역|권역/);
-    const dateCol = findCol(columns, /지원일|날짜/);
-    const itemCol = findCol(columns, /지원품목|품목|물품/);
-
-    const uniqueUsers = nameCol ? new Set(records.map((r) => r[nameCol])).size : records.length;
-    const uniqueRegions = regionCol ? new Set(records.map((r) => r[regionCol]).filter(Boolean)).size : 0;
-    const uniqueItems = itemCol ? new Set(records.map((r) => r[itemCol]).filter(Boolean)).size : 0;
-
-    // 이번 달 지원 건수
-    const now = new Date();
-    const thisMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    const thisMonthCount = dateCol
-      ? records.filter((r) => {
-          const d = r[dateCol] ?? '';
-          return d.startsWith(thisMonthPrefix) || d.replace(/\./g, '-').startsWith(thisMonthPrefix);
-        }).length
-      : 0;
-
-    // 월별 지원 건수 차트 데이터
-    const monthlyMap = new Map<string, number>();
-    if (dateCol) {
-      for (const r of records) {
-        const raw = (r[dateCol] ?? '').replace(/\./g, '-');
-        const m = raw.match(/^(\d{4})-(\d{1,2})/);
-        if (!m) continue;
-        const label = `${parseInt(m[2])}월`;
-        monthlyMap.set(label, (monthlyMap.get(label) ?? 0) + 1);
-      }
-    }
-    const monthlyData = Array.from(monthlyMap, ([month, count]) => ({ month, count })).sort(
-      (a, b) => parseInt(a.month) - parseInt(b.month),
-    );
-
-    // 지역별 지원 건수 차트 데이터 (상위 10개)
-    const regionMap = new Map<string, number>();
-    if (regionCol) {
-      for (const r of records) {
-        const name = r[regionCol] ?? '';
-        if (name) regionMap.set(name, (regionMap.get(name) ?? 0) + 1);
-      }
-    }
-    const regionData = Array.from(regionMap, ([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10);
-
-    // 최근 5건
-    const recentRecords = dateCol
-      ? [...records].sort((a, b) => (b[dateCol] ?? '').localeCompare(a[dateCol] ?? '')).slice(0, 5)
-      : records.slice(0, 5);
-
-    return {
-      totalRecords: records.length,
-      uniqueUsers,
-      uniqueRegions,
-      uniqueItems,
-      thisMonthCount,
-      monthlyData,
-      regionData,
-      recentRecords,
-      nameCol,
-      regionCol,
-      dateCol,
-      itemCol,
-    };
-  }, [dataset]);
+  // 화성시 전체 = 읍면동들이 올린 유효 제출본의 합계. 별도 취합 동작이 없다.
+  const { data, error, isLoading } = useCentralData(
+    () =>
+      Promise.all([
+        getCityOverview(),
+        listRegionUsage(),
+        listMonthlyActivity(),
+        listSubmissionStatus(),
+      ]).then(([overview, regions, monthly, submissions]) => ({
+        overview,
+        regions,
+        monthly,
+        submissions,
+      })),
+    [],
+  );
 
   if (isLoading) return null;
-  if (!dataset || !stats) {
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="통합 대시보드" description="화성시 전체 그냥드림 운영 현황을 한눈에 확인합니다." />
+        <EmptyState title="현황을 불러오지 못했습니다" message={error} />
+      </div>
+    );
+  }
+
+  const { overview, regions, monthly, submissions } = data!;
+
+  if (overview.submissionCount === 0) {
     return (
       <div className="space-y-6">
         <PageHeader title="통합 대시보드" description="화성시 전체 그냥드림 운영 현황을 한눈에 확인합니다." />
@@ -103,53 +69,80 @@ export default function DashboardPage() {
     );
   }
 
+  const period =
+    overview.periodStart && overview.periodEnd
+      ? formatPeriod(overview.periodStart, overview.periodEnd)
+      : null;
+
+  const monthlyData = monthly.map((p) => ({ month: monthLabel(p.month), count: p.count }));
+  const regionData = regions
+    .filter((r) => r.userCount > 0)
+    .slice(0, TOP_REGIONS)
+    .map((r) => ({ name: r.organizationName, count: r.userCount }));
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="통합 대시보드"
-        description={`${dataset.fileName} · ${dataset.records.length.toLocaleString()}건`}
+        description={`${overview.organizationCount}개 읍면동 · 제출 자료 ${formatNumber(overview.submissionCount)}건${period ? ` · ${period}` : ''}`}
       />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="전체 지원 건수" value={`${formatNumber(stats.totalRecords)}건`} icon={ClipboardCheck} />
-        <StatCard label="이번 달 지원 건수" value={`${formatNumber(stats.thisMonthCount)}건`} icon={ClipboardCheck} />
-        {stats.nameCol && (
-          <StatCard label="이용자 수 (중복 제외)" value={`${formatNumber(stats.uniqueUsers)}명`} icon={Users} />
-        )}
-        {stats.regionCol && (
-          <StatCard label="지원 지역 수" value={`${formatNumber(stats.uniqueRegions)}개`} icon={MapPin} />
-        )}
+        <StatCard
+          label="전체 이용자"
+          value={`${formatNumber(overview.totalUsers)}명`}
+          icon={Users}
+          description="주간 실적 합계"
+        />
+        <StatCard
+          label="기본 상담"
+          value={`${formatNumber(overview.totalConsultations)}건`}
+          icon={ClipboardCheck}
+        />
+        <StatCard
+          label="복지 연계 완료"
+          value={`${formatNumber(overview.totalLinkageCompleted)}건`}
+          icon={ClipboardCheck}
+          description={`의뢰 ${formatNumber(overview.totalReferrals)}건 중`}
+        />
+        <StatCard
+          label="제출 읍면동"
+          value={`${formatNumber(overview.organizationCount)}곳`}
+          icon={MapPin}
+        />
       </div>
 
-      {(stats.monthlyData.length > 0 || stats.regionData.length > 0) && (
+      {(monthlyData.length > 0 || regionData.length > 0) && (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {stats.monthlyData.length > 0 && <MonthlySupportChart data={stats.monthlyData} />}
-          {stats.regionData.length > 0 && <RegionUserChart data={stats.regionData} />}
+          {monthlyData.length > 0 && <MonthlySupportChart data={monthlyData} />}
+          {regionData.length > 0 && <RegionUserChart data={regionData} />}
         </div>
       )}
 
-      {stats.recentRecords.length > 0 && (
+      {submissions.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h3 className="text-base font-semibold text-slate-900">최근 지원 내역</h3>
+          <h3 className="text-base font-semibold text-slate-900">최근 제출 자료</h3>
           <div className="mt-3 space-y-2">
-            {stats.recentRecords.map((record, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm"
+            {submissions.slice(0, RECENT_SUBMISSIONS).map((s) => (
+              <Link
+                key={s.organizationId}
+                to={`/files/${s.submissionId}`}
+                className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               >
                 <div>
-                  <p className="font-medium text-slate-800">
-                    {stats.nameCol ? record[stats.nameCol] : `행 ${i + 1}`}
+                  <p className="font-medium text-slate-800">{s.organizationName}</p>
+                  <p className="text-xs text-slate-400">
+                    {s.regionName}
+                    {s.periodStart && s.periodEnd
+                      ? ` · ${formatPeriod(s.periodStart, s.periodEnd)}`
+                      : ''}
                   </p>
-                  {stats.regionCol && (
-                    <p className="text-xs text-slate-400">{record[stats.regionCol]}</p>
-                  )}
                 </div>
                 <div className="text-right text-xs text-slate-500">
-                  {stats.itemCol && <p>{record[stats.itemCol]}</p>}
-                  {stats.dateCol && <p>{record[stats.dateCol]}</p>}
+                  <p>{formatNumber(s.recordCount)}건</p>
+                  <p>{formatUpdatedAt(s.lastUploadedAt)}</p>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </section>

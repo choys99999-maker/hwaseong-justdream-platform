@@ -1,20 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FolderClosed, Trash2 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
-import { useDataStore } from '../store/dataStore';
+import { useCentralData } from '../hooks/useCentralData';
+import { deleteSubmission, getSubmissionDetail } from '../store/remote';
 import {
-  derivePeriod,
-  deriveRegions,
   displayCellValue,
-  formatRegions,
+  formatPeriod,
   formatUpdatedAt,
-  getSheets,
   isPersonalColumn,
   sheetTypeLabel,
-  summarizeTypes,
-  totalRecordCount,
 } from '../utils/submission';
 
 const PREVIEW_ROWS = 20;
@@ -22,23 +18,13 @@ const PREVIEW_ROWS = 20;
 export default function SubmissionDetailPage() {
   const { submissionId } = useParams<{ submissionId: string }>();
   const navigate = useNavigate();
-  const { datasets, activeId, isLoading, removeDataset, setActiveId } = useDataStore();
   const [sheetIdx, setSheetIdx] = useState(0);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  const dataset = datasets.find((d) => d.id === submissionId) ?? null;
-
-  const info = useMemo(() => {
-    if (!dataset) return null;
-    return {
-      regions: deriveRegions(dataset),
-      period: derivePeriod(dataset),
-      types: summarizeTypes(dataset),
-      records: totalRecordCount(dataset),
-      sheets: getSheets(dataset),
-    };
-  }, [dataset]);
-
-  if (isLoading) return null;
+  const { data: detail, error, isLoading } = useCentralData(
+    () => getSubmissionDetail(submissionId ?? ''),
+    [submissionId],
+  );
 
   const backLink = (
     <Link
@@ -49,32 +35,37 @@ export default function SubmissionDetailPage() {
     </Link>
   );
 
-  if (!dataset || !info) {
+  if (isLoading) return null;
+
+  if (error || !detail) {
     return (
       <div className="mx-auto w-full max-w-[1080px] space-y-6">
         {backLink}
         <EmptyState
           icon={FolderClosed}
           title="자료를 찾을 수 없습니다"
-          message="삭제되었거나 잘못된 주소입니다."
+          message={error ?? '삭제되었거나 잘못된 주소입니다.'}
         />
       </div>
     );
   }
 
-  const sheet = info.sheets[Math.min(sheetIdx, info.sheets.length - 1)];
-  const issues = dataset.issueCount ?? 0;
+  const summary = detail.summary;
+  const sheets = detail.sheets;
+  const sheet = sheets[Math.min(sheetIdx, Math.max(sheets.length - 1, 0))];
   const hasPersonalColumn = (sheet?.columns ?? []).some(isPersonalColumn);
+  const period =
+    summary.periodStart && summary.periodEnd
+      ? formatPeriod(summary.periodStart, summary.periodEnd)
+      : null;
 
-  function handleOpenInDashboard() {
-    setActiveId(dataset!.id);
-    navigate('/');
-  }
-
-  function handleDelete() {
-    if (window.confirm('이 자료를 삭제하시겠습니까? 통합 현황에서도 함께 빠집니다.')) {
-      removeDataset(dataset!.id);
+  async function handleDelete() {
+    if (!window.confirm('이 자료를 삭제하시겠습니까? 통합 현황에서도 함께 빠집니다.')) return;
+    try {
+      await deleteSubmission(summary.id);
       navigate('/files');
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '자료 삭제에 실패했습니다.');
     }
   }
 
@@ -83,17 +74,16 @@ export default function SubmissionDetailPage() {
       <div className="mb-4">{backLink}</div>
 
       <PageHeader
-        title={formatRegions(info.regions)}
-        description={`${info.types.map((t) => t.label).join(' · ') || '내용 없음'} · ${info.records.toLocaleString()}건`}
+        title={summary.organizationName}
+        description={`${summary.types.map((t) => t.label).join(' · ') || '내용 없음'} · ${summary.recordCount.toLocaleString()}건`}
         actions={
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleOpenInDashboard}
+            <Link
+              to={`/regions/${encodeURIComponent(summary.organizationName)}`}
               className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
             >
-              통합 현황에서 보기
-            </button>
+              지역 현황에서 보기
+            </Link>
             <button
               type="button"
               onClick={handleDelete}
@@ -105,36 +95,40 @@ export default function SubmissionDetailPage() {
         }
       />
 
+      {actionError && (
+        <div className="mb-4 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+          <p className="text-sm text-red-700">{actionError}</p>
+        </div>
+      )}
+
       <section className="rounded-xl border border-slate-200 bg-white px-6 py-5">
         <dl className="grid grid-cols-1 gap-x-10 gap-y-3 sm:grid-cols-2">
           <Row label="지역">
-            {info.regions.length === 0 ? '지역 미지정' : info.regions.join(', ')}
+            {summary.organizationName}
+            <span className="ml-2 text-xs text-slate-400">{summary.regionName}</span>
           </Row>
-          <Row label="기간">{info.period ?? '—'}</Row>
-          <Row label="제출 일시">
-            {formatUpdatedAt(dataset.uploadedAt)}
-            {dataset.id === activeId && (
-              <span className="ml-2 rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
-                열람중
-              </span>
-            )}
-          </Row>
+          <Row label="기간">{period ?? '—'}</Row>
+          <Row label="제출 일시">{formatUpdatedAt(summary.uploadedAt)}</Row>
           <Row label="상태">
-            {issues > 0 ? (
-              <span className="text-amber-600">확인 필요 {issues.toLocaleString()}건</span>
+            {summary.isSuperseded ? (
+              <span className="text-slate-500">대체됨 · 이후 제출본으로 교체</span>
+            ) : summary.issueCount > 0 ? (
+              <span className="text-amber-600">
+                확인 필요 {summary.issueCount.toLocaleString()}건
+              </span>
             ) : (
               '제출완료'
             )}
           </Row>
           <Row label="원본 파일">
-            <span className="break-all">{dataset.fileName}</span>
+            <span className="break-all">{summary.fileName}</span>
           </Row>
-          <Row label="시트">{info.sheets.length}개</Row>
+          <Row label="시트">{sheets.length}개</Row>
         </dl>
 
-        {info.types.length > 0 && (
+        {summary.types.length > 0 && (
           <ul className="mt-5 flex flex-wrap gap-x-8 gap-y-2 border-t border-slate-100 pt-4">
-            {info.types.map((t) => (
+            {summary.types.map((t) => (
               <li key={t.type} className="text-sm text-slate-600">
                 {t.label}
                 <span className="ml-2 font-semibold tabular-nums text-slate-800">
@@ -149,15 +143,15 @@ export default function SubmissionDetailPage() {
       <section className="mt-4 rounded-xl border border-slate-200 bg-white px-6 py-5">
         <h3 className="text-base font-semibold text-slate-900">자료 미리보기</h3>
 
-        {info.sheets.length > 1 && (
+        {sheets.length > 1 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {info.sheets.map((s, idx) => (
+            {sheets.map((s, idx) => (
               <button
                 key={s.sheetName}
                 type="button"
                 onClick={() => setSheetIdx(idx)}
                 className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-                  idx === Math.min(sheetIdx, info.sheets.length - 1)
+                  idx === Math.min(sheetIdx, sheets.length - 1)
                     ? 'bg-slate-100 text-slate-800'
                     : 'text-slate-500 hover:bg-slate-50'
                 }`}

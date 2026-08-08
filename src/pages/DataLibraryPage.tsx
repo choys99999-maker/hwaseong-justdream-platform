@@ -1,49 +1,57 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronRight, FolderClosed, Plus } from 'lucide-react';
+import { AlertCircle, ChevronRight, FolderClosed, Plus } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
-import { useDataStore } from '../store/dataStore';
-import type { UploadedDataset } from '../store/dataStore';
+import { useCentralData } from '../hooks/useCentralData';
+import { listSubmissions, type RemoteSubmissionSummary } from '../store/remote';
 import {
-  derivePeriod,
-  deriveRegions,
-  formatRegions,
+  formatPeriod,
   formatUpdatedAt,
   isSubmittedThisWeek,
-  summarizeTypes,
-  totalRecordCount,
   type TypeSummary,
 } from '../utils/submission';
 
 const MY_REGION_KEY = 'jd-my-region';
 
-interface Submission {
-  dataset: UploadedDataset;
+/** 목록 한 줄. 중앙 DB의 유효 제출본만 들어온다. */
+interface SubmissionView {
+  id: string;
+  regionText: string;
   regions: string[];
   period: string | null;
   types: TypeSummary[];
   records: number;
+  issues: number;
+  uploadedAt: string;
+}
+
+function fromRemote(s: RemoteSubmissionSummary): SubmissionView {
+  return {
+    id: s.id,
+    regionText: s.organizationName,
+    regions: [s.organizationName],
+    period: s.periodStart && s.periodEnd ? formatPeriod(s.periodStart, s.periodEnd) : null,
+    types: s.types,
+    records: s.recordCount,
+    issues: s.issueCount,
+    uploadedAt: s.uploadedAt,
+  };
 }
 
 export default function DataLibraryPage() {
-  const { datasets, activeId, isLoading, clearAll } = useDataStore();
   const [scope, setScope] = useState<'all' | 'mine'>('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [myRegion, setMyRegion] = useState(() => localStorage.getItem(MY_REGION_KEY) ?? '');
 
-  const submissions = useMemo<Submission[]>(
-    () =>
-      [...datasets]
-        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
-        .map((dataset) => ({
-          dataset,
-          regions: deriveRegions(dataset),
-          period: derivePeriod(dataset),
-          types: summarizeTypes(dataset),
-          records: totalRecordCount(dataset),
-        })),
-    [datasets],
+  const { data: remote, error: remoteError, isLoading } = useCentralData(
+    () => listSubmissions(),
+    [],
+  );
+
+  const submissions = useMemo<SubmissionView[]>(
+    () => (remote ?? []).map(fromRemote),
+    [remote],
   );
 
   const allRegions = useMemo(() => {
@@ -65,19 +73,11 @@ export default function DataLibraryPage() {
     return true;
   });
 
-  const thisWeekCount = submissions.filter((s) =>
-    isSubmittedThisWeek(s.dataset.uploadedAt),
-  ).length;
+  const thisWeekCount = submissions.filter((s) => isSubmittedThisWeek(s.uploadedAt)).length;
 
   function selectMyRegion(region: string) {
     setMyRegion(region);
     localStorage.setItem(MY_REGION_KEY, region);
-  }
-
-  function handleClearAll() {
-    if (window.confirm(`저장된 자료 ${datasets.length}건을 모두 삭제하시겠습니까?`)) {
-      clearAll();
-    }
   }
 
   if (isLoading) return null;
@@ -98,6 +98,13 @@ export default function DataLibraryPage() {
         description="지역별 자료를 올리고 제출된 자료를 확인할 수 있습니다."
         actions={uploadButton}
       />
+
+      {remoteError && (
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+          <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-500" />
+          <p className="text-sm text-red-700">{remoteError}</p>
+        </div>
+      )}
 
       {submissions.length === 0 ? (
         <EmptyState
@@ -177,66 +184,47 @@ export default function DataLibraryPage() {
               </p>
             ) : (
               <ul className="divide-y divide-slate-50">
-                {visible.map((s) => {
-                  const issues = s.dataset.issueCount ?? 0;
-                  return (
-                    <li key={s.dataset.id}>
-                      <Link
-                        to={`/files/${s.dataset.id}`}
-                        className="grid grid-cols-[1.3fr_2fr_1fr_1fr_1fr_28px] items-center gap-4 px-5 py-4 text-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="truncate font-medium text-slate-800">
-                            {formatRegions(s.regions)}
+                {visible.map((s) => (
+                  <li key={s.id}>
+                    <Link
+                      to={`/files/${s.id}`}
+                      className="grid grid-cols-[1.3fr_2fr_1fr_1fr_1fr_28px] items-center gap-4 px-5 py-4 text-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-medium text-slate-800">{s.regionText}</span>
+                      </span>
+
+                      <span className="min-w-0 truncate text-slate-600">
+                        {s.types.length === 0
+                          ? '내용 없음'
+                          : s.types.map((t) => t.label).join(' · ')}
+                        <span className="ml-2 text-xs text-slate-400">
+                          {s.records.toLocaleString()}건
+                        </span>
+                      </span>
+
+                      <span className="text-slate-500">{s.period ?? '—'}</span>
+
+                      <span>
+                        {s.issues > 0 ? (
+                          <span className="text-amber-600">
+                            확인 필요 {s.issues.toLocaleString()}건
                           </span>
-                          {s.dataset.id === activeId && (
-                            <span className="shrink-0 rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-semibold text-teal-700">
-                              열람중
-                            </span>
-                          )}
-                        </span>
+                        ) : (
+                          <span className="text-slate-600">제출완료</span>
+                        )}
+                      </span>
 
-                        <span className="min-w-0 truncate text-slate-600">
-                          {s.types.length === 0
-                            ? '내용 없음'
-                            : s.types.map((t) => t.label).join(' · ')}
-                          <span className="ml-2 text-xs text-slate-400">
-                            {s.records.toLocaleString()}건
-                          </span>
-                        </span>
+                      <span className="text-slate-400">{formatUpdatedAt(s.uploadedAt)}</span>
 
-                        <span className="text-slate-500">{s.period ?? '—'}</span>
-
-                        <span>
-                          {issues > 0 ? (
-                            <span className="text-amber-600">확인 필요 {issues.toLocaleString()}건</span>
-                          ) : (
-                            <span className="text-slate-600">제출완료</span>
-                          )}
-                        </span>
-
-                        <span className="text-slate-400">
-                          {formatUpdatedAt(s.dataset.uploadedAt)}
-                        </span>
-
-                        <ChevronRight size={16} className="text-slate-300" />
-                      </Link>
-                    </li>
-                  );
-                })}
+                      <ChevronRight size={16} className="text-slate-300" />
+                    </Link>
+                  </li>
+                ))}
               </ul>
             )}
           </section>
 
-          <div className="mt-4 text-right">
-            <button
-              type="button"
-              onClick={handleClearAll}
-              className="rounded-lg px-2 py-1 text-xs text-slate-400 transition-colors hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            >
-              저장된 자료 전체 삭제
-            </button>
-          </div>
         </>
       )}
     </div>

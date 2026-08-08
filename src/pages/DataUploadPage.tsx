@@ -16,13 +16,19 @@ import ExcelPreview, { pickDefaultSheetName } from '../components/upload/ExcelPr
 import {
   autoMapColumns,
   getColumnsForType,
+  isCumulativeSheet,
   PERFORMANCE_COLUMNS,
   REFERRAL_COLUMNS,
   GENERIC_COLUMNS,
 } from '../utils/columnMapping';
 import { sheetTypeLabel } from '../utils/submission';
-import { useDataStore } from '../store/dataStore';
-import type { SheetEntry } from '../store/dataStore';
+import { isCentralStoreEnabled } from '../lib/supabase';
+import {
+  listOrganizations,
+  saveSubmission,
+  type Organization,
+  type SheetPayload,
+} from '../store/remote';
 import type {
   SheetParseResult,
   SheetConvertResult,
@@ -49,9 +55,10 @@ interface ErrorItem {
   message: string;
 }
 
-export default function DataUploadPage() {
-  const { addDataset, datasets } = useDataStore();
+/** 마지막으로 선택한 제출 기관. 다음 업로드 때 기본값으로 쓴다. */
+const ORG_KEY = 'jd-org-id';
 
+export default function DataUploadPage() {
   const [step, setStep] = useState<Step>('select');
   const [sheets, setSheets] = useState<SheetParseResult[]>([]);
   const [activeSheetName, setActiveSheetName] = useState('');
@@ -73,63 +80,81 @@ export default function DataUploadPage() {
   const [showAllErrors, setShowAllErrors] = useState(false);
   /** 관리자용 직접 연결(ColumnMapper)은 눌렀을 때만 화면에 올린다. */
   const [showAdvanced, setShowAdvanced] = useState(false);
+  /** 중앙 저장소용 제출 기관(읍면동). 파일명에서 추론하지 않고 명시적으로 고른다. */
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [orgId, setOrgId] = useState(() => localStorage.getItem(ORG_KEY) ?? '');
+  const [orgLoadError, setOrgLoadError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const fileNameRef = useRef('');
+  /** Storage 업로드용 원본 파일. (worker에는 버퍼가 transfer되어 넘어간다) */
+  const fileRef = useRef<File | null>(null);
 
   // 워커 콜백은 한 번만 만들어지므로, 저장에 필요한 최신 값을 ref로 들고 있는다.
   const sheetsRef = useRef<SheetParseResult[]>([]);
   sheetsRef.current = sheets;
   const sheetMappingsRef = useRef(sheetMappings);
   sheetMappingsRef.current = sheetMappings;
-  const addDatasetRef = useRef(addDataset);
-  addDatasetRef.current = addDataset;
   /** 같은 convert-done 메시지를 검증용/저장용으로 나눠 받는다. */
   const convertPurposeRef = useRef<'check' | 'save'>('check');
+  const orgIdRef = useRef(orgId);
+  orgIdRef.current = orgId;
 
-  /** 변환 결과를 하나의 자료로 저장한다. (기존 저장 구조 유지) */
-  function saveResults(results: SheetConvertResult[]) {
-    const now = new Date().toISOString();
-    const sheetEntries: SheetEntry[] = [];
+  /** 필수 항목이 모두 연결된(=우리가 읽을 수 있는) 시트인지. */
+  function isSheetRecognized(sheet: SheetParseResult, mappings = sheetMappingsRef.current): boolean {
+    const mapping = mappings[sheet.sheetName] ?? {};
+    const mapped = new Set(Object.values(mapping).filter(Boolean));
+    if (mapped.size === 0) return false;
+    return getColumnsForType(sheet.sheetType).every((d) => !d.required || mapped.has(d.key));
+  }
 
+  /** 저장 대상 시트만 골라 중앙 저장소가 받을 모양으로 만든다. */
+  function buildPayloads(results: SheetConvertResult[]): SheetPayload[] {
+    const payloads: SheetPayload[] = [];
     for (const result of results) {
       const sheet = sheetsRef.current.find((s) => s.sheetName === result.sheetName);
-      if (!sheet) continue;
+      if (!sheet || !isSheetRecognized(sheet)) continue;
+      payloads.push({
+        sheetName: result.sheetName,
+        sheetType: sheet.sheetType,
+        errorCount: result.errors.length,
+        isCumulative: isCumulativeSheet(result.sheetName),
+        // worker가 만든 camelCase 정규화 레코드(숫자·ISO 날짜)를 그대로 넘긴다.
+        records: result.records,
+      });
+    }
+    return payloads;
+  }
 
-      const columnDefs = getColumnsForType(sheet.sheetType);
-      const mapping = sheetMappingsRef.current[result.sheetName] ?? {};
-      const mappedKeys = new Set(
-        Object.values(mapping).filter((v): v is PlatformColumnKey => v !== null),
-      );
-      const orderedDefs = columnDefs.filter((d) => mappedKeys.has(d.key));
-      const columns = orderedDefs.map((d) => d.label);
+  /** 변환 결과를 중앙 저장소(Supabase)에 올린다. 저장은 RPC 한 번의 트랜잭션이다. */
+  async function finalizeSave(results: SheetConvertResult[]) {
+    try {
+      if (!isCentralStoreEnabled) {
+        throw new Error('중앙 저장소가 설정되지 않았습니다. 환경변수를 확인해 주세요.');
+      }
+      const file = fileRef.current;
+      if (!file) throw new Error('원본 파일을 찾을 수 없습니다. 파일을 다시 올려주세요.');
+      if (!orgIdRef.current) throw new Error('제출 기관(읍면동)을 먼저 선택해주세요.');
 
-      const records = result.records.map((r) => {
-        const obj: Record<string, string> = {};
-        for (const def of orderedDefs) {
-          const val = (r as Record<string, unknown>)[def.key];
-          if (val !== undefined) obj[def.label] = String(val);
-        }
-        return obj;
+      const payloads = buildPayloads(results);
+      if (payloads.length === 0) throw new Error('저장할 수 있는 자료가 없습니다.');
+
+      await saveSubmission({
+        file,
+        fileName: fileNameRef.current,
+        organizationId: orgIdRef.current,
+        issueCount: results.reduce((sum, r) => sum + r.errors.length, 0),
+        sheets: payloads,
       });
 
-      sheetEntries.push({ sheetName: result.sheetName, sheetType: sheet.sheetType, columns, records });
+      setConvertResults(results);
+      setSavedSheetCount(payloads.filter((p) => p.records.length > 0).length);
+      setStep('done');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '자료 저장 중 오류가 발생했습니다.');
+      setStep('review');
     }
-
-    const first = sheetEntries[0];
-    addDatasetRef.current({
-      records: first?.records ?? [],
-      columns: first?.columns ?? [],
-      fileName: fileNameRef.current,
-      uploadedAt: now,
-      sheetName: first?.sheetName,
-      sheetType: first?.sheetType,
-      sheets: sheetEntries,
-      issueCount: results.reduce((sum, r) => sum + r.errors.length, 0),
-    });
-
-    setSavedSheetCount(sheetEntries.filter((s) => s.records.length > 0).length);
   }
 
   useEffect(() => {
@@ -166,9 +191,7 @@ export default function DataUploadPage() {
         case 'convert-done': {
           const results = msg.sheets as SheetConvertResult[];
           if (convertPurposeRef.current === 'save') {
-            setConvertResults(results);
-            saveResults(results); // 변환과 저장을 한 번의 동작으로 합친다.
-            setStep('done');
+            void finalizeSave(results); // 중앙 저장 → 브라우저 저장 → 완료 화면
           } else {
             setCheckResults(results);
           }
@@ -193,6 +216,29 @@ export default function DataUploadPage() {
     return () => worker.terminate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 중앙 저장소가 켜져 있으면 제출 기관(읍면동) 목록을 불러온다.
+  useEffect(() => {
+    if (!isCentralStoreEnabled) return;
+    listOrganizations()
+      .then((orgs) => {
+        setOrganizations(orgs);
+        setOrgLoadError(null);
+        // 예전에 골라둔 기관이 목록에서 사라졌으면 초기화한다.
+        if (orgIdRef.current && !orgs.some((o) => o.id === orgIdRef.current)) {
+          setOrgId('');
+          localStorage.removeItem(ORG_KEY);
+        }
+      })
+      .catch((err) =>
+        setOrgLoadError(err instanceof Error ? err.message : '기관 목록을 불러오지 못했습니다.'),
+      );
+  }, []);
+
+  function selectOrg(id: string) {
+    setOrgId(id);
+    if (id) localStorage.setItem(ORG_KEY, id);
+  }
 
   // 저장 전에 값 검증을 한 번 돌려서 "바로 저장 가능 / 오류 수정 필요"를 가른다.
   // 관리자가 직접 연결을 바꾸면 다시 돌린다.
@@ -224,6 +270,7 @@ export default function DataUploadPage() {
     setSavedSheetCount(0);
     setStep('uploading');
     fileNameRef.current = overrideName ?? file.name;
+    fileRef.current = file;
 
     const reader = new FileReader();
     reader.onprogress = (e) => {
@@ -242,11 +289,9 @@ export default function DataUploadPage() {
     reader.readAsArrayBuffer(file);
   }
 
+  // 같은 파일 이름을 다시 올리는 것은 "재제출"이다. 중앙 DB가 이전 제출본을
+  // superseded 로 내리므로 막지 않는다. (집계에는 최신 제출본만 들어간다)
   function handleFileSelected(file: File) {
-    if (datasets.some((d) => d.fileName === file.name)) {
-      setError(`"${file.name}" 자료는 이미 올라와 있습니다. 자료 관리에서 지운 뒤 다시 올려주세요.`);
-      return;
-    }
     processFile(file);
   }
 
@@ -271,6 +316,10 @@ export default function DataUploadPage() {
   }
 
   function handleSave() {
+    if (isCentralStoreEnabled && !orgId) {
+      setError('제출 기관(읍면동)을 먼저 선택해주세요.');
+      return;
+    }
     setError(null);
     setConvertResults([]);
     setStep('importing');
@@ -279,6 +328,7 @@ export default function DataUploadPage() {
   }
 
   function handleReset() {
+    fileRef.current = null;
     setSheets([]);
     setActiveSheetName('');
     setSheetMappings({});
@@ -362,7 +412,43 @@ export default function DataUploadPage() {
   const savedRecords = convertResults.reduce((sum, r) => sum + r.records.length, 0);
   const savedErrors = convertResults.reduce((sum, r) => sum + r.errors.length, 0);
 
-  const canSaveAdvanced = !hasDuplicateMapping && !isChecking && recognizedSheets.length > 0;
+  /** 중앙 저장소가 켜져 있으면 제출 기관을 고르기 전에는 저장하지 않는다. */
+  const needsOrg = isCentralStoreEnabled && !orgId;
+  const canSaveAdvanced =
+    !hasDuplicateMapping && !isChecking && recognizedSheets.length > 0 && !needsOrg;
+
+  function renderOrgSelector() {
+    if (!isCentralStoreEnabled) return null;
+    return (
+      <div className="mt-6">
+        <label htmlFor="org-select" className="block text-sm font-medium text-slate-700">
+          제출 기관(읍면동)
+        </label>
+        {orgLoadError ? (
+          <p className="mt-2 text-sm text-red-600">{orgLoadError}</p>
+        ) : (
+          <select
+            id="org-select"
+            value={orgId}
+            onChange={(e) => selectOrg(e.target.value)}
+            className="mt-2 w-full max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            <option value="">선택해주세요</option>
+            {organizations.map((org) => (
+              <option key={org.id} value={org.id}>
+                {org.regionName} · {org.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {needsOrg && !orgLoadError && (
+          <p className="mt-2 text-xs text-slate-400">
+            어느 읍면동의 자료인지 선택해야 저장할 수 있습니다.
+          </p>
+        )}
+      </div>
+    );
+  }
 
   function renderSheetPicker(list: SheetParseResult[]) {
     if (list.length < 2) return null;
@@ -510,11 +596,14 @@ export default function DataUploadPage() {
                 업로드할 수 있습니다
               </p>
 
+              {renderOrgSelector()}
+
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="rounded-lg bg-teal-600 px-7 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+                  disabled={needsOrg}
+                  className="rounded-lg bg-teal-600 px-7 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
                 >
                   자료 저장
                 </button>
@@ -692,6 +781,8 @@ export default function DataUploadPage() {
                   해당 칸은 비워 둡니다.
                 </p>
               )}
+
+              {renderOrgSelector()}
 
               <div className="mt-8 flex flex-wrap items-center gap-4">
                 <button
