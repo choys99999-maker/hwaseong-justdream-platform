@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import ColumnMapper from '../components/upload/ColumnMapper';
+import ExcelPreview, { pickDefaultSheetName } from '../components/upload/ExcelPreview';
 import {
   autoMapColumns,
   getColumnsForType,
@@ -33,7 +34,6 @@ for (const def of [...PERFORMANCE_COLUMNS, ...REFERRAL_COLUMNS, ...GENERIC_COLUM
   if (!ALL_FIELD_LABELS[def.key]) ALL_FIELD_LABELS[def.key] = def.label;
 }
 
-const PREVIEW_ROWS = 5;
 /** 오류가 많아도 기본 화면에는 몇 개만. 나머지는 "모두 보기"로. */
 const COLLAPSED_ERRORS = 3;
 const MAX_LISTED_ERRORS = 50;
@@ -152,11 +152,8 @@ export default function DataUploadPage() {
           setSheetMappings(auto);
           sheetMappingsRef.current = auto;
           setInitialMappings(auto);
-          // 실제 데이터가 있는 시트를 기본으로 고른다. 사용자가 시트를 고르지 않아도 되게.
-          const firstWithData = parsedSheets.find(
-            (s) => s.columns.length > 0 && s.totalRows > 0,
-          );
-          setActiveSheetName(firstWithData?.sheetName ?? parsedSheets[0]?.sheetName ?? '');
+          // 실제 데이터가 있는 첫 업무 시트를 기본으로 고른다. ('안내' 같은 설명 시트는 건너뛴다)
+          setActiveSheetName(pickDefaultSheetName(parsedSheets));
           setCheckResults(null);
           setError(null);
           setIsParsing(false);
@@ -365,17 +362,6 @@ export default function DataUploadPage() {
   const savedRecords = convertResults.reduce((sum, r) => sum + r.records.length, 0);
   const savedErrors = convertResults.reduce((sum, r) => sum + r.errors.length, 0);
 
-  // 자료 유형별 건수 — 미리보기를 펼쳤을 때만 쓴다.
-  const typeSummary: Array<{ label: string; count: number }> = [];
-  for (const sheet of recognizedSheets) {
-    const result = checkResults?.find((r) => r.sheetName === sheet.sheetName);
-    const count = result ? result.records.length : sheet.totalRows;
-    const label = sheetTypeLabel(sheet.sheetType);
-    const found = typeSummary.find((t) => t.label === label);
-    if (found) found.count += count;
-    else typeSummary.push({ label, count });
-  }
-
   const canSaveAdvanced = !hasDuplicateMapping && !isChecking && recognizedSheets.length > 0;
 
   function renderSheetPicker(list: SheetParseResult[]) {
@@ -557,60 +543,13 @@ export default function DataUploadPage() {
 
                 {showPreview && (
                   <div className="mt-5">
-                    {typeSummary.length > 0 && (
-                      <dl className="max-w-sm space-y-2">
-                        {typeSummary.map((t) => (
-                          <div key={t.label} className="flex items-center justify-between">
-                            <dt className="text-sm text-slate-600">{t.label}</dt>
-                            <dd className="text-sm font-medium tabular-nums text-slate-800">
-                              {t.count.toLocaleString()}건
-                            </dd>
-                          </div>
-                        ))}
-                      </dl>
-                    )}
-
-                    {recognizedSheets.length > 1 && (
-                      <div className="mt-5">{renderSheetPicker(recognizedSheets)}</div>
-                    )}
-
-                    {activeSheet && activeSheet.previewRows.length > 0 && (
-                      <>
-                        <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-slate-200">
-                          <table className="min-w-full divide-y divide-slate-100 text-sm">
-                            <thead className="sticky top-0 bg-slate-50">
-                              <tr>
-                                {activeSheet.columns.map((col) => (
-                                  <th
-                                    key={col}
-                                    className="whitespace-nowrap px-4 py-2.5 text-left text-xs font-medium text-slate-500"
-                                  >
-                                    {col}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50 bg-white">
-                              {activeSheet.previewRows.slice(0, PREVIEW_ROWS).map((row, i) => (
-                                <tr key={i}>
-                                  {activeSheet.columns.map((col) => (
-                                    <td
-                                      key={col}
-                                      className="whitespace-nowrap px-4 py-2 text-slate-600"
-                                    >
-                                      {row[col]}
-                                    </td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        <p className="mt-2 text-xs text-slate-400">
-                          처음 {Math.min(PREVIEW_ROWS, activeSheet.previewRows.length)}줄
-                        </p>
-                      </>
-                    )}
+                    <ExcelPreview
+                      key={fileNameRef.current}
+                      sheets={sheets}
+                      fileName={fileNameRef.current}
+                      mappings={sheetMappings}
+                      workerRef={workerRef}
+                    />
                   </div>
                 )}
               </div>

@@ -168,6 +168,52 @@ function handleParse(buffer: ArrayBuffer) {
   self.postMessage({ type: 'parse-done', sheets });
 }
 
+/**
+ * 미리보기 전용 읽기 전용 조회.
+ * 이미 parse 단계에서 읽어둔 원본 행을 요청한 구간만큼 잘라 돌려줄 뿐,
+ * 값을 해석하거나 바꾸지 않는다. (변환·검증 경로와 완전히 분리)
+ */
+function handlePreviewRows(sheetName: string, start: number, limit: number) {
+  const data = storedSheets.get(sheetName);
+  if (!data) {
+    self.postMessage({
+      type: 'preview-rows-done',
+      sheetName, start, columns: [], rows: [], rowNumbers: [], totalRows: 0,
+    });
+    return;
+  }
+
+  const { rows, headers, dataStartRow } = data;
+
+  // 표 아래에 남은 빈 줄까지 보여주면 "제대로 읽혔나"를 판단하기 어렵다. 빈 줄은 건너뛴다.
+  const filled: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const arr = rows[i] as unknown[];
+    if (headers.some(({ idx }) => String(arr[idx] ?? '').trim() !== '')) filled.push(i);
+  }
+
+  const slice = filled.slice(start, start + limit);
+  const cells = slice.map((rowIdx) => {
+    const arr = rows[rowIdx] as unknown[];
+    return headers.map(({ idx }) => {
+      const v = arr[idx];
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string') return v;
+      return String(v);
+    });
+  });
+
+  self.postMessage({
+    type: 'preview-rows-done',
+    sheetName,
+    start,
+    columns: headers.map((h) => h.name),
+    rows: cells,
+    rowNumbers: slice.map((i) => dataStartRow + i),
+    totalRows: filled.length,
+  });
+}
+
 function parseDate(val: unknown): string | null {
   if (val === '' || val === null || val === undefined) return null;
 
@@ -323,10 +369,16 @@ self.onmessage = (e: MessageEvent) => {
     type: string;
     buffer?: ArrayBuffer;
     sheetMappings?: Record<string, Record<string, string | null>>;
+    sheetName?: string;
+    start?: number;
+    limit?: number;
   };
   try {
     if (msg.type === 'parse' && msg.buffer) handleParse(msg.buffer);
     else if (msg.type === 'convert') handleConvert(msg.sheetMappings ?? {});
+    else if (msg.type === 'preview-rows') {
+      handlePreviewRows(msg.sheetName ?? '', msg.start ?? 0, msg.limit ?? 100);
+    }
   } catch (err) {
     self.postMessage({
       type: 'error',
