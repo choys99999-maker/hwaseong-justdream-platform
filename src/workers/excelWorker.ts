@@ -8,27 +8,31 @@ import type {
   SheetParseResult,
   SheetConvertResult,
 } from '../types/upload';
-import { detectSheetType } from '../utils/columnMapping';
+import {
+  detectSheetType,
+  detectSheetTypeByHeaders,
+  scoreColumns,
+  SHEET_TYPES,
+} from '../utils/columnMapping';
 
 interface SheetData {
   rows: unknown[][];
   headers: Array<{ name: string; idx: number }>;
   sheetType: SheetType;
   dataStartRow: number;
+  headerRowIndex: number;
+  headerRowCount: number;
 }
 
 const storedSheets = new Map<string, SheetData>();
 
-interface SheetConfig {
-  sectionLabelRows: number;
-  headerRowCount: number;
-}
-
-const SHEET_CONFIGS: Record<SheetType, SheetConfig> = {
-  performance: { sectionLabelRows: 0, headerRowCount: 3 },
-  referral:    { sectionLabelRows: 1, headerRowCount: 1 },
-  generic:     { sectionLabelRows: 0, headerRowCount: 1 },
-};
+/** 헤더를 찾아볼 상단 범위. 제목·작성자·공백 줄이 몇 개 얹혀도 여기서 걸린다. */
+const MAX_HEADER_SCAN_ROWS = 12;
+/** 병합 헤더로 묶어볼 최대 행 수. (실적 서식이 3행) */
+const MAX_HEADER_ROWS = 3;
+/** 헤더로 인정하는 최소 조건. 이보다 못 알아보면 표의 머리로 보지 않는다. */
+const MIN_HEADER_COLUMNS = 2;
+const MIN_HEADER_SCORE = 2;
 
 const NUMBER_FIELDS_BY_TYPE: Record<SheetType, Set<PlatformColumnKey>> = {
   performance: new Set([
@@ -92,22 +96,13 @@ function buildFlatColName(cells: string[]): string {
   return '';
 }
 
-function parseSheetData(ws: XLSX.WorkSheet, sheetType: SheetType): SheetData {
-  const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' });
-  const config = SHEET_CONFIGS[sheetType];
-
-  let firstNonEmptyIdx = 0;
-  for (let i = 0; i < allRows.length; i++) {
-    if ((allRows[i] as unknown[]).some((c) => String(c).trim() !== '')) {
-      firstNonEmptyIdx = i;
-      break;
-    }
-  }
-
-  const headerStartIdx = firstNonEmptyIdx + config.sectionLabelRows;
-  const headerEndIdx = headerStartIdx + config.headerRowCount;
-  const headerRows = allRows.slice(headerStartIdx, headerEndIdx) as unknown[][];
-
+/** 지정한 구간을 헤더로 보고 열 이름을 만든다. */
+function buildHeaders(
+  allRows: unknown[][],
+  startIdx: number,
+  rowCount: number,
+): Array<{ name: string; idx: number }> {
+  const headerRows = allRows.slice(startIdx, startIdx + rowCount) as unknown[][];
   const colCount = headerRows.length > 0
     ? Math.max(...headerRows.map((r) => (r as unknown[]).length))
     : 0;
@@ -124,14 +119,99 @@ function parseSheetData(ws: XLSX.WorkSheet, sheetType: SheetType): SheetData {
     usedNames.set(name, seen + 1);
     headers.push({ name: seen === 0 ? name : `${name} (${seen + 1})`, idx: col });
   }
+  return headers;
+}
 
-  const dataRows = allRows.slice(headerEndIdx);
+interface HeaderChoice {
+  startIdx: number;
+  rowCount: number;
+  headers: Array<{ name: string; idx: number }>;
+  sheetType: SheetType;
+  score: number;
+}
+
+/**
+ * 헤더 위치와 시트 유형을 함께 찾는다.
+ *
+ * 예전에는 유형별로 "몇 번째 행부터 몇 줄이 헤더"인지 상수로 박아두고, 유형은 시트
+ * '이름'으로만 정했다. 그래서 제목 줄이 하나만 얹혀도 제목을 헤더로 읽었고,
+ * 시트 이름이 다르면 멀쩡한 표도 못 알아봤다.
+ *
+ * 이제는 상단 몇 줄을 훑으면서 (시작행 × 헤더줄수 × 유형) 조합마다 "열 이름을 몇 개나
+ * 알아볼 수 있는지"를 점수로 매기고 가장 높은 조합을 택한다. 시트 이름은 동점일 때만 쓴다.
+ */
+function detectHeader(allRows: unknown[][], sheetName: string): HeaderChoice | null {
+  let best: HeaderChoice | null = null;
+  const limit = Math.min(MAX_HEADER_SCAN_ROWS, allRows.length);
+
+  for (let start = 0; start < limit; start++) {
+    const row = allRows[start] as unknown[];
+    if (!row || !row.some((c) => String(c ?? '').trim() !== '')) continue;
+
+    for (let count = 1; count <= MAX_HEADER_ROWS && start + count <= allRows.length; count++) {
+      const headers = buildHeaders(allRows, start, count);
+      if (headers.length < MIN_HEADER_COLUMNS) continue;
+
+      const names = headers.map((h) => h.name);
+      for (const type of SHEET_TYPES) {
+        const raw = scoreColumns(names, type);
+        if (raw < MIN_HEADER_SCORE) continue;
+
+        const score = raw + (detectSheetType(sheetName) === type ? 0.5 : 0);
+
+        // 같은 점수면 머리글을 더 깊게 잡는 쪽을 택한다. 점수가 유지된다는 것은
+        // 그 줄이 데이터가 아니라 부제·2단 헤더라는 뜻이고, 데이터로 넘기면
+        // '(2차 이용)' 같은 칸이 숫자 오류로 잡힌다.
+        const dataStart = start + count;
+        const better =
+          !best ||
+          score > best.score ||
+          (score === best.score &&
+            (dataStart > best.startIdx + best.rowCount ||
+              (dataStart === best.startIdx + best.rowCount && start < best.startIdx)));
+
+        if (better) {
+          best = { startIdx: start, rowCount: count, headers, sheetType: type, score };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+function parseSheetData(ws: XLSX.WorkSheet, sheetName: string): SheetData {
+  const allRows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' });
+
+  const detected = detectHeader(allRows, sheetName);
+
+  let startIdx: number;
+  let rowCount: number;
+  let headers: Array<{ name: string; idx: number }>;
+  let sheetType: SheetType;
+
+  if (detected) {
+    ({ startIdx, rowCount, headers } = detected);
+    sheetType = detected.sheetType;
+  } else {
+    // 아무것도 못 알아본 시트(설명 시트 등). 첫 내용 줄을 헤더로 두고 넘긴다.
+    startIdx = allRows.findIndex((r) =>
+      (r as unknown[]).some((c) => String(c ?? '').trim() !== ''),
+    );
+    if (startIdx < 0) startIdx = 0;
+    rowCount = 1;
+    headers = buildHeaders(allRows, startIdx, 1);
+    sheetType = detectSheetTypeByHeaders(headers.map((h) => h.name), sheetName);
+  }
+
+  const headerEndIdx = startIdx + rowCount;
 
   return {
-    rows: dataRows,
+    rows: allRows.slice(headerEndIdx),
     headers,
     sheetType,
     dataStartRow: headerEndIdx + 1,
+    headerRowIndex: startIdx + 1,
+    headerRowCount: rowCount,
   };
 }
 
@@ -143,8 +223,8 @@ function handleParse(buffer: ArrayBuffer) {
 
   for (const sheetName of wb.SheetNames) {
     const ws = wb.Sheets[sheetName];
-    const sheetType = detectSheetType(sheetName);
-    const data = parseSheetData(ws, sheetType);
+    const data = parseSheetData(ws, sheetName);
+    const sheetType = data.sheetType;
 
     storedSheets.set(sheetName, data);
 
@@ -162,6 +242,8 @@ function handleParse(buffer: ArrayBuffer) {
       columns,
       previewRows,
       totalRows: data.rows.length,
+      headerRowIndex: data.headerRowIndex,
+      headerRowCount: data.headerRowCount,
     });
   }
 
@@ -214,38 +296,72 @@ function handlePreviewRows(sheetName: string, start: number, limit: number) {
   });
 }
 
+// ── 날짜 ──────────────────────────────────────────────────
+// 알아보는 형식만 받고 나머지는 전부 오류로 돌린다.
+// 예전에는 마지막에 new Date(s)로 아무 문자열이나 받아넘겼는데, 그 관대함이
+// 조용한 오염을 만들었다. ('8/3' → 2001년, 'Aug 3 2026' → KST에서 하루 밀림,
+// '2026' → 2026-01-01) 오류로 잡히지도 않아 그대로 저장됐다.
+
+/** 엑셀 날짜 일련번호 ↔ 1970-01-01 사이의 일수 차이. */
+const EXCEL_EPOCH_OFFSET = 25569;
+/**
+ * 1927-05-18 ~ 2100-01-01.
+ * 아래로 더 내리지 않는 이유: '1985', '2026' 같은 네 자리 숫자는 일련번호가 아니라
+ * 연도로 적힌 값이다. 이걸 일련번호로 읽으면 1905년 같은 엉뚱한 날짜가 조용히 생긴다.
+ * 범위 밖은 오류로 돌려 사용자가 원본을 고치게 한다.
+ */
+const SERIAL_MIN = 10000;
+const SERIAL_MAX = 73051;
+
+function isRealDate(y: number, m: number, d: number): boolean {
+  if (m < 1 || m > 12 || d < 1) return false;
+  return d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
+
+function toIso(y: number, m: number, d: number): string | null {
+  if (!isRealDate(y, m, d)) return null;
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+/** 두 자리 연도. 00~79는 2000년대, 80~99는 1900년대로 읽는다. */
+function expandYear(yy: number): number {
+  return yy <= 79 ? 2000 + yy : 1900 + yy;
+}
+
+function serialToIso(n: number): string | null {
+  if (!Number.isFinite(n) || n < SERIAL_MIN || n > SERIAL_MAX) return null;
+  // UTC로만 계산한다. 로컬 시간대를 거치면 KST에서 하루가 밀린다.
+  const d = new Date(Math.round((n - EXCEL_EPOCH_OFFSET) * 86400000));
+  if (isNaN(d.getTime())) return null;
+  return toIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+}
+
 function parseDate(val: unknown): string | null {
   if (val === '' || val === null || val === undefined) return null;
 
-  if (typeof val === 'number' && val > 10000 && val < 100000) {
-    const utcMs = (val - 25569) * 86400000;
-    const d = new Date(utcMs);
-    if (!isNaN(d.getTime())) {
-      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-    }
+  if (typeof val === 'number') {
+    const fromSerial = serialToIso(val);
+    if (fromSerial) return fromSerial;
+    // 20260803처럼 숫자로 적힌 8자리 날짜는 아래 문자열 경로에서 받는다.
   }
 
   const s = String(val).trim();
   if (!s) return null;
 
-  const isoMatch = s.match(/^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})$/);
-  if (isoMatch) {
-    const [, y, m, d] = isoMatch;
-    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
+  // 2026-08-03 / 2026.8.3 / 2026/8/3
+  const full = s.match(/^(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})\.?$/);
+  if (full) return toIso(+full[1], +full[2], +full[3]);
 
-  if (/^\d{8}$/.test(s)) {
-    return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-  }
+  // 26.8.3 / 26-8-3 (두 자리 연도)
+  const short = s.match(/^(\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})\.?$/);
+  if (short) return toIso(expandYear(+short[1]), +short[2], +short[3]);
 
-  const korMatch = s.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일/);
-  if (korMatch) {
-    const [, y, m, d] = korMatch;
-    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-  }
+  // 20260803
+  if (/^\d{8}$/.test(s)) return toIso(+s.slice(0, 4), +s.slice(4, 6), +s.slice(6, 8));
 
-  const parsed = new Date(s);
-  if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
+  // 2026년 8월 3일
+  const kor = s.match(/^(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일?$/);
+  if (kor) return toIso(+kor[1], +kor[2], +kor[3]);
 
   return null;
 }
@@ -276,6 +392,27 @@ function parseBirthDate(val: unknown): string | null {
   return parseDate(val);
 }
 
+/**
+ * 소계·합계처럼 표 안에 섞인 집계 행인지.
+ * 이런 행을 그대로 가져오면 같은 값을 두 번 세게 된다.
+ * (품목 3종짜리 표가 소계 2행 + 합계 1행 때문에 6건이 되고 수량은 3배가 된다)
+ */
+const SUMMARY_LABEL = /^(소?계|합계|총계|총합|중간합계|누계|subtotal|total|sum)$/i;
+
+function isSummaryRow(
+  arr: unknown[],
+  colMap: Map<PlatformColumnKey, number>,
+  numberFields: Set<PlatformColumnKey>,
+): boolean {
+  for (const [key, idx] of colMap) {
+    // 숫자·날짜 칸이 아니라 이름/구분 칸에 '합계'가 적혀 있어야 집계 행이다.
+    if (numberFields.has(key) || DATE_FIELDS.has(key)) continue;
+    const v = String(arr[idx] ?? '').replace(/\s+/g, '');
+    if (v && SUMMARY_LABEL.test(v)) return true;
+  }
+  return false;
+}
+
 function handleConvert(sheetMappings: Record<string, Record<string, string | null>>) {
   const results: SheetConvertResult[] = [];
 
@@ -287,6 +424,7 @@ function handleConvert(sheetMappings: Record<string, Record<string, string | nul
     const NUMBER_FIELDS = NUMBER_FIELDS_BY_TYPE[sheetType];
     const records: MappedRecord[] = [];
     const errors: ValidationError[] = [];
+    let skippedSummaryRows = 0;
 
     const colMap = new Map<PlatformColumnKey, number>();
     for (const header of headers) {
@@ -302,6 +440,11 @@ function handleConvert(sheetMappings: Record<string, Record<string, string | nul
         (idx) => String(arr[idx] ?? '').trim() === '',
       );
       if (allEmpty) continue;
+
+      if (isSummaryRow(arr, colMap, NUMBER_FIELDS)) {
+        skippedSummaryRows++;
+        continue;
+      }
 
       const record: MappedRecord = {};
 
@@ -358,7 +501,7 @@ function handleConvert(sheetMappings: Record<string, Record<string, string | nul
       records.push(record);
     }
 
-    results.push({ sheetName, records, errors });
+    results.push({ sheetName, records, errors, skippedSummaryRows });
   }
 
   self.postMessage({ type: 'convert-done', sheets: results });

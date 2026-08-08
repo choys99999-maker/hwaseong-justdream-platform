@@ -47,6 +47,10 @@ export interface SheetParseResult {
   columns: string[];
   previewRows: Record<string, string>[];
   totalRows: number;
+  /** 헤더로 채택한 첫 행의 실제 엑셀 행 번호(1-based). 인식 실패 이유를 설명할 때 쓴다. */
+  headerRowIndex: number;
+  /** 헤더로 묶은 행 수. 병합 헤더면 2~3이 된다. */
+  headerRowCount: number;
 }
 
 /** 미리보기 전용. 원본 셀 값을 가공하지 않고 그대로 넘긴다. */
@@ -79,4 +83,6 @@ export interface SheetConvertResult {
   sheetName: string;
   records: MappedRecord[];
   errors: ValidationError[];
+  /** 소계·합계처럼 집계용으로 판단해 가져오지 않은 행 수. */
+  skippedSummaryRows: number;
 }

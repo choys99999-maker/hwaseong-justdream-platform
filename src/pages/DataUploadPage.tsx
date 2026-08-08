@@ -15,6 +15,7 @@ import ColumnMapper from '../components/upload/ColumnMapper';
 import ExcelPreview, { pickDefaultSheetName } from '../components/upload/ExcelPreview';
 import {
   autoMapColumns,
+  checkRecognition,
   getColumnsForType,
   isCumulativeSheet,
   PERFORMANCE_COLUMNS,
@@ -101,12 +102,20 @@ export default function DataUploadPage() {
   const orgIdRef = useRef(orgId);
   orgIdRef.current = orgId;
 
-  /** 필수 항목이 모두 연결된(=우리가 읽을 수 있는) 시트인지. */
-  function isSheetRecognized(sheet: SheetParseResult, mappings = sheetMappingsRef.current): boolean {
+  function mappedKeysOf(
+    sheet: SheetParseResult,
+    mappings: Record<string, Record<string, PlatformColumnKey | null>>,
+  ): Set<PlatformColumnKey> {
     const mapping = mappings[sheet.sheetName] ?? {};
-    const mapped = new Set(Object.values(mapping).filter(Boolean));
-    if (mapped.size === 0) return false;
-    return getColumnsForType(sheet.sheetType).every((d) => !d.required || mapped.has(d.key));
+    return new Set(Object.values(mapping).filter((v): v is PlatformColumnKey => v !== null));
+  }
+
+  /**
+   * 업무 자료로 인정되는 시트인지. 필수 항목뿐 아니라 핵심 열 그룹까지 본다.
+   * (기관명 하나만 맞아도 "정상"으로 통과해 실적 숫자가 통째로 빠지던 문제)
+   */
+  function isSheetRecognized(sheet: SheetParseResult, mappings = sheetMappingsRef.current): boolean {
+    return checkRecognition(sheet.sheetType, mappedKeysOf(sheet, mappings)).ok;
   }
 
   /** 저장 대상 시트만 골라 중앙 저장소가 받을 모양으로 만든다. */
@@ -348,14 +357,60 @@ export default function DataUploadPage() {
   // ── 파생 상태 ────────────────────────────────────────────
   const filledSheets = sheets.filter((s) => s.columns.length > 0 && s.totalRows > 0);
 
-  /** 필수 항목이 모두 연결된 시트만 "우리가 읽을 수 있는 자료"로 본다. */
   function isRecognized(sheet: SheetParseResult): boolean {
-    const mapping = sheetMappings[sheet.sheetName] ?? {};
-    const mapped = new Set(Object.values(mapping).filter(Boolean));
-    if (mapped.size === 0) return false;
-    return getColumnsForType(sheet.sheetType).every((d) => !d.required || mapped.has(d.key));
+    return checkRecognition(sheet.sheetType, mappedKeysOf(sheet, sheetMappings)).ok;
   }
   const recognizedSheets = filledSheets.filter(isRecognized);
+
+  /**
+   * 시트마다 "가져올 열 / 가져오지 않을 열"을 정리한다.
+   * 예전에는 연결에 실패한 열을 아무 데도 알리지 않고 그냥 버렸다. 화면은
+   * "업로드할 수 있습니다"라고만 했고, 담당자는 자기 자료의 절반이 빠진 걸 알 수 없었다.
+   */
+  const sheetInsights = useMemo(
+    () =>
+      filledSheets.map((sheet) => {
+        const mapping = sheetMappings[sheet.sheetName] ?? {};
+        const mappedKeys = new Set(
+          Object.values(mapping).filter((v): v is PlatformColumnKey => v !== null),
+        );
+        return {
+          sheet,
+          label: sheetTypeLabel(sheet.sheetType),
+          mappedCount: mappedKeys.size,
+          dropped: sheet.columns.filter((col) => !mapping[col]),
+          recognition: checkRecognition(sheet.sheetType, mappedKeys),
+        };
+      }),
+    // filledSheets는 sheets에서 파생되므로 sheets/sheetMappings만 보면 된다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sheets, sheetMappings],
+  );
+
+  /** 저장 대상 시트에서 버려지는 열. 하나라도 있으면 화면에 그대로 내건다. */
+  const droppedInRecognized = sheetInsights.filter(
+    (i) => i.recognition.ok && i.dropped.length > 0,
+  );
+  const droppedColumnCount = droppedInRecognized.reduce((n, i) => n + i.dropped.length, 0);
+
+  /** 인식하지 못한 시트가 왜 안 됐는지. 화면에 이유를 그대로 보여준다. */
+  const unrecognizedReasons = sheetInsights
+    .filter((i) => !i.recognition.ok)
+    .map((i) => ({
+      sheet: i.sheet,
+      label: i.label,
+      missing: [
+        ...i.recognition.missingRequired.map((d) => d.label),
+        ...i.recognition.missingCoreGroups.map(
+          (g) => `${g.map((d) => d.label).join(' 또는 ')} 중 하나`,
+        ),
+      ],
+    }));
+
+  const skippedSummaryRows = (checkResults ?? []).reduce(
+    (sum, r) => sum + (r.skippedSummaryRows ?? 0),
+    0,
+  );
 
   // 전체 시트 중복 매핑 검사 (중복이면 저장 차단)
   const hasDuplicateMapping = sheets.some((sheet) => {
@@ -411,6 +466,10 @@ export default function DataUploadPage() {
 
   const savedRecords = convertResults.reduce((sum, r) => sum + r.records.length, 0);
   const savedErrors = convertResults.reduce((sum, r) => sum + r.errors.length, 0);
+  const savedSummaryRows = convertResults.reduce(
+    (sum, r) => sum + (r.skippedSummaryRows ?? 0),
+    0,
+  );
 
   /** 중앙 저장소가 켜져 있으면 제출 기관을 고르기 전에는 저장하지 않는다. */
   const needsOrg = isCentralStoreEnabled && !orgId;
@@ -446,6 +505,86 @@ export default function DataUploadPage() {
             어느 읍면동의 자료인지 선택해야 저장할 수 있습니다.
           </p>
         )}
+      </div>
+    );
+  }
+
+  function openMapper(sheetName?: string) {
+    if (sheetName) setActiveSheetName(sheetName);
+    setShowAdvanced(true);
+  }
+
+  /** 어느 열을 가져오고 어느 열을 버리는지. 저장 전에 항상 보이게 한다. */
+  function renderMappingSummary() {
+    if (recognizedSheets.length === 0) return null;
+    const total = sheetInsights
+      .filter((i) => i.recognition.ok)
+      .reduce((n, i) => n + i.mappedCount, 0);
+
+    return (
+      <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/60 px-5 py-4">
+        <p className="text-sm text-slate-700">
+          가져올 열 <span className="font-semibold tabular-nums">{total}</span>개
+          {droppedColumnCount > 0 && (
+            <>
+              {' · '}
+              가져오지 않을 열{' '}
+              <span className="font-semibold tabular-nums text-amber-700">
+                {droppedColumnCount}
+              </span>
+              개
+            </>
+          )}
+        </p>
+
+        {droppedColumnCount > 0 ? (
+          <>
+            <ul className="mt-3 space-y-1.5">
+              {droppedInRecognized.map((item) => (
+                <li key={item.sheet.sheetName} className="text-sm text-amber-800">
+                  <span className="text-xs text-slate-500">{item.label} · </span>
+                  {item.dropped.join(', ')}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-slate-500">
+              이 열은 저장되지 않습니다. 필요한 열이 섞여 있으면 아래에서 직접 연결해 주세요.
+            </p>
+            <button
+              type="button"
+              onClick={() => openMapper(droppedInRecognized[0]?.sheet.sheetName)}
+              className="mt-3 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            >
+              열 연결 고치기
+              <ChevronRight size={14} />
+            </button>
+          </>
+        ) : (
+          <p className="mt-1 text-xs text-slate-500">모든 열을 가져옵니다.</p>
+        )}
+
+        {skippedSummaryRows > 0 && (
+          <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-500">
+            소계·합계로 보이는 {skippedSummaryRows.toLocaleString()}개 행은 두 번 세지 않도록
+            가져오지 않습니다.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  /** 어느 상태에서든 열 연결을 열 수 있어야 한다. */
+  function renderMapperLink() {
+    return (
+      <div className="mt-8 border-t border-slate-100 pt-5">
+        <button
+          type="button"
+          onClick={() => openMapper()}
+          className="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          열 연결 직접 고치기
+          <ChevronRight size={15} />
+        </button>
       </div>
     );
   }
@@ -596,6 +735,8 @@ export default function DataUploadPage() {
                 업로드할 수 있습니다
               </p>
 
+              {renderMappingSummary()}
+
               {renderOrgSelector()}
 
               <div className="mt-8 flex flex-wrap items-center gap-4">
@@ -642,6 +783,8 @@ export default function DataUploadPage() {
                   </div>
                 )}
               </div>
+
+              {renderMapperLink()}
             </section>
           )}
 
@@ -704,49 +847,71 @@ export default function DataUploadPage() {
                   수정한 파일 다시 올리기
                 </button>
               </div>
+
+              {renderMapperLink()}
             </section>
           )}
 
-          {/* C. 양식 인식 실패 — 이때만 관리자용 직접 연결을 노출한다 */}
+          {/* C. 양식 인식 실패 — 무엇이 모자라서 못 읽었는지까지 알려준다 */}
           {reviewState === 'unrecognized' && !showAdvanced && (
             <section className="rounded-2xl border border-slate-200 bg-white px-9 py-9">
               <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">
                 이 파일의 양식을 확인할 수 없습니다
               </h2>
-              <p className="mt-3 max-w-md text-sm leading-relaxed text-slate-500">
-                화성시 표준 양식과 구조가 달라 자동으로 가져올 수 없습니다.
+              <p className="mt-3 max-w-lg text-sm leading-relaxed text-slate-500">
+                꼭 필요한 열을 찾지 못했습니다. 아래 항목에 해당하는 열이 파일에 있는지 확인하거나,
+                열 연결을 직접 지정해 주세요.
               </p>
               <p className="mt-5 text-sm text-slate-400">{fileNameRef.current}</p>
 
-              <div className="mt-8">
+              {unrecognizedReasons.length > 0 && (
+                <ul className="mt-6 space-y-4">
+                  {unrecognizedReasons.map((item) => (
+                    <li key={item.sheet.sheetName}>
+                      <p className="text-xs font-medium text-slate-400">
+                        {item.sheet.sheetName} · {item.label} · {item.sheet.headerRowIndex}행을
+                        머리글로 읽음
+                      </p>
+                      {item.missing.length > 0 ? (
+                        <p className="mt-1 text-sm text-slate-800">
+                          찾지 못한 항목: {item.missing.join(', ')}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-sm text-slate-800">
+                          알아볼 수 있는 열이 없습니다.
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="mt-8 flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => openMapper()}
+                  className="rounded-lg bg-teal-600 px-7 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+                >
+                  열 연결 직접 고치기
+                </button>
                 <button
                   type="button"
                   onClick={handleReset}
-                  className="rounded-lg bg-teal-600 px-7 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+                  className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
                 >
                   다른 파일 선택
-                </button>
-              </div>
-
-              <div className="mt-8 border-t border-slate-100 pt-5">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvanced(true)}
-                  className="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-                >
-                  관리자용 직접 연결
-                  <ChevronRight size={15} />
                 </button>
               </div>
             </section>
           )}
 
-          {/* 관리자용 직접 연결 — 눌렀을 때만 ColumnMapper가 화면에 올라온다 */}
+          {/* 열 연결 직접 고치기 — 어느 상태에서든 열 수 있다 */}
           {showAdvanced && (
             <section className="rounded-2xl border border-slate-200 bg-white px-9 py-9">
-              <h2 className="text-lg font-semibold text-slate-900">관리자용 직접 연결</h2>
+              <h2 className="text-lg font-semibold text-slate-900">열 연결 직접 고치기</h2>
               <p className="mt-2 text-sm text-slate-500">
                 엑셀 열을 플랫폼 항목에 직접 연결합니다. * 표시는 꼭 필요한 항목입니다.
+                '사용 안 함'으로 둔 열은 저장되지 않습니다.
               </p>
 
               <div className="mt-6">
@@ -795,8 +960,15 @@ export default function DataUploadPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={handleReset}
+                  onClick={() => setShowAdvanced(false)}
                   className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                >
+                  확인 화면으로
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="text-sm font-medium text-slate-400 transition-colors hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
                 >
                   다른 파일 선택
                 </button>
@@ -831,6 +1003,12 @@ export default function DataUploadPage() {
               {savedSheetCount}개 자료 · {savedRecords.toLocaleString()}건
             </p>
             <p className="mt-1 text-sm text-slate-500">통합 현황에 반영되었습니다.</p>
+            {savedSummaryRows > 0 && (
+              <p className="mt-1 text-sm text-slate-400">
+                소계·합계 행 {savedSummaryRows.toLocaleString()}개는 이중 계산을 막기 위해
+                제외했습니다.
+              </p>
+            )}
 
             <div className="mt-8 flex flex-wrap items-center gap-4">
               <Link
