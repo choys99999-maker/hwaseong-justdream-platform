@@ -26,7 +26,7 @@ import { districtOfArea } from '../data/districtByArea';
 import { districtRiskLevels } from '../data/operationSummary';
 import { inventoryStatusOf } from '../utils/inventoryStatus';
 import { displayCellValue, formatUpdatedAt } from '../utils/submission';
-import { formatDate, formatNumber } from '../utils/format';
+import { formatDate, formatNumber, formatStock } from '../utils/format';
 import type { MonthlyTrendPoint } from '../types';
 
 export default function RegionDetailPage() {
@@ -228,7 +228,7 @@ export default function RegionDetailPage() {
             { key: 'organizationName', header: '읍면동', render: (row) => row.organizationName },
             { key: 'inboundQuantity', header: '입고량', render: (row) => formatNumber(row.inboundQuantity) },
             { key: 'outboundQuantity', header: '배부량', render: (row) => formatNumber(row.outboundQuantity) },
-            { key: 'stock', header: '현재 재고', render: (row) => formatNumber(row.stock) },
+            { key: 'stock', header: '현재 재고', render: (row) => formatStock(row.stock) },
             {
               key: 'expirationDate',
               header: '유통기한',
