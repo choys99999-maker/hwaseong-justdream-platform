@@ -36,9 +36,7 @@ export default function UploadStepper({ currentStep }: UploadStepperProps) {
                 {isCompleted ? <Check size={12} strokeWidth={3} /> : index + 1}
               </span>
               <span
-                className={`text-sm ${
-                  isCurrent ? 'font-medium text-slate-900' : 'text-slate-400'
-                }`}
+                className={`text-sm ${isCurrent ? 'font-medium text-slate-900' : 'text-slate-400'}`}
               >
                 {step.label}
               </span>

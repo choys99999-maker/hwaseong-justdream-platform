@@ -1,6 +1,12 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { dbGetAll, dbPut, dbDelete } from './db';
-import { PLATFORM_FIELDS } from '../config/platformFields';
+
+export interface SheetEntry {
+  sheetName: string;
+  sheetType: string;
+  columns: string[];
+  records: Record<string, string>[];
+}
 
 export interface UploadedDataset {
   id: string;
@@ -8,8 +14,9 @@ export interface UploadedDataset {
   columns: string[];
   fileName: string;
   uploadedAt: string;
-  /** 항목 이름 → 엑셀 열 이름. 업로드할 때 자동으로 연결하거나 사용자가 직접 고른 값. */
-  fieldMap?: Record<string, string>;
+  sheetName?: string;
+  sheetType?: string;
+  sheets?: SheetEntry[];
 }
 
 interface DataStoreValue {
@@ -19,6 +26,7 @@ interface DataStoreValue {
   isLoading: boolean;
   addDataset: (data: Omit<UploadedDataset, 'id'>) => void;
   removeDataset: (id: string) => void;
+  clearAll: () => void;
   setActiveId: (id: string) => void;
 }
 
@@ -68,6 +76,15 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     dbDelete(id).catch(() => {});
   }
 
+  function clearAll() {
+    for (const d of datasets) {
+      dbDelete(d.id).catch(() => {});
+    }
+    setDatasets([]);
+    setActiveIdState(null);
+    localStorage.removeItem(ACTIVE_KEY);
+  }
+
   function setActiveId(id: string) {
     setActiveIdState(id);
     localStorage.setItem(ACTIVE_KEY, id);
@@ -75,7 +92,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
 
   return (
     <DataStoreContext.Provider
-      value={{ datasets, activeId, dataset, isLoading, addDataset, removeDataset, setActiveId }}
+      value={{ datasets, activeId, dataset, isLoading, addDataset, removeDataset, clearAll, setActiveId }}
     >
       {children}
     </DataStoreContext.Provider>
@@ -92,18 +109,15 @@ export function findCol(columns: string[], pattern: RegExp): string | null {
   return columns.find((c) => pattern.test(c)) ?? null;
 }
 
-/**
- * 항목에 연결된 엑셀 열 이름을 돌려준다.
- * 업로드할 때 저장한 연결이 있으면 그것을 쓰고, 없으면 기존처럼 이름 규칙으로 찾는다.
- */
-export function getField(dataset: UploadedDataset | null, fieldId: string): string | null {
-  if (!dataset) return null;
+export interface DatasetView {
+  records: Record<string, string>[];
+  columns: string[];
+}
 
-  // 업로드할 때 정한 연결이 있으면 그것이 우선이다.
-  // 사용자가 "가져오지 않음"으로 둔 항목은 빈 값으로 저장되므로 규칙 추측으로 되돌리지 않는다.
-  const mapped = dataset.fieldMap?.[fieldId];
-  if (mapped !== undefined) return mapped && dataset.columns.includes(mapped) ? mapped : null;
-
-  const field = PLATFORM_FIELDS.find((f) => f.id === fieldId);
-  return field ? findCol(dataset.columns, field.pattern) : null;
+export function resolveSheet(dataset: UploadedDataset, columnPattern: RegExp): DatasetView {
+  if (dataset.sheets && dataset.sheets.length > 0) {
+    const match = dataset.sheets.find((s) => findCol(s.columns, columnPattern));
+    if (match) return { records: match.records, columns: match.columns };
+  }
+  return { records: dataset.records, columns: dataset.columns };
 }

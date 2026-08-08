@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { FileUp, Search } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
-import { useDataStore, getField } from '../store/dataStore';
+import { useDataStore, findCol } from '../store/dataStore';
 
 const PAGE_SIZE = 50;
 
@@ -13,7 +13,7 @@ export default function SupportRecordsPage() {
   const [regionFilter, setRegionFilter] = useState('all');
   const [page, setPage] = useState(1);
 
-  const regionCol = getField(dataset, 'region');
+  const regionCol = dataset ? findCol(dataset.columns, /읍면동|지역|권역/) : null;
 
   const uniqueRegions = useMemo(() => {
     if (!dataset || !regionCol) return [];
@@ -38,7 +38,7 @@ export default function SupportRecordsPage() {
     [filtered, page],
   );
 
-  if (isLoading && !dataset) return null;
+  if (isLoading) return null;
   if (!dataset) {
     return (
       <div className="space-y-6">

@@ -6,7 +6,7 @@ import StatCard from '../components/common/StatCard';
 import EmptyState from '../components/common/EmptyState';
 import MonthlySupportChart from '../components/charts/MonthlySupportChart';
 import RegionUserChart from '../components/charts/RegionUserChart';
-import { useDataStore, getField } from '../store/dataStore';
+import { useDataStore, findCol } from '../store/dataStore';
 import { formatNumber } from '../utils/format';
 
 export default function DashboardPage() {
@@ -14,12 +14,12 @@ export default function DashboardPage() {
 
   const stats = useMemo(() => {
     if (!dataset) return null;
-    const { records } = dataset;
+    const { records, columns } = dataset;
 
-    const nameCol = getField(dataset, 'name');
-    const regionCol = getField(dataset, 'region');
-    const dateCol = getField(dataset, 'date');
-    const itemCol = getField(dataset, 'item');
+    const nameCol = findCol(columns, /이용자|수혜자|이름|성명/);
+    const regionCol = findCol(columns, /읍면동|지역|권역/);
+    const dateCol = findCol(columns, /지원일|날짜/);
+    const itemCol = findCol(columns, /지원품목|품목|물품/);
 
     const uniqueUsers = nameCol ? new Set(records.map((r) => r[nameCol])).size : records.length;
     const uniqueRegions = regionCol ? new Set(records.map((r) => r[regionCol]).filter(Boolean)).size : 0;
@@ -83,7 +83,7 @@ export default function DashboardPage() {
     };
   }, [dataset]);
 
-  if (isLoading && !dataset) return null;
+  if (isLoading) return null;
   if (!dataset || !stats) {
     return (
       <div className="space-y-6">
