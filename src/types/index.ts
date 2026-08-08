@@ -184,6 +184,43 @@ export interface SecondReferralCase {
   noLinkageNeeded: boolean;
 }
 
+/** 복지연계 최종 상태 */
+export type LinkageStatus = '연계완료' | '검토중' | '연계불요' | '기타';
+
+/** 연계상담 실시 여부 (서식 표기: O / X) */
+export type LinkageConductedFlag = 'O' | 'X';
+
+/** 이용자 1회 방문 기록 */
+export interface CounselingVisit {
+  visitNo: number;
+  visitDate: string;
+  visitType: VisitType;
+  counselingNote?: string;
+  linkageConducted: LinkageConductedFlag;
+  linkageStatus?: LinkageStatus;
+  linkageService?: string;
+  secondReferralDong?: string;
+}
+
+/** 화성시 2차 연계 대상자 통합 관리 레코드 */
+export interface CounselingRecord {
+  id: string;
+  seq: number;
+  orgName: string;
+  regionId: RegionId;
+  visitType: VisitType;
+  clientName: string;
+  birthDate: string;
+  address: string;
+  counselingDate: string;
+  secondReferralDong: string;
+  linkageConducted: LinkageConductedFlag;
+  linkageStatus: LinkageStatus;
+  linkageService?: string;
+  note?: string;
+  history: CounselingVisit[];
+}
+
 /** GeoJSON 링: `[경도, 위도]` 좌표 배열 */
 export type BoundaryRing = [number, number][];
 /** 폴리곤 1개: 첫 링이 외곽선, 이후 링은 구멍 */

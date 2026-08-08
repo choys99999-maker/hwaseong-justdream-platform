@@ -7,6 +7,7 @@ import PerformancePage from './pages/PerformancePage';
 import InventoryPage from './pages/InventoryPage';
 import ForecastPage from './pages/ForecastPage';
 import DataUploadPage from './pages/DataUploadPage';
+import SupportRecordsPage from './pages/SupportRecordsPage';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/regions" element={<RegionListPage />} />
         <Route path="/regions/:regionId" element={<RegionDetailPage />} />
         <Route path="/performance" element={<PerformancePage />} />
+        <Route path="/support-records" element={<SupportRecordsPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/forecast" element={<ForecastPage />} />
         <Route path="/upload" element={<DataUploadPage />} />
