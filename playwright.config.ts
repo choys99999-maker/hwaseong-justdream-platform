@@ -24,7 +24,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
+    // JupyterHub 프록시 환경에서는 vite base 가 /user/.../proxy/... 로 바뀐다.
+    // 그러면 baseURL('/') 과 라우터 경로가 어긋나므로 테스트용 서버는 항상 base='/' 로 띄운다.
+    command: 'JUPYTERHUB_SERVICE_PREFIX= npm run dev',
     url: 'http://localhost:5173',
     reuseExistingServer: true,
     timeout: 30000,

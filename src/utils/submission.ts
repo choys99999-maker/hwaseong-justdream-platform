@@ -64,6 +64,67 @@ export function isSubmittedThisWeek(iso: string, now: Date = new Date()): boolea
   return date.getTime() >= weekStart;
 }
 
+// ── 파일 이름 ─────────────────────────────────────────────
+// 읍면동마다 같은 서식을 내려받아 쓰기 때문에 파일 이름이 그대로 겹친다.
+// 다른 동끼리 겹치는 것은 그대로 둔다. 어차피 목록에 기관명이 함께 나온다.
+//
+// 문제는 같은 동 안에서 같은 이름이 다시 올라올 때다. DB(create_submission)가 이전
+// 자료를 superseded 로 내려 집계에서 빼기 때문에, 덮어쓸 생각이 없었다면 예전 자료가
+// 말없이 사라진다. 그래서 저장 전에 어느 쪽인지 물어본다.
+
+/** 이름 비교용 키. 표기 차이(자모 조합·대소문자·앞뒤 공백)로 다른 이름이 되지 않게. */
+export function fileNameKey(name: string): string {
+  return name.normalize('NFC').trim().toLowerCase();
+}
+
+function splitExtension(name: string): { stem: string; ext: string } {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return { stem: name, ext: '' };
+  return { stem: name.slice(0, dot), ext: name.slice(dot) };
+}
+
+/** 같은 기관 안에서 이름이 겹치는 자료. 다른 기관 자료는 보지 않는다. */
+export function findSameOrganizationConflicts<
+  T extends { fileName: string; organizationId: string },
+>(registered: readonly T[], fileName: string, organizationId: string): T[] {
+  if (!organizationId) return [];
+  const key = fileNameKey(fileName);
+  if (!key) return [];
+  return registered.filter(
+    (r) => r.organizationId === organizationId && fileNameKey(r.fileName) === key,
+  );
+}
+
+/**
+ * 이미 쓰인 이름과 겹치지 않는 이름을 제안한다.
+ * 읍면동 이름을 앞에 붙이는 것이 가장 알아보기 쉽다. 그래도 겹치면 번호를 붙인다.
+ * 확장자는 그대로 둔다.
+ */
+export function suggestUniqueFileName(
+  name: string,
+  takenNames: Iterable<string>,
+  organizationName?: string,
+): string {
+  const taken = new Set(Array.from(takenNames, fileNameKey));
+  const { stem, ext } = splitExtension(name.trim());
+
+  const candidates: string[] = [];
+  if (organizationName && !stem.includes(organizationName)) {
+    candidates.push(`${organizationName}_${stem}${ext}`);
+  }
+  for (let n = 2; n <= 50; n++) {
+    if (organizationName && !stem.includes(organizationName)) {
+      candidates.push(`${organizationName}_${stem} (${n})${ext}`);
+    }
+    candidates.push(`${stem} (${n})${ext}`);
+  }
+
+  for (const candidate of candidates) {
+    if (!taken.has(fileNameKey(candidate))) return candidate;
+  }
+  return `${stem} (사본)${ext}`;
+}
+
 // ── 개인정보 ──────────────────────────────────────────────
 // 자료 관리·지역 상세는 다른 지역 담당자도 보는 화면이다. 집계·운영 값은 그대로
 // 보여주되 개인 식별 항목은 가려서 내보낸다.
