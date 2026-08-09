@@ -144,6 +144,10 @@ export default function CounselingLinkageTab() {
           <FunnelStep label="복지연계" value={funnel.referralCount} unit="건" hint="읍면동 맞춤형복지팀" />
           <FunnelStep label="지속지원 판정" value={funnel.decided} unit="건" hint="가능·불가 판정 완료" isLast />
         </div>
+        <p className="mt-2 text-[11px] text-slate-400">
+          단계별 집계 기준이 달라 건수가 순서대로 줄지 않을 수 있습니다. 서식상 1차 방문에서 연계상담이 시작된
+          사례는 복지연계에 바로 집계됩니다.
+        </p>
       </section>
 
       {/* 진행 중 연계 — 담당자 확인 대상 */}

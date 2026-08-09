@@ -1316,12 +1316,11 @@ export default function SupportRecordsPage() {
       {/* 탭 안에 들어가는 화면이라 페이지 제목 없이 설명 + 등록 버튼만 둔다. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-500">
-          즉시 물품지원부터 반복방문 감지, 읍면동 복지연계, 지속지원 판정까지 관리합니다. 여기 쌓이는 이용
-          기록이 품목별 수요 분석의 입력 데이터가 됩니다.
+          즉시 물품지원부터 반복방문 감지, 읍면동 복지연계, 지속지원 판정까지 관리합니다.
         </p>
         <button
           onClick={openNewClient}
-          className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+          className="ml-auto flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
         >
           <UserPlus size={16} />
           신규 이용자 등록

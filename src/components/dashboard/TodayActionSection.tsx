@@ -92,7 +92,7 @@ export default function TodayActionSection() {
 
       {restCount > 0 && (
         <p className="mt-2 text-right text-[11px] text-slate-400">
-          외 {restCount}건 — 배분·재배분 화면에서 전체를 검토할 수 있습니다.
+          외 {restCount}건 — 부족·과잉은 배분·재배분, 유통기한 임박은 물품·재고에서 이어서 검토합니다.
         </p>
       )}
     </section>

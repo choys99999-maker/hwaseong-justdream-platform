@@ -5,6 +5,7 @@ import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
 import { useCentralData } from '../hooks/useCentralData';
 import { deleteSubmission, getSubmissionDetail } from '../store/remote';
+import { districtOfArea } from '../data/districtByArea';
 import {
   displayCellValue,
   formatPeriod,
@@ -51,6 +52,8 @@ export default function SubmissionDetailPage() {
   }
 
   const summary = detail.summary;
+  // 제출 기관(읍면동)이 속한 구. 지도·집계와 같은 행정동 경계 데이터에서 찾는다.
+  const districtId = districtOfArea(summary.organizationName);
   const sheets = detail.sheets;
   const sheet = sheets[Math.min(sheetIdx, Math.max(sheets.length - 1, 0))];
   const hasPersonalColumn = (sheet?.columns ?? []).some(isPersonalColumn);
@@ -78,12 +81,14 @@ export default function SubmissionDetailPage() {
         description={`${summary.types.map((t) => t.label).join(' · ') || '내용 없음'} · ${summary.recordCount.toLocaleString()}건`}
         actions={
           <div className="flex items-center gap-2">
-            <Link
-              to={`/regions/${encodeURIComponent(summary.organizationName)}`}
-              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
-            >
-              지역 현황에서 보기
-            </Link>
+            {districtId && (
+              <Link
+                to={`/regions/${districtId}`}
+                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+              >
+                지역 현황에서 보기
+              </Link>
+            )}
             <button
               type="button"
               onClick={handleDelete}

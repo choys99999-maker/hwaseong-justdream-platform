@@ -124,6 +124,20 @@ function buildReasons(
       `이동 후에도 도착 기관에 ${formatNumber(to.sevenDayDemand - toAfter)}개 부족이 남음 — 추가 확보 병행 필요`,
     );
   }
+  // 같은 기관이 여러 추천의 출발지면, 개별 카드 수치만 보고 겹침을 놓치지 않도록 누적 결과를 밝힌다.
+  const siblings = redistributionRecommendations.filter(
+    (other) => other.fromSiteId === rec.fromSiteId && other.id !== rec.id,
+  );
+  if (siblings.length > 0) {
+    const totalMove = rec.moveQuantity + siblings.reduce((sum, other) => sum + other.moveQuantity, 0);
+    reasons.push(
+      `이 기관은 우선순위 ${siblings
+        .map((other) => other.priority)
+        .join('·')} 추천의 출발 기관이기도 함 — 전체 실행 시 재고 ${formatNumber(
+        from.inventoryCount - totalMove,
+      )}개로 7일 예상 수요의 120% 이상 유지`,
+    );
+  }
   return reasons;
 }
 

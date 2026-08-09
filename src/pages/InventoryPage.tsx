@@ -110,12 +110,15 @@ function depletionLabel(item: Row): { text: string; className: string } {
 
 // 과잉·폐기·추천 휴리스틱은 화면 표시 재고(displayStock = DB stock − 현장 출고)를 쓴다.
 // 상태 라벨('부족' 등) 판정 자체는 계속 중앙 DB 가 한다.
+// 과잉 기준: 재고가 기간 배부량의 2배 이상(주간 환산 약 2주분 이상).
+// 거점 시연 데이터의 SURPLUS_RATIO(7일 수요의 2배)와 같은 눈높이이며,
+// '예상 소진' 추정(약 14일 미만)과 서로 모순되는 판정이 나오지 않는다.
 function isSurplus(item: Row): boolean {
   return (
     item.outboundQuantity > 0 &&
     item.displayStock !== null &&
     item.displayStock > 20 &&
-    item.displayStock / item.outboundQuantity >= 0.5
+    item.displayStock / item.outboundQuantity >= 2
   );
 }
 
