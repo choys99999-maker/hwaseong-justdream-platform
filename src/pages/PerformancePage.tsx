@@ -1,26 +1,22 @@
 import { useMemo, useState } from 'react';
-import { ShieldCheck } from 'lucide-react';
-import PageHeader from '../components/common/PageHeader';
 import DataTable from '../components/common/DataTable';
 import CentralDataNotice from '../components/common/CentralDataNotice';
 import { useCentralData } from '../hooks/useCentralData';
-import {
-  listAllReferralRows,
-  listPerformanceRows,
-  type CityReferralRow,
-  type PerformanceRow,
-} from '../store/analytics';
+import { listPerformanceRows, type PerformanceRow } from '../store/analytics';
 import { districtOfArea } from '../data/districtByArea';
 import { REGION_NAMES } from '../data/regionMeta';
-import { displayCellValue } from '../utils/submission';
-import { formatDate, formatNumber } from '../utils/format';
+import { formatNumber } from '../utils/format';
 
-type TabKey = 'weekly' | 'cumulative' | 'referral';
+/**
+ * [지원 실적] 탭 — 이용·지원 현황 페이지 안에서 쓴다.
+ * 화성형 그냥드림 실적 서식 기준 주별·누적 실적. 2차 연계 대상자 표는
+ * [상담·복지연계] 탭(`CounselingLinkageTab`)으로 옮겼다.
+ */
+type TabKey = 'weekly' | 'cumulative';
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'weekly', label: '주별 실적' },
   { key: 'cumulative', label: '누계' },
-  { key: 'referral', label: '2차 연계 대상자' },
 ];
 
 /** 실적 표 한 줄 = 제출 기관(읍면동) × 실적 서식의 기관명. */
@@ -125,80 +121,24 @@ const performanceColumns = [
   },
 ];
 
-/**
- * 2차 연계 대상자 — 시 전체가 함께 보는 화면이라 개인 식별 항목은 가려서 보여준다.
- * 이름은 첫 글자만, 생년월일·연락처는 비공개, 주소는 읍면동까지만.
- */
-const referralColumns = [
-  { key: 'orgName', header: '기관명', render: (row: CityReferralRow) => row.organizationName },
-  { key: 'visitType', header: '방문구분', render: (row: CityReferralRow) => row.visitType ?? '-' },
-  {
-    key: 'clientName',
-    header: '대상자',
-    render: (row: CityReferralRow) => displayCellValue('대상자', row.clientName ?? '') || '-',
-  },
-  {
-    key: 'birthDate',
-    header: '생년월일',
-    render: (row: CityReferralRow) => displayCellValue('생년월일', row.birthDate ?? '') || '-',
-  },
-  {
-    key: 'address',
-    header: '주소',
-    render: (row: CityReferralRow) => displayCellValue('주소', row.address ?? '') || '-',
-  },
-  {
-    key: 'consultDate',
-    header: '상담일자',
-    render: (row: CityReferralRow) => (row.consultDate ? formatDate(row.consultDate) : '-'),
-  },
-  {
-    key: 'referralTarget',
-    header: '2차 연계처(읍면동)',
-    render: (row: CityReferralRow) => row.referralTarget ?? '-',
-  },
-  {
-    key: 'consultationDone',
-    header: '연계상담 실시 여부',
-    render: (row: CityReferralRow) => row.consultationDone ?? '-',
-  },
-  { key: 'linkageType', header: '연계완료', render: (row: CityReferralRow) => row.linkageType ?? '-' },
-  { key: 'serviceDetails', header: '기타 내역', render: (row: CityReferralRow) => row.serviceDetails ?? '-' },
-];
-
-export default function PerformancePage() {
+export default function PerformanceRecordsTab() {
   const [activeTab, setActiveTab] = useState<TabKey>('weekly');
 
-  const { data, error, isLoading } = useCentralData(
-    () =>
-      Promise.all([listPerformanceRows(), listAllReferralRows()]).then(([performance, referrals]) => ({
-        performance,
-        referrals,
-      })),
-    [],
-  );
+  const { data, error, isLoading } = useCentralData(() => listPerformanceRows(), []);
 
-  const weekly = useMemo(() => aggregate(latestSubmissionRows(data?.performance ?? [])), [data]);
-  const cumulative = useMemo(() => aggregate(data?.performance ?? []), [data]);
-  const referrals = useMemo(() => data?.referrals ?? [], [data]);
-
-  const hasAnything = weekly.length > 0 || referrals.length > 0;
+  const weekly = useMemo(() => aggregate(latestSubmissionRows(data ?? [])), [data]);
+  const cumulative = useMemo(() => aggregate(data ?? []), [data]);
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="실적·복지연계"
-        description="화성형 그냥드림 실적 서식을 기준으로 주별·누적 실적과 2차 연계 대상자를 확인합니다. 중앙 저장소에 올라온 자료를 집계합니다."
-      />
-
+    <div className="space-y-4">
       <CentralDataNotice
         isLoading={isLoading}
         error={error}
-        isEmpty={!hasAnything}
+        isEmpty={weekly.length === 0}
         emptyMessage="아직 올라온 실적 자료가 없습니다."
       />
 
-      {hasAnything && (
+      {weekly.length > 0 && (
         <>
           <div className="inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1">
             {TABS.map((tab) => (
@@ -243,22 +183,6 @@ export default function PerformancePage() {
                 data={cumulative}
                 rowKey={(row) => row.id}
                 emptyMessage="누적 실적 데이터가 없습니다."
-              />
-            </section>
-          )}
-
-          {activeTab === 'referral' && (
-            <section className="space-y-3">
-              <p className="text-sm text-slate-500">2차 상담 연계가 의뢰된 대상자별 상세 현황입니다.</p>
-              <p className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-500 ring-1 ring-inset ring-slate-200">
-                <ShieldCheck size={14} className="text-slate-400" />
-                시 전체가 함께 보는 화면이므로 이름·생년월일·상세 주소는 가려서 표시합니다.
-              </p>
-              <DataTable
-                columns={referralColumns}
-                data={referrals}
-                rowKey={(row) => `${row.organizationId}-${row.serialNo ?? ''}-${row.consultDate ?? ''}-${row.clientName ?? ''}`}
-                emptyMessage="2차 연계 대상자가 없습니다."
               />
             </section>
           )}

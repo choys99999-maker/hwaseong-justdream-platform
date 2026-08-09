@@ -4,7 +4,7 @@ import { AlertCircle, ChevronRight, FolderClosed, Plus } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
 import { useCentralData } from '../hooks/useCentralData';
-import { listSubmissions, type RemoteSubmissionSummary } from '../store/remote';
+import { listOrganizations, listSubmissions, type RemoteSubmissionSummary } from '../store/remote';
 import {
   formatPeriod,
   formatUpdatedAt,
@@ -39,26 +39,47 @@ function fromRemote(s: RemoteSubmissionSummary): SubmissionView {
   };
 }
 
+type StatusFilter = 'all' | 'ok' | 'issue';
+
 export default function DataLibraryPage() {
   const [scope, setScope] = useState<'all' | 'mine'>('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [showMissingList, setShowMissingList] = useState(false);
   const [myRegion, setMyRegion] = useState(() => localStorage.getItem(MY_REGION_KEY) ?? '');
 
+  // 제출 자료와 함께 전체 기관 명단을 읽어 "누가 아직 안 냈는지"까지 보여준다.
   const { data: remote, error: remoteError, isLoading } = useCentralData(
-    () => listSubmissions(),
+    () =>
+      Promise.all([listSubmissions(), listOrganizations()]).then(([submissions, organizations]) => ({
+        submissions,
+        organizations,
+      })),
     [],
   );
 
   const submissions = useMemo<SubmissionView[]>(
-    () => (remote ?? []).map(fromRemote),
+    () => (remote?.submissions ?? []).map(fromRemote),
     [remote],
   );
+  const organizations = useMemo(() => remote?.organizations ?? [], [remote]);
 
-  const allRegions = useMemo(() => {
+  // 제출/미제출은 기관 명단(organizations) 기준으로 가른다.
+  const submittedNames = useMemo(() => {
     const set = new Set<string>();
     for (const s of submissions) for (const r of s.regions) set.add(r);
-    return Array.from(set).sort((a, b) => a.localeCompare(b, 'ko'));
+    return set;
   }, [submissions]);
+
+  const missingOrganizations = useMemo(
+    () => organizations.filter((org) => !submittedNames.has(org.name)),
+    [organizations, submittedNames],
+  );
+
+  const issueCount = submissions.filter((s) => s.issues > 0).length;
+  const thisWeekCount = submissions.filter((s) => isSubmittedThisWeek(s.uploadedAt)).length;
+
+  const allRegions = useMemo(() => Array.from(submittedNames).sort((a, b) => a.localeCompare(b, 'ko')), [submittedNames]);
 
   const allTypes = useMemo(() => {
     const map = new Map<string, string>();
@@ -70,10 +91,10 @@ export default function DataLibraryPage() {
     // 내 지역을 아직 고르지 않았으면 아무 것도 보여주지 않고 먼저 고르게 한다.
     if (scope === 'mine' && (!myRegion || !s.regions.includes(myRegion))) return false;
     if (typeFilter !== 'all' && !s.types.some((t) => t.type === typeFilter)) return false;
+    if (statusFilter === 'ok' && s.issues > 0) return false;
+    if (statusFilter === 'issue' && s.issues === 0) return false;
     return true;
   });
-
-  const thisWeekCount = submissions.filter((s) => isSubmittedThisWeek(s.uploadedAt)).length;
 
   function selectMyRegion(region: string) {
     setMyRegion(region);
@@ -95,7 +116,7 @@ export default function DataLibraryPage() {
     <div className="mx-auto w-full max-w-[1280px]">
       <PageHeader
         title="자료 관리"
-        description="지역별 자료를 올리고 제출된 자료를 확인할 수 있습니다."
+        description="읍면동 제출 자료를 수집·검수하는 허브입니다. 여기서 저장된 자료가 대시보드·재고·실적 화면의 기준 데이터가 됩니다."
         actions={uploadButton}
       />
 
@@ -106,20 +127,74 @@ export default function DataLibraryPage() {
         </div>
       )}
 
-      {submissions.length === 0 ? (
-        <EmptyState
-          icon={FolderClosed}
-          title="아직 제출된 자료가 없습니다"
-          message="자료 올리기 버튼을 눌러 표준 양식으로 작성한 Excel 파일을 올려주세요."
+      {/* 제출 현황 요약 — 전체 기관 대비 어디까지 걷혔는지 */}
+      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <SummaryTile label="전체 기관" value={organizations.length} unit="곳" hint="자료 제출 대상 읍면동" />
+        <SummaryTile
+          label="제출 완료"
+          value={submittedNames.size}
+          unit="곳"
+          hint={`이번 주 제출 ${thisWeekCount.toLocaleString()}건`}
+          tone="teal"
         />
+        <button
+          type="button"
+          onClick={() => setShowMissingList((v) => !v)}
+          disabled={missingOrganizations.length === 0}
+          aria-expanded={showMissingList}
+          className={`rounded-xl border px-5 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+            missingOrganizations.length === 0
+              ? 'cursor-default border-slate-200 bg-white'
+              : showMissingList
+                ? 'border-amber-400 bg-amber-50 ring-1 ring-inset ring-amber-400'
+                : 'border-amber-200 bg-white hover:border-amber-300 hover:bg-amber-50/40'
+          }`}
+        >
+          <span className="text-sm text-slate-500">미제출</span>
+          <span className="mt-1.5 block text-2xl font-semibold tabular-nums text-slate-900">
+            {missingOrganizations.length.toLocaleString()}
+            <span className="ml-1 text-sm font-normal text-slate-400">곳</span>
+          </span>
+          <span className="mt-0.5 block text-xs text-amber-700">
+            {missingOrganizations.length === 0 ? '전 기관 제출 완료' : showMissingList ? '명단 접기' : '명단 보기'}
+          </span>
+        </button>
+        <SummaryTile
+          label="검토 필요"
+          value={issueCount}
+          unit="건"
+          hint="값 오류가 발견된 제출 자료"
+          tone={issueCount > 0 ? 'amber' : 'default'}
+        />
+      </dl>
+
+      {/* 미제출 기관 명단 */}
+      {showMissingList && missingOrganizations.length > 0 && (
+        <section className="mt-3 rounded-xl border border-amber-200 bg-amber-50/50 px-4 py-3" aria-label="미제출 기관 명단">
+          <p className="text-xs font-medium text-amber-800">아직 자료를 제출하지 않은 기관</p>
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {missingOrganizations.map((org) => (
+              <li
+                key={org.id}
+                className="rounded-md bg-white px-2 py-1 text-xs text-slate-600 ring-1 ring-inset ring-amber-200"
+              >
+                {org.name}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {submissions.length === 0 ? (
+        <div className="mt-6">
+          <EmptyState
+            icon={FolderClosed}
+            title="아직 제출된 자료가 없습니다"
+            message="자료 올리기 버튼을 눌러 표준 양식으로 작성한 Excel 파일을 올려주세요."
+          />
+        </div>
       ) : (
         <>
-          <dl className="grid grid-cols-3 gap-4">
-            <SummaryTile label="전체 자료" value={submissions.length} unit="건" />
-            <SummaryTile label="이번 주 제출" value={thisWeekCount} unit="건" />
-            <SummaryTile label="반영된 지역" value={allRegions.length} unit="곳" />
-          </dl>
-
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
               <ScopeTab active={scope === 'all'} onClick={() => setScope('all')}>
@@ -149,6 +224,17 @@ export default function DataLibraryPage() {
               </label>
             )}
 
+            {/* 상태 필터 */}
+            <div className="flex items-center gap-1.5" role="group" aria-label="상태 필터">
+              <StatusChip label="전체" active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} />
+              <StatusChip label="제출완료" active={statusFilter === 'ok'} onClick={() => setStatusFilter('ok')} />
+              <StatusChip
+                label={`검토 필요 ${issueCount}`}
+                active={statusFilter === 'issue'}
+                onClick={() => setStatusFilter('issue')}
+              />
+            </div>
+
             {allTypes.length > 1 && (
               <select
                 aria-label="자료 유형"
@@ -168,10 +254,10 @@ export default function DataLibraryPage() {
 
           <section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
             <div className="grid grid-cols-[1.3fr_2fr_1fr_1fr_1fr_28px] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-medium text-slate-400">
-              <span>지역</span>
-              <span>자료</span>
-              <span>기간</span>
-              <span>상태</span>
+              <span>제출 기관</span>
+              <span>자료 · 읽은 행 수</span>
+              <span>기준 기간</span>
+              <span>검수 상태</span>
               <span>업데이트</span>
               <span />
             </div>
@@ -199,7 +285,7 @@ export default function DataLibraryPage() {
                           ? '내용 없음'
                           : s.types.map((t) => t.label).join(' · ')}
                         <span className="ml-2 text-xs text-slate-400">
-                          {s.records.toLocaleString()}건
+                          {s.records.toLocaleString()}행
                         </span>
                       </span>
 
@@ -225,21 +311,61 @@ export default function DataLibraryPage() {
             )}
           </section>
 
+          <p className="mt-3 text-xs text-slate-400">
+            출처: 읍면동 제출 Excel · 기준: 기관별 최신 유효 제출본(재제출로 대체된 자료 제외) · 자료를 열면 읽은 행
+            수·인식된 시트 유형·오류 내역을 확인할 수 있습니다.
+          </p>
         </>
       )}
     </div>
   );
 }
 
-function SummaryTile({ label, value, unit }: { label: string; value: number; unit: string }) {
+function SummaryTile({
+  label,
+  value,
+  unit,
+  hint,
+  tone = 'default',
+}: {
+  label: string;
+  value: number;
+  unit: string;
+  hint?: string;
+  tone?: 'default' | 'teal' | 'amber';
+}) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-5 py-4">
+    <div
+      className={`rounded-xl border px-5 py-4 ${
+        tone === 'amber' ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-white'
+      }`}
+    >
       <dt className="text-sm text-slate-500">{label}</dt>
       <dd className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900">
         {value.toLocaleString()}
         <span className="ml-1 text-sm font-normal text-slate-400">{unit}</span>
       </dd>
+      {hint && (
+        <p className={`mt-0.5 text-xs ${tone === 'teal' ? 'text-teal-600' : tone === 'amber' ? 'text-amber-700' : 'text-slate-400'}`}>
+          {hint}
+        </p>
+      )}
     </div>
+  );
+}
+
+function StatusChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+        active ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 

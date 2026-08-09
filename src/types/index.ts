@@ -37,7 +37,8 @@ export interface SupportRecord {
   counselingStatus: CounselingStatus;
 }
 
-export type InventoryStatus = '정상' | '임박' | '부족' | '확인 필요';
+/** '과잉'은 중앙 DB 판정에는 없고, 화면에서 배부량 대비 재고 여유로 파생하는 표시 상태다. */
+export type InventoryStatus = '정상' | '임박' | '부족' | '과잉' | '확인 필요';
 
 export type ItemCategory = '식품' | '위생용품' | '생필품' | '영유아용품' | '기타';
 

@@ -200,7 +200,7 @@ export default function OperationMapSection() {
           className={
             isFocusMode
               ? 'relative flex-1'
-              : 'relative mt-2 h-[clamp(600px,calc(100vh-280px),900px)]'
+              : 'relative mt-2 h-[clamp(440px,calc(100vh-420px),720px)]'
           }
         >
           <KakaoDistrictMap
@@ -270,7 +270,7 @@ export default function OperationMapSection() {
             }}
             aria-hidden={isPanelCollapsed}
           >
-            <h3 className="shrink-0 text-sm font-semibold text-slate-900">오늘의 조치 필요 사항</h3>
+            <h3 className="shrink-0 text-sm font-semibold text-slate-900">선택 지역·기관 요약</h3>
             <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
               <OperationActionPanel
                 selectedDistrict={selectedDistrict}

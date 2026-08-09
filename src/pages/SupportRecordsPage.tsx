@@ -6,7 +6,6 @@ import {
   X, Edit2, Trash2, PackageCheck, ShieldCheck,
   ClipboardCheck, AlertTriangle, Check, Minus,
 } from 'lucide-react';
-import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
 import type {
   BasicCounseling, Client, ContinuedSupport, LinkageCompletionType,
@@ -1314,20 +1313,20 @@ export default function SupportRecordsPage() {
 
   return (
     <div className="space-y-5">
-      {/* 페이지 헤더 */}
-      <PageHeader
-        title="이용자·상담 관리"
-        description="즉시 물품지원부터 반복방문 감지, 읍면동 복지연계, 지속지원 판정까지 한 화면에서 관리합니다."
-        actions={
-          <button
-            onClick={openNewClient}
-            className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
-          >
-            <UserPlus size={16} />
-            신규 이용자 등록
-          </button>
-        }
-      />
+      {/* 탭 안에 들어가는 화면이라 페이지 제목 없이 설명 + 등록 버튼만 둔다. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-500">
+          즉시 물품지원부터 반복방문 감지, 읍면동 복지연계, 지속지원 판정까지 관리합니다. 여기 쌓이는 이용
+          기록이 품목별 수요 분석의 입력 데이터가 됩니다.
+        </p>
+        <button
+          onClick={openNewClient}
+          className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+        >
+          <UserPlus size={16} />
+          신규 이용자 등록
+        </button>
+      </div>
 
       {/* 통계 카드 — 지표마다 무엇을 뜻하는지 한 줄로 붙인다. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

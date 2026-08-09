@@ -11,10 +11,10 @@ export default function MonthlyFlowChart() {
       <p className="mt-1 text-sm text-slate-500">화성시 4개 구 합산 기준</p>
       <div className="mt-4 h-64">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={monthlyInventoryFlow} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+          <LineChart data={monthlyInventoryFlow} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
             <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-            <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} width={36} />
+            <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={false} tickLine={false} width={44} />
             <Tooltip
               contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0', fontSize: 13 }}
               formatter={(value, name) => [`${Number(value).toLocaleString('ko-KR')}개`, name]}

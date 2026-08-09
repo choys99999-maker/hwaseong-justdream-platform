@@ -1,21 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import {
   Boxes,
-  Building2,
   FileSpreadsheet,
-  HandHeart,
-  Map,
   MapPin,
   PackageSearch,
   Repeat2,
   TimerReset,
-  TrendingUp,
   Users,
 } from 'lucide-react';
 import StatCard from '../components/common/StatCard';
 import StatusBadge from '../components/common/StatusBadge';
 import EmptyState from '../components/common/EmptyState';
 import CentralDataNotice from '../components/common/CentralDataNotice';
+import TodayActionSection from '../components/dashboard/TodayActionSection';
 import OperationMapSection from '../components/dashboard/OperationMapSection';
 import SiteCompositionModal from '../components/dashboard/SiteCompositionModal';
 import MonthlyFlowChart from '../components/charts/MonthlyFlowChart';
@@ -24,8 +21,10 @@ import { useCentralData } from '../hooks/useCentralData';
 import { getCityOverview, listInventoryStatus } from '../store/analytics';
 import { listSubmissions } from '../store/remote';
 import { mockRedistributionRecords } from '../data/mockRedistributions';
-import { citySummary } from '../data/operationSummary';
-import { JUSTDREAM_SITE_SUMMARY, SITE_COUNT_BY_DISTRICT } from '../data/justdreamSummary';
+import { citySummary, redistributionRecommendations } from '../data/operationSummary';
+import { EXPIRING_THRESHOLD, mockSites } from '../data/mockSites';
+import { JUSTDREAM_SITE_SUMMARY } from '../data/justdreamSummary';
+import { countPendingReview, getPlanSnapshot, subscribePlan } from '../store/redistributionPlan';
 import { inventoryStatusOf } from '../utils/inventoryStatus';
 import { formatUpdatedAt } from '../utils/submission';
 import { formatDate, formatNumber } from '../utils/format';
@@ -33,6 +32,9 @@ import { formatDate, formatNumber } from '../utils/format';
 const recentRedistributions = [...mockRedistributionRecords]
   .sort((a, b) => b.date.localeCompare(a.date))
   .slice(0, 5);
+
+/** 유통기한 임박 수량이 기준 이상인 거점 수 (시연 데이터 기준) */
+const expiringSiteCount = mockSites.filter((site) => site.expiringCount >= EXPIRING_THRESHOLD).length;
 
 /** 유통기한 임박 패널에 올릴 최대 건수 */
 const EXPIRING_PANEL_LIMIT = 5;
@@ -42,7 +44,14 @@ const ISSUE_PANEL_LIMIT = 5;
 export default function DashboardPage() {
   const [isCompositionModalOpen, setIsCompositionModalOpen] = useState(false);
 
-  // 중앙 저장소 집계. 지도·거점 현황은 이 조회와 무관하게 항상 그려진다.
+  // 재배분 검토 상태 — 배분·재배분 화면에서 처리하면 이 KPI가 즉시 줄어든다.
+  const planStatuses = useSyncExternalStore(subscribePlan, getPlanSnapshot);
+  const pendingRedistribution = countPendingReview(
+    planStatuses,
+    redistributionRecommendations.map((rec) => rec.id),
+  );
+
+  // 중앙 저장소 집계. 지도·거점 현황·조치 목록은 이 조회와 무관하게 항상 그려진다.
   const { data, error, isLoading } = useCentralData(
     () =>
       Promise.all([getCityOverview(), listInventoryStatus(), listSubmissions()]).then(
@@ -77,10 +86,16 @@ export default function DashboardPage() {
   return (
     <div className="space-y-3">
       {/*
-        핵심 KPI — 전부 justdream_sites_25(확정 데이터)에서 계산한 값이다.
-        아래 운영 지표는 아직 시연용 합성 수치라, 같은 줄에 섞지 않고 구역을 나눠 표기한다.
+        핵심 KPI 4개 — 담당자가 화면을 열자마자 "어디에 문제가 있는지"를 판단하는 값.
+        운영 기관 수는 확정 자료(justdream_sites_25), 부족·임박·재배분은 시연용 합성 수치다.
       */}
-      <section aria-label="운영 거점 현황">
+      <section aria-label="핵심 운영 지표">
+        <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+          <h2 className="text-xs font-medium text-slate-500">핵심 운영 지표</h2>
+          <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 ring-1 ring-amber-600/20">
+            부족·임박·재배분은 시연 데이터
+          </span>
+        </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <button
             type="button"
@@ -89,9 +104,11 @@ export default function DashboardPage() {
           >
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs text-slate-500">전체 운영 거점</p>
+                <p className="text-xs text-slate-500">운영 기관</p>
                 <p className="mt-1.5 text-xl font-semibold text-slate-900">{JUSTDREAM_SITE_SUMMARY.total}곳</p>
-                <p className="mt-0.5 text-xs text-teal-600">거점 구성 보기 ↗</p>
+                <p className="mt-0.5 text-xs text-teal-600">
+                  복지기관 {JUSTDREAM_SITE_SUMMARY.welfareOrgCount} · 협의체 {JUSTDREAM_SITE_SUMMARY.councilCount} ↗
+                </p>
               </div>
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">
                 <MapPin size={17} />
@@ -99,27 +116,35 @@ export default function DashboardPage() {
             </div>
           </button>
           <StatCard
-            label="복지기관"
-            value={`${JUSTDREAM_SITE_SUMMARY.welfareOrgCount}곳`}
-            icon={Building2}
-            description="종합사회복지관 · 노인/장애인복지관"
+            label="부족 위험 기관"
+            value={`${formatNumber(citySummary.shortageSiteCount)}곳`}
+            icon={PackageSearch}
+            description={`7일 내 ${formatNumber(citySummary.shortageQuantity)}개 부족 예상`}
+            tone="danger"
           />
           <StatCard
-            label="지역사회보장협의체"
-            value={`${JUSTDREAM_SITE_SUMMARY.councilCount}곳`}
-            icon={HandHeart}
-            description="읍면동 행정복지센터 운영"
+            label="유통기한 임박 수량"
+            value={`${formatNumber(citySummary.expiringQuantity)}개`}
+            icon={TimerReset}
+            description={`임박 기준 초과 기관 ${formatNumber(expiringSiteCount)}곳`}
+            tone="warning"
           />
           <StatCard
-            label="운영 권역"
-            value={`${JUSTDREAM_SITE_SUMMARY.districtCount}개 구`}
-            icon={Map}
-            description={SITE_COUNT_BY_DISTRICT.map((d) => `${d.name} ${d.count}`).join(' · ')}
+            label="재배분 검토"
+            value={`${formatNumber(pendingRedistribution)}건`}
+            icon={Repeat2}
+            description={`전체 제안 ${formatNumber(redistributionRecommendations.length)}건`}
           />
         </div>
       </section>
 
       {isCompositionModalOpen && <SiteCompositionModal onClose={() => setIsCompositionModalOpen(false)} />}
+
+      {/* 오늘 조치가 필요한 사항 — KPI 바로 아래, 지도보다 먼저 온다. */}
+      <TodayActionSection />
+
+      {/* 지도 — 조치가 필요한 위치를 공간적으로 확인한다. */}
+      <OperationMapSection />
 
       {/* 중앙 저장소 집계 — 읍면동이 올린 Excel 자료에서 계산한 실제 값이다. */}
       <section aria-label="중앙 자료 집계">
@@ -174,34 +199,7 @@ export default function DashboardPage() {
         )}
       </section>
 
-      {/* 수요·재배분 — 아직 중앙 DB에서 계산할 수 없는 시연용 수치다. */}
-      <section aria-label="수요·재배분 지표 (시연 데이터)">
-        <div className="mb-1.5 flex items-center gap-1.5">
-          <h2 className="text-xs font-medium text-slate-500">수요·재배분 지표</h2>
-          <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 ring-1 ring-amber-600/20">
-            시연 데이터
-          </span>
-          <span className="text-[11px] text-slate-400">수요 예측 수치는 실제 운영 데이터가 아닙니다</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-          <StatCard
-            label="7일 예상 수요"
-            value={`${formatNumber(citySummary.sevenDayDemandTotal)}개`}
-            icon={TrendingUp}
-          />
-          <StatCard
-            label="7일 내 부족 예상"
-            value={`${formatNumber(citySummary.shortageSiteCount)}개소`}
-            icon={PackageSearch}
-            description={`부족 ${formatNumber(citySummary.shortageQuantity)}개`}
-            tone="danger"
-          />
-          <StatCard label="재배분 필요 건수" value={`${formatNumber(citySummary.recommendationCount)}건`} icon={Repeat2} />
-        </div>
-      </section>
-
-      <OperationMapSection />
-
+      {/* 보조 차트 — 추이 확인용. 조치 판단은 위 구역에서 끝나는 것이 원칙이다. */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <MonthlyFlowChart />
         <DistrictRiskChart />

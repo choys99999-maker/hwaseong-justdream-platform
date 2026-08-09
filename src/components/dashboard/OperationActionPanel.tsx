@@ -92,9 +92,18 @@ function RecommendationList({
           ))}
         </ul>
       )}
+      {recommendations.length > 0 && (
+        <Link
+          to="/redistribution"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          배분·재배분에서 검토
+          <ArrowRight size={12} />
+        </Link>
+      )}
       <p className="mt-2 flex items-start gap-1 text-[11px] text-slate-400">
         <Info size={12} className="mt-0.5 shrink-0" />
-        합성 데이터에 부족·여유 수량 규칙을 적용한 결정론적 추천입니다. 실제 AI 모델을 호출하지 않습니다.
+        합성 데이터에 부족·여유 수량 규칙을 적용한 결정론적 추천입니다.
       </p>
     </div>
   );
@@ -169,7 +178,7 @@ export default function OperationActionPanel({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <RecommendationList
-            title="AI 재배분 추천"
+            title="재배분 추천"
             recommendations={siteRecommendations}
             emptyMessage={
               selectedSite.status === 'missing'
@@ -249,7 +258,7 @@ export default function OperationActionPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <RecommendationList
-          title="우선순위 높은 AI 재배분 추천"
+          title="우선 검토가 필요한 재배분 추천"
           recommendations={redistributionRecommendations.slice(0, CITY_RECOMMENDATION_LIMIT)}
           emptyMessage="현재 재배분이 필요한 거점이 없습니다."
         />

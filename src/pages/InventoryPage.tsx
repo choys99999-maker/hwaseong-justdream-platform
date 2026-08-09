@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   ChevronDown,
@@ -28,8 +29,9 @@ import type { InventoryStatus } from '../types';
 const STATUS_TABS = [
   { value: 'all',    label: '전체'     },
   { value: '정상',   label: '정상'     },
-  { value: '임박',   label: '임박'     },
   { value: '부족',   label: '부족'     },
+  { value: '과잉',   label: '과잉'     },
+  { value: '임박',   label: '임박'     },
   { value: '확인 필요', label: '확인 필요' },
 ] as const;
 
@@ -44,7 +46,16 @@ const STATUS_DOT: Record<string, string> = {
   '정상':    'bg-emerald-500',
   '임박':    'bg-amber-500',
   '부족':    'bg-rose-500',
-  '확인 필요': 'bg-rose-400',
+  '과잉':    'bg-sky-500',
+  '확인 필요': 'bg-slate-400',
+};
+
+/** 상태별 권장 조치. 행이 상태 표시에서 끝나지 않고 다음 행동으로 이어지게 한다. */
+const STATUS_ACTIONS: Record<string, { label: string; className: string } | undefined> = {
+  '부족':    { label: '재배분 제안 확인',    className: 'text-rose-600 font-medium' },
+  '임박':    { label: '우선 소진·이동 검토', className: 'text-amber-600 font-medium' },
+  '과잉':    { label: '재배분 가능',         className: 'text-sky-600 font-medium' },
+  '확인 필요': { label: '데이터 확인 필요',   className: 'text-slate-500' },
 };
 
 const ALERT_STYLES = {
@@ -82,6 +93,21 @@ function dDayClass(days: number): string {
   return 'text-slate-500';
 }
 
+/**
+ * 예상 소진 시점. 기간 배부량을 주 1회 제출 주기 기준의 주간 배부 속도로 보고
+ * 현재 표시 재고를 나눈 단순 추정이다. 근거 없는 정밀도를 피하려고 일 단위 상한을 둔다.
+ */
+function depletionLabel(item: Row): { text: string; className: string } {
+  if (item.displayStock === null) return { text: '—', className: 'text-slate-300' };
+  if (item.displayStock <= 0) return { text: '소진됨', className: 'text-rose-600 font-medium' };
+  if (item.outboundQuantity <= 0) return { text: '—', className: 'text-slate-300' };
+  const days = Math.ceil(item.displayStock / (item.outboundQuantity / 7));
+  if (days > 60) return { text: '60일 이상', className: 'text-slate-400' };
+  if (days <= 7) return { text: `약 ${days}일`, className: 'text-rose-600 font-medium' };
+  if (days <= 14) return { text: `약 ${days}일`, className: 'text-amber-600' };
+  return { text: `약 ${days}일`, className: 'text-slate-500' };
+}
+
 // 과잉·폐기·추천 휴리스틱은 화면 표시 재고(displayStock = DB stock − 현장 출고)를 쓴다.
 // 상태 라벨('부족' 등) 판정 자체는 계속 중앙 DB 가 한다.
 function isSurplus(item: Row): boolean {
@@ -98,28 +124,30 @@ function isDisposalRisk(item: Row): boolean {
   return d !== null && d >= 0 && d <= 21 && (item.displayStock ?? 0) >= 10;
 }
 
-function computeAiRecommendation(item: Row, all: Row[]): string | null {
+/** 상태에 따른 조치 제안 문구. 값은 화면에 보이는 재고에서만 계산한다. */
+function computeActionSuggestion(item: Row, all: Row[]): string | null {
   if (item.status === '부족') {
     const src = all.find(
       (o) => o.id !== item.id && o.itemName === item.itemName && (o.displayStock ?? 0) > 20 && o.status !== '부족',
     );
     if (src) {
       const qty = Math.min(Math.floor(((src.displayStock ?? 0) - 10) / 2), 20);
-      return `${src.organizationName} → ${item.organizationName} ${qty}개 이동 추천`;
+      return `${src.organizationName} → ${item.organizationName} ${qty}개 이동 검토`;
     }
-    return '긴급 발주 필요';
+    return '동일 품목 여유 기관 없음 · 신규 확보 검토';
   }
 
   if (item.status === '임박' && item.daysToExpiration !== null && item.daysToExpiration <= 14) {
-    return `${item.daysToExpiration}일 내 우선 출고 권장`;
+    return `${item.daysToExpiration}일 내 우선 배부 권장`;
   }
 
-  if (isSurplus(item)) {
+  if (item.status === '과잉') {
     const target = all.find((o) => o.id !== item.id && o.itemName === item.itemName && o.status === '부족');
     if (target) {
       const qty = Math.min(Math.floor((item.displayStock ?? 0) * 0.4), 20);
-      return `→ ${target.organizationName} ${qty}개 재배분 추천`;
+      return `${target.organizationName}(으)로 ${qty}개 재배분 검토`;
     }
+    return '부족 기관 발생 시 재배분 여력 보유';
   }
 
   return null;
@@ -257,7 +285,8 @@ function ItemDetailDrawer({
   item: Row; allItems: Row[]; onClose: () => void;
 }) {
   const days = item.daysToExpiration;
-  const ai = computeAiRecommendation(item, allItems);
+  const suggestion = computeActionSuggestion(item, allItems);
+  const depletion = depletionLabel(item);
   const sameItems = allItems.filter((o) => o.itemName === item.itemName);
   const maxFlow = Math.max(
     item.inboundQuantity,
@@ -317,9 +346,9 @@ function ItemDetailDrawer({
           )}
         </section>
 
-        {/* 유통기한 */}
+        {/* 유통기한 · 예상 소진 */}
         <section className="space-y-2">
-          <SectionLabel>유통기한</SectionLabel>
+          <SectionLabel>유통기한 · 예상 소진</SectionLabel>
           <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
             <div>
               <p className="text-sm font-medium text-slate-800">
@@ -328,6 +357,12 @@ function ItemDetailDrawer({
               <p className="mt-0.5 text-xs text-slate-400">유통기한</p>
             </div>
             {days !== null && <p className={`text-xl font-bold ${dDayClass(days)}`}>{formatDDay(days)}</p>}
+          </div>
+          <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
+            <div>
+              <p className={`text-sm font-medium ${depletion.className}`}>{depletion.text}</p>
+              <p className="mt-0.5 text-xs text-slate-400">예상 소진 — 주간 배부 속도 기준 단순 추정</p>
+            </div>
           </div>
         </section>
 
@@ -362,13 +397,13 @@ function ItemDetailDrawer({
           </section>
         )}
 
-        {/* AI 추천 */}
-        {ai && (
+        {/* 조치 제안 */}
+        {suggestion && (
           <section className="space-y-2">
-            <SectionLabel>AI 추천</SectionLabel>
+            <SectionLabel>조치 제안</SectionLabel>
             <div className="flex items-start gap-2.5 rounded-lg bg-teal-50 px-4 py-3">
               <Zap size={15} className="mt-0.5 shrink-0 text-teal-600" />
-              <p className="text-sm leading-relaxed text-teal-800">{ai}</p>
+              <p className="text-sm leading-relaxed text-teal-800">{suggestion}</p>
             </div>
           </section>
         )}
@@ -379,9 +414,12 @@ function ItemDetailDrawer({
         <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-teal-600 py-2.5 text-sm font-medium text-white hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
           <Truck size={15} />출고 등록
         </button>
-        <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
-          <ArrowRight size={15} />재배분 요청
-        </button>
+        <Link
+          to="/redistribution"
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          <ArrowRight size={15} />재배분 검토
+        </Link>
         <button className="flex items-center justify-center rounded-lg border border-rose-200 px-3.5 text-rose-600 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
           <Trash2 size={15} />
         </button>
@@ -417,7 +455,7 @@ export default function InventoryPage() {
     return (data ?? []).map((row) => {
       const districtId = districtOfArea(row.organizationName);
       const fieldOut = fieldOutbound.get(`${row.organizationName}::${row.itemName}`) ?? 0;
-      return {
+      const built: Row = {
         ...row,
         id: `${row.organizationId}::${row.itemName}`,
         status: inventoryStatusOf(row),
@@ -425,6 +463,10 @@ export default function InventoryPage() {
         fieldOutboundQuantity: fieldOut,
         displayStock: row.stock === null ? null : row.stock - fieldOut,
       };
+      // '과잉'은 정상 품목 중 배부량 대비 재고 여유가 큰 것을 화면에서 파생한다.
+      // 부족·임박·확인 필요 판정(중앙 DB)은 그대로 두고 덮어쓰지 않는다.
+      if (built.status === '정상' && isSurplus(built)) built.status = '과잉';
+      return built;
     });
   }, [data, fieldOutbound]);
 
@@ -443,7 +485,7 @@ export default function InventoryPage() {
   // 알림 카드 집계
   const shortageCount = useMemo(() => items.filter((i) => i.status === '부족').length, [items]);
   const expiringCount = useMemo(() => items.filter((i) => i.status === '임박').length, [items]);
-  const surplusCount  = useMemo(() => items.filter(isSurplus).length, [items]);
+  const surplusCount  = useMemo(() => items.filter((i) => i.status === '과잉').length, [items]);
   const disposalCount = useMemo(() => items.filter(isDisposalRisk).length, [items]);
 
   // 필터 + 정렬
@@ -462,12 +504,12 @@ export default function InventoryPage() {
       }
       if (quickFilter === 'shortage' && item.status !== '부족') return false;
       if (quickFilter === 'expiring' && item.status !== '임박') return false;
-      if (quickFilter === 'surplus'  && !isSurplus(item))       return false;
+      if (quickFilter === 'surplus'  && item.status !== '과잉') return false;
       if (quickFilter === 'disposal' && !isDisposalRisk(item))  return false;
       return true;
     });
 
-    const STATUS_ORDER: Record<string, number> = { '부족': 0, '임박': 1, '확인 필요': 2, '정상': 3 };
+    const STATUS_ORDER: Record<string, number> = { '부족': 0, '임박': 1, '확인 필요': 2, '과잉': 3, '정상': 4 };
     return filtered.sort((a, b) => {
       let cmp = 0;
       if (sortKey === 'name') cmp = a.itemName.localeCompare(b.itemName, 'ko');
@@ -532,7 +574,7 @@ export default function InventoryPage() {
         <>
           {/* ── 조치 필요 요약 카드 ──────────────────────────────────────────── */}
           <div>
-            <p className="mb-2 text-xs font-semibold text-slate-400">🚨 조치 필요</p>
+            <p className="mb-2 text-xs font-semibold text-slate-400">조치 필요</p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <AlertCard label="부족 품목"    count={shortageCount} sublabel="즉시 발주 또는 재배분 필요" color="rose"  active={quickFilter === 'shortage'} onClick={() => handleQuickFilter('shortage')} />
               <AlertCard label="유통기한 임박" count={expiringCount} sublabel="우선 배분 처리 권장"         color="amber" active={quickFilter === 'expiring'} onClick={() => handleQuickFilter('expiring')} />
@@ -643,19 +685,26 @@ export default function InventoryPage() {
                       </th>
                       <SortTh label="상태"    col="status"       sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                       <SortTh label="품목명"  col="name"         sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                      <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500">지역</th>
+                      <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500">기관</th>
                       <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium text-slate-500">입고</th>
-                      <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium text-slate-500">배부</th>
+                      <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium text-slate-500">출고</th>
                       <SortTh label="현재재고" col="currentStock" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                      <th
+                        className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium text-slate-500"
+                        title="현재 재고 ÷ 주간 배부 속도(기간 출고량을 주 단위로 환산)의 단순 추정입니다."
+                      >
+                        예상 소진
+                      </th>
                       <SortTh label="유통기한" col="expiryDate"   sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                       <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500">D-day</th>
-                      <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500">AI 추천</th>
+                      <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500">조치</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {filteredItems.map((item) => {
                       const days = item.daysToExpiration;
-                      const ai = computeAiRecommendation(item, items);
+                      const action = STATUS_ACTIONS[item.status];
+                      const depletion = depletionLabel(item);
                       const isSelected = selectedIds.has(item.id);
 
                       return (
@@ -698,15 +747,22 @@ export default function InventoryPage() {
                               <span className="ml-1 text-[10px] font-normal text-teal-600">현장 −{formatNumber(item.fieldOutboundQuantity)}</span>
                             )}
                           </td>
+                          <td
+                            className={`whitespace-nowrap px-4 py-3 text-right ${depletion.className}`}
+                            onClick={() => setDrawerItem(item)}
+                            title="주간 배부 속도 기준 단순 추정"
+                          >
+                            {depletion.text}
+                          </td>
                           <td className="whitespace-nowrap px-4 py-3 text-slate-500" onClick={() => setDrawerItem(item)}>
                             {item.expirationDate ? formatDate(item.expirationDate) : '—'}
                           </td>
                           <td className={`whitespace-nowrap px-4 py-3 ${days === null ? 'text-slate-300' : dDayClass(days)}`} onClick={() => setDrawerItem(item)}>
                             {days === null ? '—' : formatDDay(days)}
                           </td>
-                          <td className="px-4 py-3" onClick={() => setDrawerItem(item)}>
-                            {ai
-                              ? <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2 py-0.5 text-xs font-medium text-teal-700 ring-1 ring-inset ring-teal-600/20"><Zap size={10} />AI</span>
+                          <td className="whitespace-nowrap px-4 py-3 text-xs" onClick={() => setDrawerItem(item)}>
+                            {action
+                              ? <span className={action.className}>{action.label}</span>
                               : <span className="text-slate-200">—</span>
                             }
                           </td>
