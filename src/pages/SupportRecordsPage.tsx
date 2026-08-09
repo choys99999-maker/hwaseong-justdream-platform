@@ -15,6 +15,7 @@ import type {
 import { mockClients, mockVisits, mockWelfareReferrals } from '../data/mockClientRecords';
 import { mockSites } from '../data/mockSites';
 import { SUPPORT_ITEM_CATALOG, findCatalogEntry } from '../data/supportItemCatalog';
+import { createOutboundRecords } from '../store/outboundLedger';
 import {
   birthYearOf, downloadCsv, extractDong, makeId, maskKoreanName, monthPrefix,
   resolveNextAction, resolveProgressSteps, todayISO, toVisitStage,
@@ -206,9 +207,11 @@ function SupportItemChips({ items }: { items: SupportItem[] }) {
       {items.map((item) => (
         <span
           key={item.itemId}
+          title={item.outboundRecordId ? `재고 출고 기록 연결됨 (${item.outboundRecordId})` : undefined}
           className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-0.5 text-slate-700 ring-1 ring-inset ring-slate-200"
         >
-          <PackageCheck size={11} className="text-slate-400" />
+          {/* 출고 기록과 연결된 물품은 아이콘을 teal 로 표시한다. */}
+          <PackageCheck size={11} className={item.outboundRecordId ? 'text-teal-500' : 'text-slate-400'} />
           {/* 품목명에 이미 포장 단위가 들어 있어(담요 1매) 수량만 덧붙인다. */}
           {item.itemName} × {item.quantity}
         </span>
@@ -1195,6 +1198,25 @@ export default function SupportRecordsPage() {
         : [...prev, next]);
     }
 
+    // 지원이 확정된 물품은 사업장 출고로 기록하고, 만들어진 출고 레코드 id 를
+    // 각 지원 물품에 되돌려 단다. 재고 화면은 이 원장을 구독해 표시 재고를 줄인다.
+    let supportItems = toSupportItems(visitForm.supportItems);
+    if (visitForm.supportDecision === '지원' && supportItems.length > 0) {
+      const outbound = createOutboundRecords({
+        visitId,
+        clientId: client.id,
+        siteId: site.id,
+        siteName: site.name,
+        outboundDate: visitForm.visitDate,
+        items: supportItems,
+      });
+      const outboundIdByItem = new Map(outbound.map((record) => [record.itemId, record.id]));
+      supportItems = supportItems.map((item) => ({
+        ...item,
+        outboundRecordId: outboundIdByItem.get(item.itemId),
+      }));
+    }
+
     const newVisit: Visit = {
       id: visitId,
       clientId: client.id,
@@ -1206,7 +1228,7 @@ export default function SupportRecordsPage() {
       identityVerified: visitForm.identityVerified,
       checklistCompleted: stage === '1차' ? visitForm.checklistCompleted : false,
       supportDecision: visitForm.supportDecision,
-      supportItems: toSupportItems(visitForm.supportItems),
+      supportItems,
       basicCounseling,
       // 이 방문에서 연계가 새로 시작된 경우에만 연결한다.
       referralId: referralId && !existingReferral ? referralId : undefined,

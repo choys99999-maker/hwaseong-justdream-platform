@@ -110,6 +110,15 @@ export const mockSites: OperationSite[] = JUST_DREAM_SITES_25.map((seed) => {
   };
 });
 
+/**
+ * 사업장이 속한 읍면동. 좌표 → 행정동 검증 결과(SITE_EXTRAS.area)라 추측값이 아니다.
+ * 중앙 재고(v_inventory_status)의 organizationName 과 같은 읍면동 이름 체계를 쓰므로
+ * 출고 원장(outboundLedger)이 사업장 출고를 재고 조직에 연결할 때 이 값을 쓴다.
+ */
+export function siteAreaOf(siteId: string): string | null {
+  return SITE_EXTRAS[siteId]?.area ?? null;
+}
+
 export function getSiteById(id: string | null): OperationSite | null {
   if (!id) return null;
   return mockSites.find((site) => site.id === id) ?? null;
