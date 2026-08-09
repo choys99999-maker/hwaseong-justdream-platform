@@ -9,7 +9,7 @@ import { listInventoryStatus, type InventoryStatus as InventoryRow } from '../st
 import { districtOfArea } from '../data/districtByArea';
 import { REGION_NAMES } from '../data/regionMeta';
 import { inventoryStatusOf } from '../utils/inventoryStatus';
-import { formatDate, formatNumber } from '../utils/format';
+import { formatDate, formatNumber, formatStock } from '../utils/format';
 import type { InventoryStatus } from '../types';
 
 const STATUS_OPTIONS: InventoryStatus[] = ['정상', '임박', '부족', '확인 필요'];
@@ -50,6 +50,12 @@ export default function InventoryPage() {
       return matchesKeyword && matchesStatus;
     });
   }, [items, keyword, statusFilter]);
+
+  /** 재고를 신뢰할 수 없어 합계에서 뺀 품목 수. 판정은 중앙 DB(v_inventory_status)가 한다. */
+  const unverifiedCount = useMemo(
+    () => filteredItems.filter((item) => item.hasAnomaly).length,
+    [filteredItems],
+  );
 
   const notice = (
     <CentralDataNotice
@@ -98,9 +104,18 @@ export default function InventoryPage() {
             </select>
           </div>
 
+          {/*
+            합계는 `trustedStock`(이상 품목 제외)만 더한다. 대시보드 '전체 재고 수량' KPI 와
+            같은 기준이라 두 화면의 숫자가 어긋나지 않는다. 제외된 건수는 옆에 함께 밝힌다.
+          */}
           <p className="text-sm text-slate-500">
             총 {formatNumber(filteredItems.length)}건 · 현재 재고{' '}
-            {formatNumber(filteredItems.reduce((sum, item) => sum + item.stock, 0))}개
+            {formatNumber(filteredItems.reduce((sum, item) => sum + (item.trustedStock ?? 0), 0))}개
+            {unverifiedCount > 0 && (
+              <span className="ml-1 text-amber-600">
+                · 확인 필요 {formatNumber(unverifiedCount)}건은 합계에서 제외
+              </span>
+            )}
           </p>
 
           <DataTable<Row>
@@ -118,7 +133,7 @@ export default function InventoryPage() {
               },
               { key: 'inboundQuantity', header: '입고량', render: (row) => formatNumber(row.inboundQuantity) },
               { key: 'outboundQuantity', header: '배부량', render: (row) => formatNumber(row.outboundQuantity) },
-              { key: 'stock', header: '현재 재고', render: (row) => formatNumber(row.stock) },
+              { key: 'stock', header: '현재 재고', render: (row) => formatStock(row.stock) },
               {
                 key: 'expirationDate',
                 header: '유통기한',
