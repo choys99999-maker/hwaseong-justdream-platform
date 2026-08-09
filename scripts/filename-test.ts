@@ -4,7 +4,11 @@
 // 겹칠 때 어떤 이름을 제안하는지, 그 이름이 정말 안 겹치는지 확인한다.
 //
 //   npm run test:filename
-import { fileNameKey, suggestUniqueFileName } from '../src/utils/submission';
+import {
+  fileNameKey,
+  findSameOrganizationConflicts,
+  suggestUniqueFileName,
+} from '../src/utils/submission';
 
 const failures: string[] = [];
 let checks = 0;
@@ -27,6 +31,48 @@ check(
   fileNameKey('봉담읍.xlsx'),
 );
 check('다른 이름은 다르게 본다', fileNameKey('a.xlsx') === fileNameKey('b.xlsx'), false);
+
+// ── 겹침 판정: 같은 동 안에서만 ────────────────────────────
+{
+  const 봉담 = 'org-bongdam';
+  const 향남 = 'org-hyangnam';
+  const registered = [
+    { fileName: FORM, organizationId: 봉담 },
+    { fileName: '다른자료.xlsx', organizationId: 봉담 },
+    { fileName: FORM, organizationId: 향남 },
+  ];
+
+  // 다른 동이 같은 이름을 써도 막지 않는다. 목록에 기관명이 함께 나온다.
+  check('다른 동의 같은 이름은 겹침이 아니다',
+    findSameOrganizationConflicts(registered, FORM, 'org-dongtan').length, 0);
+
+  // 같은 동에서 같은 이름이면 물어봐야 한다.
+  check('같은 동의 같은 이름은 겹침이다',
+    findSameOrganizationConflicts(registered, FORM, 봉담).map((r) => r.fileName), [FORM]);
+
+  // 향남읍도 자기 동 것만 본다. 봉담읍 자료는 세지 않는다.
+  check('각 동은 자기 동 자료만 본다',
+    findSameOrganizationConflicts(registered, FORM, 향남).length, 1);
+
+  check('이름이 다르면 겹치지 않는다',
+    findSameOrganizationConflicts(registered, '새자료.xlsx', 봉담).length, 0);
+
+  // 표기 차이로 빠져나가지 못한다.
+  check('표기가 달라도 같은 이름으로 잡는다',
+    findSameOrganizationConflicts(registered, ` ${FORM.toUpperCase()} `, 봉담).length, 1);
+
+  check('기관을 아직 안 골랐으면 판정하지 않는다',
+    findSameOrganizationConflicts(registered, FORM, '').length, 0);
+
+  // 이름을 바꾸면 겹침이 풀려야 한다. (바꾼 뒤 이어서 진행할 수 있어야 한다)
+  const renamed = suggestUniqueFileName(
+    FORM,
+    registered.filter((r) => r.organizationId === 봉담).map((r) => r.fileName),
+    '봉담읍',
+  );
+  check('제안한 이름은 같은 동에서 겹치지 않는다',
+    findSameOrganizationConflicts(registered, renamed, 봉담).length, 0);
+}
 
 // ── 이름 제안 ──────────────────────────────────────────────
 {

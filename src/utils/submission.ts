@@ -66,7 +66,11 @@ export function isSubmittedThisWeek(iso: string, now: Date = new Date()): boolea
 
 // ── 파일 이름 ─────────────────────────────────────────────
 // 읍면동마다 같은 서식을 내려받아 쓰기 때문에 파일 이름이 그대로 겹친다.
-// 저장은 되지만 자료 관리 목록에서 어느 동 자료인지 사람이 구분할 수 없다.
+// 다른 동끼리 겹치는 것은 그대로 둔다. 어차피 목록에 기관명이 함께 나온다.
+//
+// 문제는 같은 동 안에서 같은 이름이 다시 올라올 때다. DB(create_submission)가 이전
+// 자료를 superseded 로 내려 집계에서 빼기 때문에, 덮어쓸 생각이 없었다면 예전 자료가
+// 말없이 사라진다. 그래서 저장 전에 어느 쪽인지 물어본다.
 
 /** 이름 비교용 키. 표기 차이(자모 조합·대소문자·앞뒤 공백)로 다른 이름이 되지 않게. */
 export function fileNameKey(name: string): string {
@@ -77,6 +81,18 @@ function splitExtension(name: string): { stem: string; ext: string } {
   const dot = name.lastIndexOf('.');
   if (dot <= 0) return { stem: name, ext: '' };
   return { stem: name.slice(0, dot), ext: name.slice(dot) };
+}
+
+/** 같은 기관 안에서 이름이 겹치는 자료. 다른 기관 자료는 보지 않는다. */
+export function findSameOrganizationConflicts<
+  T extends { fileName: string; organizationId: string },
+>(registered: readonly T[], fileName: string, organizationId: string): T[] {
+  if (!organizationId) return [];
+  const key = fileNameKey(fileName);
+  if (!key) return [];
+  return registered.filter(
+    (r) => r.organizationId === organizationId && fileNameKey(r.fileName) === key,
+  );
 }
 
 /**

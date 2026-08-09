@@ -17,7 +17,11 @@ import ConversionPreview from '../components/upload/ConversionPreview';
 import ExcelPreview, { pickDefaultSheetName } from '../components/upload/ExcelPreview';
 import { fieldLabel, getColumnsForType } from '../utils/excel/schema';
 import { defaultMapping } from '../utils/excel/engine';
-import { fileNameKey, sheetTypeLabel, suggestUniqueFileName } from '../utils/submission';
+import {
+  findSameOrganizationConflicts,
+  sheetTypeLabel,
+  suggestUniqueFileName,
+} from '../utils/submission';
 import { isCentralStoreEnabled } from '../lib/supabase';
 import {
   listOrganizations,
@@ -74,6 +78,13 @@ export default function DataUploadPage() {
   const [registeredNames, setRegisteredNames] = useState<RegisteredFileName[]>([]);
   /** 저장될 파일 이름. 겹치면 사용자가 여기서 고친다. */
   const [fileName, setFileName] = useState('');
+  /**
+   * 같은 동에 같은 이름이 이미 있을 때 사용자가 고른 처리.
+   *  ask       아직 안 골랐다 — 저장하지 않는다
+   *  overwrite 덮어쓴다 (DB가 이전 자료를 대체한다)
+   *  rename    이름을 바꿔서 따로 올린다
+   */
+  const [nameChoice, setNameChoice] = useState<'ask' | 'overwrite' | 'rename'>('ask');
   const [orgId, setOrgId] = useState(() => localStorage.getItem(ORG_KEY) ?? '');
   const [orgLoadError, setOrgLoadError] = useState<string | null>(null);
 
@@ -451,26 +462,32 @@ export default function DataUploadPage() {
   const needsOrg = isCentralStoreEnabled && !orgId;
 
   // ── 파일 이름 겹침 ────────────────────────────────────────
-  // 같은 기관에서 같은 이름 = 재제출. DB가 이전 자료를 대체하므로 정상이다.
-  // 다른 기관에서 같은 이름 = 목록에서 사람이 구분할 수 없다. 이름을 바꿔야 한다.
+  // 다른 동끼리 이름이 겹치는 것은 막지 않는다. 목록에 기관명이 함께 나오기 때문이다.
+  // 같은 동 안에서 겹치면 DB가 이전 자료를 대체한다. 덮어쓸 생각이 아니었다면 예전
+  // 자료가 말없이 사라지므로, 저장 전에 어느 쪽인지 물어본다.
   const currentOrgName = organizations.find((o) => o.id === orgId)?.name;
-  const nameMatches = useMemo(() => {
-    const key = fileNameKey(fileName);
-    if (!key) return [];
-    return registeredNames.filter((r) => fileNameKey(r.fileName) === key);
-  }, [registeredNames, fileName]);
-  const otherOrgMatches = nameMatches.filter((r) => r.organizationId !== orgId);
-  const sameOrgMatch = orgId ? nameMatches.some((r) => r.organizationId === orgId) : false;
-  /** 다른 동에 같은 이름이 있으면 이름을 바꾸기 전에는 저장하지 않는다. */
-  const hasNameConflict = otherOrgMatches.length > 0;
+  const sameOrgConflicts = useMemo(
+    () => findSameOrganizationConflicts(registeredNames, fileName, orgId),
+    [registeredNames, fileName, orgId],
+  );
+  const hasNameConflict = sameOrgConflicts.length > 0;
+  /** 겹치는데 아직 어떻게 할지 안 골랐으면 저장하지 않는다. */
+  const needsNameDecision = hasNameConflict && nameChoice !== 'overwrite';
+
+  // 이름이나 기관이 바뀌면 앞서 고른 처리는 무효다. 다시 물어본다.
+  useEffect(() => {
+    setNameChoice('ask');
+  }, [fileName, orgId]);
 
   function applySuggestedName() {
-    setFileName(
-      suggestUniqueFileName(fileName, registeredNames.map((r) => r.fileName), currentOrgName),
-    );
+    // 같은 동 안에서만 안 겹치면 된다. 다른 동 이름까지 피할 이유가 없다.
+    const takenInOrg = registeredNames
+      .filter((r) => r.organizationId === orgId)
+      .map((r) => r.fileName);
+    setFileName(suggestUniqueFileName(fileName, takenInOrg, currentOrgName));
   }
   const canSave =
-    canRead && !hasDuplicateMapping && !isChecking && !needsOrg && !hasNameConflict &&
+    canRead && !hasDuplicateMapping && !isChecking && !needsOrg && !needsNameDecision &&
     fileName.trim() !== '' && (!needsConfirm || acknowledged);
 
   function renderOrgSelector() {
@@ -915,7 +932,7 @@ export default function DataUploadPage() {
           <section className="rounded-2xl border border-slate-200 bg-white px-9 py-8">
             {renderOrgSelector()}
 
-            {/* 파일 이름 — 읍면동마다 같은 서식을 써서 이름이 그대로 겹친다 */}
+            {/* 파일 이름 — 같은 동에 같은 이름이 있으면 어떻게 할지 먼저 정한다 */}
             {isCentralStoreEnabled && (
               <div className="mt-6">
                 <label htmlFor="file-name" className="block text-sm font-medium text-slate-700">
@@ -927,14 +944,14 @@ export default function DataUploadPage() {
                     type="text"
                     value={fileName}
                     onChange={(e) => setFileName(e.target.value)}
-                    aria-invalid={hasNameConflict}
+                    aria-invalid={needsNameDecision}
                     className={`w-full max-w-md rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                      hasNameConflict
-                        ? 'border-red-300 text-red-800 focus:ring-red-400'
+                      needsNameDecision
+                        ? 'border-amber-300 text-amber-900 focus:ring-amber-400'
                         : 'border-slate-200 text-slate-700 focus:ring-teal-500'
                     }`}
                   />
-                  {hasNameConflict && (
+                  {nameChoice === 'rename' && hasNameConflict && (
                     <button
                       type="button"
                       onClick={applySuggestedName}
@@ -946,26 +963,52 @@ export default function DataUploadPage() {
                 </div>
 
                 {hasNameConflict ? (
-                  <div className="mt-2 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
-                    <p className="text-sm font-medium text-red-800">
-                      같은 이름의 자료가 이미 있습니다
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                    <p className="text-sm font-medium text-amber-900">
+                      {currentOrgName ?? '이 기관'}에 같은 이름의 자료가 이미 있습니다
                     </p>
                     <ul className="mt-1 space-y-0.5">
-                      {otherOrgMatches.map((match) => (
-                        <li key={match.organizationId} className="text-sm text-red-700">
-                          {match.organizationName} · {match.fileName}
+                      {sameOrgConflicts.map((match, i) => (
+                        <li key={i} className="text-sm text-amber-800">
+                          {match.fileName}
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-xs text-red-700">
-                      다른 읍면동이 올린 자료와 이름이 같으면 자료 관리 목록에서 구분할 수
-                      없습니다. 이름을 바꾸거나 다른 파일을 올려주세요.
-                    </p>
+
+                    {nameChoice === 'ask' && (
+                      <>
+                        <p className="mt-2 text-xs text-amber-800">
+                          덮어쓰면 이전 자료는 통합 현황 집계에서 빠집니다. 둘 다 남기려면 이름을
+                          바꿔주세요.
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setNameChoice('overwrite')}
+                            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                          >
+                            덮어쓰기
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNameChoice('rename')}
+                            className="rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                          >
+                            이름 바꿔서 올리기
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    {nameChoice === 'rename' && (
+                      <p className="mt-2 text-sm text-amber-800">
+                        위 칸에서 이름을 바꿔주세요. 같은 이름이 없어지면 저장할 수 있습니다.
+                      </p>
+                    )}
                   </div>
-                ) : sameOrgMatch ? (
+                ) : nameChoice === 'overwrite' ? (
                   <p className="mt-2 text-sm text-amber-700">
-                    같은 이름으로 이미 올린 자료가 있습니다. 저장하면 재제출로 보고 이전 자료를
-                    대체합니다.
+                    덮어쓰기로 저장합니다. 이전 자료는 집계에서 빠집니다.
                   </p>
                 ) : (
                   <p className="mt-2 text-xs text-slate-400">
@@ -1006,12 +1049,6 @@ export default function DataUploadPage() {
                 다른 파일 선택
               </button>
             </div>
-
-            {hasNameConflict && (
-              <p className="mt-4 text-sm text-slate-500">
-                이름을 바꾸거나, "다른 파일 선택"으로 다른 자료를 올릴 수 있습니다.
-              </p>
-            )}
 
             {!canRead && (
               <p className="mt-4 text-sm text-slate-500">
