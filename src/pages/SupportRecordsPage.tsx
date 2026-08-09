@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Search, Users, CalendarDays, UserPlus, RotateCcw,
   MessageSquare, CheckCircle2, Download, Printer, Plus,
-  X, Edit2, Clock, Trash2, PackageCheck, ShieldCheck,
-  ClipboardCheck, HeartHandshake, AlertTriangle,
+  X, Edit2, Trash2, PackageCheck, ShieldCheck,
+  ClipboardCheck, AlertTriangle, Check, Minus,
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
@@ -15,8 +16,9 @@ import { mockClients, mockVisits, mockWelfareReferrals } from '../data/mockClien
 import { mockSites } from '../data/mockSites';
 import { SUPPORT_ITEM_CATALOG, findCatalogEntry } from '../data/supportItemCatalog';
 import {
-  birthYearOf, downloadCsv, extractDong, makeId,
-  maskKoreanName, monthPrefix, todayISO, toVisitStage,
+  birthYearOf, downloadCsv, extractDong, makeId, maskKoreanName, monthPrefix,
+  resolveNextAction, resolveProgressSteps, todayISO, toVisitStage,
+  type NextActionTone, type ProgressStep, type StepState,
 } from '../utils/supportRecords';
 
 // ─── 선택지 상수 ──────────────────────────────────────────────────────────────
@@ -35,49 +37,182 @@ const CONTINUED_SUPPORTS: ContinuedSupport[] = ['미판정', '가능', '불가']
 /** 기관 목록은 그냥드림 사업장 25개소를 그대로 쓴다. 화면에서 임의로 늘리지 않는다. */
 const SITE_OPTIONS = [...mockSites].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 
+/** 목록·모달에는 축약 기관명을 쓴다. 서식(CSV)에는 정식 기관명을 그대로 내보낸다. */
+const SITE_SHORT_NAME = new Map(mockSites.map((site) => [site.id, site.displayName]));
+
 /** 1회 방문에 3~5개 지원이 표준이다. */
 const MAX_SUPPORT_ITEMS = 5;
 
-// ─── 배지 컴포넌트 ─────────────────────────────────────────────────────────────
+// ─── 배지 ─────────────────────────────────────────────────────────────────────
+//
+// 색은 "상태"에만 쓴다. 단계(1차/2차/3차+)는 teal → sky → indigo 로 이어지는
+// 한 계열 안에서만 옮겨 가고, 주의가 필요한 값에만 amber 를 남겨 둔다.
+
+const BADGE_BASE = 'inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ring-1 ring-inset';
+
 const REFERRAL_BADGE: Record<ReferralStatus, string> = {
-  '미연계':     'bg-slate-100 text-slate-600  ring-slate-500/20',
-  '연계요청':   'bg-sky-50    text-sky-700    ring-sky-600/20',
-  '읍면동상담중': 'bg-amber-50  text-amber-700  ring-amber-600/20',
-  '연계완료':   'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  '연계불요':   'bg-slate-100 text-slate-500  ring-slate-400/20',
+  '미연계':       'bg-slate-50    text-slate-600   ring-slate-300',
+  '연계요청':     'bg-sky-50      text-sky-700     ring-sky-600/20',
+  '읍면동상담중': 'bg-amber-50    text-amber-700   ring-amber-600/20',
+  '연계완료':     'bg-emerald-50  text-emerald-700 ring-emerald-600/20',
+  '연계불요':     'bg-white       text-slate-500   ring-slate-200',
 };
 
 function ReferralBadge({ status }: { status: ReferralStatus }) {
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${REFERRAL_BADGE[status]}`}>
-      {status}
-    </span>
-  );
+  return <span className={`${BADGE_BASE} ${REFERRAL_BADGE[status]}`}>{status}</span>;
 }
 
 const STAGE_BADGE: Record<VisitStage, string> = {
   '1차':  'bg-teal-50   text-teal-700   ring-teal-600/20',
-  '2차':  'bg-violet-50 text-violet-700 ring-violet-600/20',
+  '2차':  'bg-sky-50    text-sky-700    ring-sky-600/20',
   '3차+': 'bg-indigo-50 text-indigo-700 ring-indigo-600/20',
 };
 
 function StageBadge({ stage }: { stage: VisitStage }) {
-  return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${STAGE_BADGE[stage]}`}>
-      {stage} 이용
-    </span>
-  );
+  return <span className={`${BADGE_BASE} ${STAGE_BADGE[stage]}`}>{stage} 이용</span>;
 }
 
 /** boolean 을 화성시 서식 표기(O/X)로 렌더링만 한다. 저장 타입은 boolean 이다. */
 function ConductedBadge({ done }: { done: boolean }) {
   return (
-    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${
-      done
-        ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
-        : 'bg-slate-100 text-slate-500 ring-slate-400/20'
-    }`}>
+    <span className={`${BADGE_BASE} ${done
+      ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
+      : 'bg-slate-50 text-slate-500 ring-slate-300'}`}
+    >
       {done ? 'O' : 'X'}
+    </span>
+  );
+}
+
+const NEXT_ACTION_DOT: Record<NextActionTone, string> = {
+  todo:    'bg-amber-500',
+  waiting: 'bg-sky-500',
+  done:    'bg-slate-300',
+};
+
+const NEXT_ACTION_TEXT: Record<NextActionTone, string> = {
+  todo:    'text-slate-800 font-medium',
+  waiting: 'text-slate-600',
+  done:    'text-slate-400',
+};
+
+/** 목록에서는 배지를 더 늘리지 않고 점 + 텍스트로 둔다. (배지가 많아지면 읽히지 않는다) */
+function NextActionCell({ label, tone }: { label: string; tone: NextActionTone }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs">
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${NEXT_ACTION_DOT[tone]}`} />
+      <span className={NEXT_ACTION_TEXT[tone]}>{label}</span>
+    </span>
+  );
+}
+
+// ─── 진행 단계 스텝퍼 ─────────────────────────────────────────────────────────
+const STEP_DOT: Record<StepState, string> = {
+  done:    'bg-teal-600 text-white ring-teal-600',
+  current: 'bg-white text-teal-700 ring-teal-500',
+  todo:    'bg-white text-slate-400 ring-slate-200',
+  skipped: 'bg-slate-50 text-slate-300 ring-slate-200',
+};
+
+const STEP_LABEL: Record<StepState, string> = {
+  done:    'text-slate-700',
+  current: 'text-teal-700 font-semibold',
+  todo:    'text-slate-400',
+  skipped: 'text-slate-300',
+};
+
+function ProgressStepper({ steps }: { steps: ProgressStep[] }) {
+  return (
+    <ol className="flex items-start">
+      {steps.map((step, index) => {
+        const prev = steps[index - 1];
+        const nextStep = steps[index + 1];
+        return (
+          <li key={step.key} className="flex flex-1 flex-col items-center">
+            <div className="flex w-full items-center">
+              <span className={`h-px flex-1 ${index === 0 ? 'bg-transparent' : prev?.state === 'done' ? 'bg-teal-300' : 'bg-slate-200'}`} />
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ring-2 ${STEP_DOT[step.state]}`}>
+                {step.state === 'done' ? <Check size={13} strokeWidth={3} />
+                  : step.state === 'skipped' ? <Minus size={13} />
+                  : index + 1}
+              </span>
+              <span className={`h-px flex-1 ${index === steps.length - 1 ? 'bg-transparent' : step.state === 'done' && nextStep ? 'bg-teal-300' : 'bg-slate-200'}`} />
+            </div>
+            <span className={`mt-1.5 text-center text-[11px] leading-tight ${STEP_LABEL[step.state]}`}>
+              {step.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+// ─── 레이아웃 조각 ────────────────────────────────────────────────────────────
+/** 모달 폼 한 구획. 단계별로 필요한 구획만 켜서 단일 모달 흐름을 유지한다. */
+function FormSection({
+  step,
+  title,
+  hint,
+  accent = false,
+  children,
+}: {
+  step: number;
+  title: string;
+  hint?: string;
+  accent?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <section className={`rounded-xl border p-4 ${accent ? 'border-teal-300 bg-teal-50/40' : 'border-slate-200 bg-white'}`}>
+      <div className="mb-3.5 flex items-baseline gap-2">
+        <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold ${
+          accent ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-500'
+        }`}>
+          {step}
+        </span>
+        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+        {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      </div>
+      <div className="space-y-3.5">{children}</div>
+    </section>
+  );
+}
+
+/** 상세 화면의 2열 정보 카드 한 칸 */
+function InfoCard({ label, children, span = false }: { label: string; children: ReactNode; span?: boolean }) {
+  return (
+    <div className={`rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 ${span ? 'col-span-2' : ''}`}>
+      <p className="text-[11px] text-slate-400">{label}</p>
+      <div className="mt-1 text-sm text-slate-800">{children}</div>
+    </div>
+  );
+}
+
+/** 방문 카드 안의 라벨-값 한 줄 */
+function VisitRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="w-[5.5rem] shrink-0 pt-0.5 text-xs text-slate-400">{label}</span>
+      <div className="min-w-0 flex-1 text-xs text-slate-700">{children}</div>
+    </div>
+  );
+}
+
+function SupportItemChips({ items }: { items: SupportItem[] }) {
+  if (items.length === 0) return <span className="text-slate-400">-</span>;
+  return (
+    <span className="flex flex-wrap gap-1">
+      {items.map((item) => (
+        <span
+          key={item.itemId}
+          className="inline-flex items-center gap-1 rounded-md bg-slate-50 px-2 py-0.5 text-slate-700 ring-1 ring-inset ring-slate-200"
+        >
+          <PackageCheck size={11} className="text-slate-400" />
+          {/* 품목명에 이미 포장 단위가 들어 있어(담요 1매) 수량만 덧붙인다. */}
+          {item.itemName} × {item.quantity}
+        </span>
+      ))}
     </span>
   );
 }
@@ -146,6 +281,13 @@ function toSupportItems(drafts: SupportItemDraft[]): SupportItem[] {
   });
 }
 
+// 폼 요소 공통 클래스 — 화면 전체에서 테두리·포커스 링을 하나로 맞춘다.
+// 폭은 FIELD_BASE 에 넣지 않는다. 넣으면 물품 행처럼 폭을 직접 주는 자리에서
+// w-full 과 flex-1 / w-20 이 부딪혀 컨트롤이 찌그러진다.
+const FIELD_BASE = 'rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500';
+const FIELD = `${FIELD_BASE} w-full`;
+const FIELD_LABEL = 'mb-1.5 block text-xs font-medium text-slate-600';
+
 // ─── 지원 물품 편집기 ─────────────────────────────────────────────────────────
 function SupportItemsEditor({
   items,
@@ -165,14 +307,14 @@ function SupportItemsEditor({
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between">
-        <label className="block text-sm font-medium text-slate-700">
-          지원 물품 <span className="text-xs font-normal text-slate-400">(1회 3~5개)</span>
-        </label>
+        <span className={FIELD_LABEL + ' mb-0'}>
+          지원 물품 <span className="font-normal text-slate-400">(1회 3~5개)</span>
+        </span>
         <button
           type="button"
           onClick={addRow}
           disabled={items.length >= MAX_SUPPORT_ITEMS}
-          className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-teal-300 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus:ring-1 focus:ring-teal-500"
         >
           <Plus size={12} />
           품목 추가
@@ -180,7 +322,7 @@ function SupportItemsEditor({
       </div>
 
       {items.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-400">
+        <p className="rounded-lg border border-dashed border-slate-200 px-3 py-5 text-center text-xs text-slate-400">
           지원한 물품을 추가하세요.
         </p>
       ) : (
@@ -196,7 +338,7 @@ function SupportItemsEditor({
                     next[index] = { ...next[index], itemId: e.target.value };
                     onChange(next);
                   }}
-                  className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className={`${FIELD_BASE} min-w-0 flex-1`}
                 >
                   {SUPPORT_ITEM_CATALOG.map((option) => (
                     <option
@@ -217,14 +359,14 @@ function SupportItemsEditor({
                     next[index] = { ...next[index], quantity: Math.max(1, Number(e.target.value) || 1) };
                     onChange(next);
                   }}
-                  className="w-20 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className={`${FIELD_BASE} w-20 text-right`}
                 />
-                <span className="w-10 shrink-0 text-xs text-slate-400">{entry?.unit ?? ''}</span>
+                <span className="w-8 shrink-0 text-xs text-slate-400">{entry?.unit ?? ''}</span>
                 <button
                   type="button"
                   onClick={() => onChange(items.filter((_, i) => i !== index))}
                   aria-label="품목 삭제"
-                  className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 focus:outline-none focus:ring-1 focus:ring-teal-500"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -232,6 +374,70 @@ function SupportItemsEditor({
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 방문 카드 ────────────────────────────────────────────────────────────────
+/**
+ * 타임라인의 방문 1건. 차수별로 실제 업무가 다르므로 보여 주는 항목도 다르다.
+ *   1차  : 본인확인 / 자가 체크리스트 / 지원 판단 / 지원 물품
+ *   2차  : 지원 물품 / 기본상담 / 추가지원 필요 / 복지연계
+ *   3차+ : 지원 물품 / 읍면동 추가상담 / 지속지원 판정
+ */
+function VisitCard({ visit, referral }: { visit: Visit; referral: WelfareReferral | undefined }) {
+  const stage = visit.visitStage;
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3.5 space-y-2">
+      {stage === '1차' && (
+        <>
+          <VisitRow label="본인확인"><ConductedBadge done={visit.identityVerified} /></VisitRow>
+          <VisitRow label="자가 체크리스트"><ConductedBadge done={visit.checklistCompleted} /></VisitRow>
+          <VisitRow label="지원 판단"><span className="font-medium text-slate-800">{visit.supportDecision}</span></VisitRow>
+          <VisitRow label="지원 물품"><SupportItemChips items={visit.supportItems} /></VisitRow>
+        </>
+      )}
+
+      {stage === '2차' && (
+        <>
+          <VisitRow label="지원 물품"><SupportItemChips items={visit.supportItems} /></VisitRow>
+          <VisitRow label="기본상담"><ConductedBadge done={visit.basicCounseling?.conducted ?? false} /></VisitRow>
+          <VisitRow label="추가지원 필요">
+            {visit.basicCounseling?.needsAdditionalSupport
+              ? <span className="font-medium text-amber-700">필요 — 읍면동 연계 대상</span>
+              : <span className="text-slate-400">해당 없음</span>}
+          </VisitRow>
+          <VisitRow label="복지연계">
+            {referral ? <ReferralBadge status={referral.status} /> : <span className="text-slate-400">미연계</span>}
+          </VisitRow>
+        </>
+      )}
+
+      {stage === '3차+' && (
+        <>
+          <VisitRow label="지원 물품"><SupportItemChips items={visit.supportItems} /></VisitRow>
+          <VisitRow label="읍면동 추가상담">
+            {referral?.dongCounselingDoneAt
+              ? <span className="text-slate-800">{referral.dongCounselingDoneAt} 완료</span>
+              : <span className="text-amber-700">미완료 — 결과 확인 필요</span>}
+          </VisitRow>
+          <VisitRow label="지속지원 판정">
+            <span className={referral && referral.continuedSupport !== '미판정'
+              ? 'font-medium text-slate-800'
+              : 'text-amber-700'}
+            >
+              {referral?.continuedSupport ?? '미판정'}
+            </span>
+          </VisitRow>
+        </>
+      )}
+
+      {visit.basicCounseling?.note && (
+        <p className="mt-1 border-t border-slate-100 pt-2 text-xs italic leading-relaxed text-slate-500">
+          "{visit.basicCounseling.note}"
+        </p>
       )}
     </div>
   );
@@ -253,22 +459,33 @@ function DetailModal({
   onEdit: () => void;
   onAddVisit: () => void;
 }) {
+  const steps = resolveProgressSteps(visits, referral);
+  const nextAction = resolveNextAction(visits, referral);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
+        className="w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl bg-white shadow-lg ring-1 ring-slate-900/5"
         onClick={e => e.stopPropagation()}
       >
         {/* 헤더 */}
         <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-slate-200 bg-white px-6 py-4">
-          <h2 className="text-base font-semibold text-slate-900">대상자 상세 정보</h2>
+          <div>
+            <h2 className="text-base font-semibold text-slate-900">{client.nameMasked}</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {client.birthYear}년생 · {client.residenceDong} · {client.visitCount}회 이용
+              {client.visitCount >= 2 && (
+                <span className="ml-1.5 rounded bg-sky-50 px-1.5 py-0.5 text-[11px] font-medium text-sky-700">반복방문</span>
+              )}
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onAddVisit}
-              className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="flex items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-1"
             >
               <Plus size={13} />
               방문 추가
@@ -282,6 +499,7 @@ function DetailModal({
             </button>
             <button
               onClick={onClose}
+              aria-label="닫기"
               className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
             >
               <X size={18} />
@@ -289,124 +507,56 @@ function DetailModal({
           </div>
         </div>
 
+        {/* 진행 단계 스텝퍼 + 다음 조치 */}
+        <div className="border-b border-slate-200 bg-slate-50/60 px-6 py-5">
+          <ProgressStepper steps={steps} />
+          <div className="mt-4 flex items-center justify-center gap-2 text-xs">
+            <span className="text-slate-400">다음 조치</span>
+            <NextActionCell label={nextAction.label} tone={nextAction.tone} />
+          </div>
+        </div>
+
         <div className="space-y-6 p-6">
           {/* 기본 정보 — 전체 생년월일·상세주소는 이 화면에서만 보여준다. */}
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">기본 정보</h3>
-            <div className="grid grid-cols-2 gap-y-3 gap-x-6 rounded-xl bg-slate-50 p-4 text-sm">
-              <div>
-                <p className="text-xs text-slate-500">대상자</p>
-                <p className="mt-0.5 font-medium text-slate-800">{client.nameMasked}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">방문 횟수</p>
-                <p className="mt-0.5 font-medium text-slate-800">
-                  {client.visitCount}회
-                  {client.visitCount >= 2 && (
-                    <span className="ml-1.5 text-xs font-normal text-violet-600">반복방문</span>
-                  )}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">생년월일</p>
-                <p className="mt-0.5 text-slate-800">{client.birthDate ?? `${client.birthYear}년생`}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">최초 이용일</p>
-                <p className="mt-0.5 text-slate-800">{client.firstVisitDate}</p>
-              </div>
-              <div className="col-span-2">
-                <p className="text-xs text-slate-500">주소</p>
-                <p className="mt-0.5 text-slate-800">{client.addressDetail ?? client.residenceDong}</p>
-              </div>
+            <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-slate-400">기본 정보</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <InfoCard label="생년월일">{client.birthDate ?? `${client.birthYear}년생`}</InfoCard>
+              <InfoCard label="최초 이용일">{client.firstVisitDate}</InfoCard>
+              <InfoCard label="주소" span>{client.addressDetail ?? client.residenceDong}</InfoCard>
             </div>
           </section>
 
-          {/* 회차별 이력 타임라인 — 1차 → 2차 → 3차+ 진행 흐름 */}
+          {/* 회차별 이력 타임라인 — 1차 → 2차 → 3차+ */}
           <section>
-            <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
-              이용/상담/복지연계 이력
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              이용 · 상담 · 복지연계 이력
             </h3>
-            <div className="space-y-0">
+            <div>
               {visits.map((visit, idx) => {
                 const isLast = idx === visits.length - 1;
                 return (
-                  <div key={visit.id} className="relative flex gap-4">
+                  <div key={visit.id} className="relative flex gap-3.5">
                     {/* 타임라인 축 */}
                     <div className="flex flex-col items-center">
-                      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ring-2 ${
                         isLast
-                          ? 'bg-teal-100 text-teal-700 ring-2 ring-teal-300'
-                          : 'bg-slate-100 text-slate-600'
+                          ? 'bg-teal-600 text-white ring-teal-200'
+                          : 'bg-white text-slate-500 ring-slate-200'
                       }`}>
                         {visit.visitNo}
                       </div>
-                      {!isLast && (
-                        <div className="mt-1 w-0.5 grow bg-slate-200" />
-                      )}
+                      {!isLast && <div className="mt-1 w-px grow bg-slate-200" />}
                     </div>
 
                     {/* 내용 */}
-                    <div className={`flex-1 ${!isLast ? 'pb-5' : 'pb-1'}`}>
-                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <div className={`min-w-0 flex-1 ${!isLast ? 'pb-5' : ''}`}>
+                      <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                         <StageBadge stage={visit.visitStage} />
-                        <span className="flex items-center gap-1 text-xs text-slate-500">
-                          <Clock size={11} />
-                          {visit.visitDate}
-                        </span>
-                        <span className="text-xs text-slate-400">{visit.orgName}</span>
+                        <span className="text-xs text-slate-500">{visit.visitDate}</span>
+                        <span className="text-xs text-slate-400">· {SITE_SHORT_NAME.get(visit.siteId) ?? visit.orgName}</span>
                       </div>
-                      <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs space-y-1.5">
-                        <div className="flex items-center gap-3">
-                          <span className="w-20 shrink-0 text-slate-400">본인확인</span>
-                          <ConductedBadge done={visit.identityVerified} />
-                          {visit.visitStage === '1차' && (
-                            <>
-                              <span className="ml-2 shrink-0 text-slate-400">자가 체크리스트</span>
-                              <ConductedBadge done={visit.checklistCompleted} />
-                            </>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="w-20 shrink-0 text-slate-400">지원 판단</span>
-                          <span className="text-slate-700">{visit.supportDecision}</span>
-                        </div>
-                        <div className="flex items-start gap-3">
-                          <span className="w-20 shrink-0 pt-0.5 text-slate-400">지원 물품</span>
-                          {visit.supportItems.length === 0 ? (
-                            <span className="text-slate-400">-</span>
-                          ) : (
-                            <span className="flex flex-wrap gap-1">
-                              {visit.supportItems.map((item) => (
-                                <span
-                                  key={item.itemId}
-                                  className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-slate-700"
-                                >
-                                  <PackageCheck size={11} className="text-slate-400" />
-                                  {/* 품목명에 이미 포장 단위가 들어 있어(담요 1매) 수량만 덧붙인다. */}
-                                  {item.itemName} × {item.quantity}
-                                </span>
-                              ))}
-                            </span>
-                          )}
-                        </div>
-                        {visit.basicCounseling && (
-                          <>
-                            <div className="flex items-center gap-3">
-                              <span className="w-20 shrink-0 text-slate-400">기본상담</span>
-                              <ConductedBadge done={visit.basicCounseling.conducted} />
-                              {visit.basicCounseling.needsAdditionalSupport && (
-                                <span className="text-amber-600">추가지원 필요</span>
-                              )}
-                            </div>
-                            {visit.basicCounseling.note && (
-                              <p className="mt-1 border-t border-slate-100 pt-1.5 italic text-slate-500">
-                                "{visit.basicCounseling.note}"
-                              </p>
-                            )}
-                          </>
-                        )}
-                      </div>
+                      <VisitCard visit={visit} referral={referral} />
                     </div>
                   </div>
                 );
@@ -414,52 +564,33 @@ function DetailModal({
             </div>
           </section>
 
-          {/* 복지연계 상세 */}
+          {/* 복지연계 상세 — 2열 정보 카드 */}
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">복지연계 상세</h3>
+            <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wide text-slate-400">복지연계 상세</h3>
             {!referral ? (
-              <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-400">
+              <p className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-400">
                 아직 읍면동 복지연계가 시작되지 않았습니다.
               </p>
             ) : (
-              <div className="grid grid-cols-2 gap-y-3 gap-x-6 rounded-xl bg-slate-50 p-4 text-sm">
-                <div>
-                  <p className="text-xs text-slate-500">연계 상태</p>
-                  <p className="mt-1"><ReferralBadge status={referral.status} /></p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">2차 연계처(읍면동)</p>
-                  <p className="mt-0.5 font-medium text-slate-800">{referral.linkedDong || '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">맞춤형복지팀</p>
-                  <p className="mt-0.5 text-slate-800">{referral.linkedTeam ?? '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">연계 요청일</p>
-                  <p className="mt-0.5 text-slate-800">{referral.requestedAt ?? '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">읍면동 추가상담 완료</p>
-                  <p className="mt-0.5 text-slate-800">{referral.dongCounselingDoneAt ?? '미완료'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">지속지원 판정</p>
-                  <p className="mt-0.5 font-medium text-slate-800">{referral.continuedSupport}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">연계 유형</p>
-                  <p className="mt-0.5 text-slate-800">{referral.linkageType ?? '-'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500">연계 서비스</p>
-                  <p className="mt-0.5 font-medium text-teal-700">{referral.linkageService ?? '-'}</p>
-                </div>
+              <div className="grid grid-cols-2 gap-3">
+                <InfoCard label="연계 상태"><ReferralBadge status={referral.status} /></InfoCard>
+                <InfoCard label="2차 연계처(읍면동)">
+                  <span className="font-medium">{referral.linkedDong || '-'}</span>
+                </InfoCard>
+                <InfoCard label="맞춤형복지팀">{referral.linkedTeam ?? '-'}</InfoCard>
+                <InfoCard label="연계 요청일">{referral.requestedAt ?? '-'}</InfoCard>
+                <InfoCard label="읍면동 추가상담 완료">
+                  {referral.dongCounselingDoneAt ?? <span className="text-slate-400">미완료</span>}
+                </InfoCard>
+                <InfoCard label="지속지원 판정">
+                  <span className="font-medium">{referral.continuedSupport}</span>
+                </InfoCard>
+                <InfoCard label="연계 유형">{referral.linkageType ?? '-'}</InfoCard>
+                <InfoCard label="연계 서비스">
+                  <span className="font-medium text-teal-700">{referral.linkageService ?? '-'}</span>
+                </InfoCard>
                 {referral.resultNote && (
-                  <div className="col-span-2">
-                    <p className="text-xs text-slate-500">연계 결과 / 기타 내역</p>
-                    <p className="mt-0.5 text-slate-700">{referral.resultNote}</p>
-                  </div>
+                  <InfoCard label="연계 결과 / 기타 내역" span>{referral.resultNote}</InfoCard>
                 )}
               </div>
             )}
@@ -519,30 +650,34 @@ function RecordModal({
           (!needsItems || visitForm.supportItems.length > 0),
         );
 
+  // 구획 번호는 실제로 보이는 것만 1부터 매긴다.
+  let sectionNo = 0;
+  const step = () => (sectionNo += 1);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl"
+        className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-lg ring-1 ring-slate-900/5"
         onClick={e => e.stopPropagation()}
       >
         {/* 헤더 */}
         <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-2xl border-b border-slate-200 bg-white px-6 py-4">
           <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
+          <button onClick={onClose} aria-label="닫기" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
             <X size={18} />
           </button>
         </div>
 
-        <div className="space-y-4 p-6">
+        <div className="space-y-3.5 bg-slate-50/60 p-6">
           {/* 방문 추가 시 대상 이용자 요약 (읽기 전용) */}
           {mode === 'visit' && client && (
-            <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm">
+            <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
               <div>
-                <p className="font-medium text-slate-800">{client.nameMasked}</p>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm font-medium text-slate-800">{client.nameMasked}</p>
+                <p className="mt-0.5 text-xs text-slate-500">
                   {client.birthYear}년생 · {client.residenceDong} · 기존 {client.visitCount}회 방문
                 </p>
               </div>
@@ -552,38 +687,38 @@ function RecordModal({
 
           {/* 이용자 동일성 안내 — 자동 병합하지 않고 담당자가 직접 고르게 한다. */}
           {mode === 'new' && duplicates.length > 0 && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-amber-800">
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-amber-900">
                 <AlertTriangle size={13} />
                 같은 이름·생년월일의 이용자가 이미 있습니다. 동일인이면 방문을 추가하세요.
               </p>
-              <div className="mt-2 space-y-1.5">
+              <div className="mt-2.5 space-y-1.5">
                 {duplicates.map((candidate) => (
                   <button
                     key={candidate.id}
                     type="button"
                     onClick={() => onPickDuplicate(candidate)}
-                    className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-xs text-slate-700 ring-1 ring-amber-200 hover:bg-amber-100/40 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    className="flex w-full items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-700 ring-1 ring-amber-200 hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-500"
                   >
-                    <span>
+                    <span className="truncate">
                       {candidate.nameMasked} · {candidate.birthYear}년생 · {candidate.residenceDong}
                       <span className="ml-1.5 text-slate-400">({candidate.visitCount}회 방문)</span>
                     </span>
-                    <span className="font-medium text-amber-700">이 이용자에게 방문 추가</span>
+                    <span className="shrink-0 font-medium text-amber-800">이 이용자에게 방문 추가</span>
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-amber-700">
+              <p className="mt-2 text-[11px] text-amber-800">
                 동명이인일 수 있으니 자동으로 합치지 않습니다. 확인 후 선택하세요.
               </p>
             </div>
           )}
 
-          {/* ── 이용자 기본 정보 ── */}
+          {/* ── 기본 정보 ── */}
           {(mode === 'new' || mode === 'edit') && (
-            <>
+            <FormSection step={step()} title="기본 정보">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label className={FIELD_LABEL}>
                   대상자명 <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -591,35 +726,35 @@ function RecordModal({
                   value={clientForm.clientName}
                   onChange={e => onClientChange({ clientName: e.target.value })}
                   placeholder="예: 홍길동 (저장 시 홍○동으로 마스킹됩니다)"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className={FIELD}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  <label className={FIELD_LABEL}>
                     생년월일 <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="date"
                     value={clientForm.birthDate}
                     onChange={e => onClientChange({ birthDate: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    className={FIELD}
                   />
                 </div>
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">거주 읍면동</label>
+                  <label className={FIELD_LABEL}>거주 읍면동</label>
                   <input
                     type="text"
                     readOnly
                     value={extractDong(clientForm.address) || '주소 입력 시 자동'}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500"
+                    className={FIELD + ' bg-slate-50 text-slate-500'}
                   />
                 </div>
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                <label className={FIELD_LABEL}>
                   주소 <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -627,265 +762,252 @@ function RecordModal({
                   value={clientForm.address}
                   onChange={e => onClientChange({ address: e.target.value })}
                   placeholder="화성시 ○○읍 ○○로 00"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className={FIELD}
                 />
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1.5 text-[11px] text-slate-400">
                   목록에는 거주 읍면동까지만 표시됩니다. 상세주소는 상세 화면에서만 보입니다.
                 </p>
               </div>
-            </>
+            </FormSection>
           )}
 
-          {/* ── 방문 정보 ── */}
           {isVisitInput && (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    기관 <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={visitForm.siteId}
-                    onChange={e => onVisitChange({ siteId: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  >
-                    <option value="">기관을 선택하세요</option>
-                    {SITE_OPTIONS.map(site => (
-                      <option key={site.id} value={site.id}>{site.displayName}</option>
-                    ))}
-                  </select>
+              {/* ── 방문 정보 ── */}
+              <FormSection step={step()} title="방문 정보" hint={`${stage} 이용`}>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={FIELD_LABEL}>
+                      기관 <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={visitForm.siteId}
+                      onChange={e => onVisitChange({ siteId: e.target.value })}
+                      className={FIELD}
+                    >
+                      <option value="">기관을 선택하세요</option>
+                      {SITE_OPTIONS.map(site => (
+                        <option key={site.id} value={site.id}>{site.displayName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={FIELD_LABEL}>
+                      방문일자 <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={visitForm.visitDate}
+                      onChange={e => onVisitChange({ visitDate: e.target.value })}
+                      className={FIELD}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    방문일자 <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={visitForm.visitDate}
-                    onChange={e => onVisitChange({ visitDate: e.target.value })}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  />
-                </div>
-              </div>
 
-              {/* 본인확인 · 지원 판단 (1차에는 자가 체크리스트 포함) */}
-              <div className="rounded-xl border border-slate-200 p-4">
-                <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                  <ShieldCheck size={14} className="text-teal-600" />
-                  {stage === '1차' ? '1차 이용 확인' : '본인확인 · 지원 판단'}
-                </p>
-                <div className="space-y-2.5">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={visitForm.identityVerified}
+                    onChange={e => onVisitChange({ identityVerified: e.target.checked })}
+                    className="accent-teal-600"
+                  />
+                  본인확인 완료
+                </label>
+              </FormSection>
+
+              {/* ── 1차 지원 / 물품 지원 ── */}
+              <FormSection
+                step={step()}
+                title={stage === '1차' ? '1차 지원' : '물품 지원'}
+                accent={stage === '1차'}
+              >
+                {stage === '1차' && (
                   <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
                     <input
                       type="checkbox"
-                      checked={visitForm.identityVerified}
-                      onChange={e => onVisitChange({ identityVerified: e.target.checked })}
+                      checked={visitForm.checklistCompleted}
+                      onChange={e => onVisitChange({ checklistCompleted: e.target.checked })}
                       className="accent-teal-600"
                     />
-                    본인확인 완료
+                    <ClipboardCheck size={14} className="text-slate-400" />
+                    자가 체크리스트 작성 완료
                   </label>
+                )}
 
-                  {stage === '1차' && (
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                  <span className="flex items-center gap-1.5 text-sm text-slate-700">
+                    <ShieldCheck size={14} className="text-slate-400" />
+                    담당자 지원 판단
+                  </span>
+                  {SUPPORT_DECISIONS.map(decision => (
+                    <label key={decision} className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-700">
                       <input
-                        type="checkbox"
-                        checked={visitForm.checklistCompleted}
-                        onChange={e => onVisitChange({ checklistCompleted: e.target.checked })}
+                        type="radio" name="supportDecision" value={decision}
+                        checked={visitForm.supportDecision === decision}
+                        onChange={() => onVisitChange({ supportDecision: decision })}
                         className="accent-teal-600"
                       />
-                      자가 체크리스트 작성 완료
+                      {decision}
                     </label>
-                  )}
-
-                  <div className="flex items-center gap-3 pt-1">
-                    <span className="text-sm text-slate-700">담당자 지원 판단</span>
-                    <div className="flex gap-4">
-                      {SUPPORT_DECISIONS.map(decision => (
-                        <label key={decision} className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-700">
-                          <input
-                            type="radio" name="supportDecision" value={decision}
-                            checked={visitForm.supportDecision === decision}
-                            onChange={() => onVisitChange({ supportDecision: decision })}
-                            className="accent-teal-600"
-                          />
-                          {decision}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              </div>
 
-              {/* 지원 물품 */}
-              <SupportItemsEditor
-                items={visitForm.supportItems}
-                onChange={next => onVisitChange({ supportItems: next })}
-              />
+                <SupportItemsEditor
+                  items={visitForm.supportItems}
+                  onChange={next => onVisitChange({ supportItems: next })}
+                />
+              </FormSection>
 
-              {/* 기본상담 — 2차부터 */}
+              {/* ── 2차 상담 ── */}
               {stage !== '1차' && (
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                    <MessageSquare size={14} className="text-violet-600" />
-                    기본상담
-                  </p>
-                  <div className="space-y-2.5">
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={visitForm.counselingConducted}
-                        onChange={e => onVisitChange({ counselingConducted: e.target.checked })}
-                        className="accent-teal-600"
-                      />
-                      기본상담 실시
-                    </label>
-                    <textarea
-                      value={visitForm.counselingNote}
-                      onChange={e => onVisitChange({ counselingNote: e.target.value })}
-                      rows={2}
-                      placeholder="상담 내용"
-                      className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                <FormSection step={step()} title="2차 상담" accent={stage === '2차'}>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={visitForm.counselingConducted}
+                      onChange={e => onVisitChange({ counselingConducted: e.target.checked })}
+                      className="accent-teal-600"
                     />
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={visitForm.needsAdditionalSupport}
-                        onChange={e => onVisitChange({ needsAdditionalSupport: e.target.checked })}
-                        className="accent-teal-600"
-                      />
-                      추가지원 필요 — 읍면동 맞춤형복지팀 연계 대상
-                    </label>
-                  </div>
-                </div>
+                    <MessageSquare size={14} className="text-slate-400" />
+                    기본상담 실시
+                  </label>
+                  <textarea
+                    value={visitForm.counselingNote}
+                    onChange={e => onVisitChange({ counselingNote: e.target.value })}
+                    rows={2}
+                    placeholder="상담 내용"
+                    className={FIELD + ' resize-none'}
+                  />
+                  <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={visitForm.needsAdditionalSupport}
+                      onChange={e => onVisitChange({ needsAdditionalSupport: e.target.checked })}
+                      className="mt-0.5 accent-teal-600"
+                    />
+                    추가지원 필요 — 읍면동 맞춤형복지팀 연계 대상
+                  </label>
+                </FormSection>
               )}
 
-              {/* 복지연계 — 2차부터 */}
+              {/* ── 복지연계 ── */}
               {stage !== '1차' && (
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                    <HeartHandshake size={14} className="text-emerald-600" />
-                    읍면동 복지연계
-                  </p>
-
+                <FormSection step={step()} title="복지연계" accent={stage === '2차'}>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">연계 상태</label>
+                      <label className={FIELD_LABEL}>연계 상태</label>
                       <select
                         value={visitForm.referralStatus}
                         onChange={e => onVisitChange({ referralStatus: e.target.value as ReferralStatus })}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className={FIELD}
                       >
                         {REFERRAL_STATUSES.map(status => <option key={status} value={status}>{status}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">2차 연계처 (읍면동)</label>
+                      <label className={FIELD_LABEL}>2차 연계처 (읍면동)</label>
                       <select
                         value={visitForm.linkedDong}
                         onChange={e => onVisitChange({ linkedDong: e.target.value })}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className={FIELD}
                       >
                         <option value="">읍면동 선택</option>
                         {DONGS.map(dong => <option key={dong} value={dong}>{dong}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">맞춤형복지팀</label>
+                      <label className={FIELD_LABEL}>맞춤형복지팀</label>
                       <input
                         type="text"
                         value={visitForm.linkedTeam}
                         onChange={e => onVisitChange({ linkedTeam: e.target.value })}
                         placeholder="예: 맞춤형복지1팀"
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className={FIELD}
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">연계 유형</label>
+                      <label className={FIELD_LABEL}>연계 유형</label>
                       <select
                         value={visitForm.linkageType}
                         onChange={e => onVisitChange({ linkageType: e.target.value as '' | LinkageCompletionType })}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className={FIELD}
                       >
                         <option value="">선택 안 함</option>
                         {LINKAGE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                       </select>
                     </div>
                     <div className="col-span-2">
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">복지연계 서비스</label>
+                      <label className={FIELD_LABEL}>복지연계 서비스</label>
                       <input
                         type="text"
                         value={visitForm.linkageService}
                         onChange={e => onVisitChange({ linkageService: e.target.value })}
                         placeholder="예: 통합돌봄, 반찬지원"
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className={FIELD}
                       />
                     </div>
                   </div>
-                </div>
+                </FormSection>
               )}
 
-              {/* 읍면동 추가상담 · 지속지원 판정 — 3차+ */}
+              {/* ── 3차 · 지속지원 ── */}
               {stage === '3차+' && (
-                <div className="rounded-xl border border-indigo-200 bg-indigo-50/40 p-4">
-                  <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                    <ClipboardCheck size={14} className="text-indigo-600" />
-                    3차 이용 — 읍면동 추가상담 확인 · 지속지원 판정
-                  </p>
+                <FormSection step={step()} title="3차 · 지속지원" hint="읍면동 추가상담 확인" accent>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">읍면동 추가상담 완료일</label>
+                      <label className={FIELD_LABEL}>읍면동 추가상담 완료일</label>
                       <input
                         type="date"
                         value={visitForm.dongCounselingDoneAt}
                         onChange={e => onVisitChange({ dongCounselingDoneAt: e.target.value })}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className={FIELD + ' bg-white'}
                       />
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">지속지원 판정</label>
+                      <label className={FIELD_LABEL}>지속지원 판정</label>
                       <select
                         value={visitForm.continuedSupport}
                         onChange={e => onVisitChange({ continuedSupport: e.target.value as ContinuedSupport })}
-                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className={FIELD + ' bg-white'}
                       >
                         {CONTINUED_SUPPORTS.map(value => <option key={value} value={value}>{value}</option>)}
                       </select>
                     </div>
                     <div className="col-span-2">
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">연계 결과 / 기타 내역</label>
+                      <label className={FIELD_LABEL}>연계 결과 / 기타 내역</label>
                       <textarea
                         value={visitForm.resultNote}
                         onChange={e => onVisitChange({ resultNote: e.target.value })}
                         rows={2}
                         placeholder="읍면동 상담 결과, 지속지원 사유 등"
-                        className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className={FIELD + ' resize-none bg-white'}
                       />
                     </div>
                   </div>
-                </div>
+                </FormSection>
               )}
             </>
           )}
+        </div>
 
-          {/* 버튼 */}
-          <div className="flex items-center justify-end gap-2 pt-1">
-            {isVisitInput && needsItems && visitForm.supportItems.length === 0 && (
-              <p className="mr-auto text-xs text-slate-400">지원 판단이 '지원'이면 물품을 1개 이상 추가하세요.</p>
-            )}
-            <button
-              onClick={onClose}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
-            >
-              취소
-            </button>
-            <button
-              onClick={onSave}
-              disabled={!canSave}
-              className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
-            >
-              {mode === 'edit' ? '수정 완료' : mode === 'visit' ? '방문 등록' : '등록'}
-            </button>
-          </div>
+        {/* 버튼 */}
+        <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-6 py-4">
+          {isVisitInput && needsItems && visitForm.supportItems.length === 0 && (
+            <p className="mr-auto text-xs text-slate-400">지원 판단이 '지원'이면 물품을 1개 이상 추가하세요.</p>
+          )}
+          <button
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          >
+            취소
+          </button>
+          <button
+            onClick={onSave}
+            disabled={!canSave}
+            className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
+          >
+            {mode === 'edit' ? '수정 완료' : mode === 'visit' ? '방문 등록' : '등록'}
+          </button>
         </div>
       </div>
     </div>
@@ -928,11 +1050,13 @@ export default function SupportRecordsPage() {
 
   const rows = useMemo(() => clients.map((client) => {
     const clientVisits = visitsByClient.get(client.id) ?? [];
+    const referral = referralByClient.get(client.id);
     return {
       client,
       visits: clientVisits,
       latestVisit: clientVisits[clientVisits.length - 1],
-      referral: referralByClient.get(client.id),
+      referral,
+      nextAction: resolveNextAction(clientVisits, referral),
     };
   }), [clients, visitsByClient, referralByClient]);
 
@@ -941,8 +1065,9 @@ export default function SupportRecordsPage() {
     const today = todayISO();
     const thisMonth = monthPrefix(today);
     return {
-      todayCount:     visits.filter(v => v.visitDate === today).length,
-      monthCount:     visits.filter(v => monthPrefix(v.visitDate) === thisMonth).length,
+      monthLabel:      `${Number(thisMonth.slice(5))}월 누적 방문`,
+      todayCount:      visits.filter(v => v.visitDate === today).length,
+      monthCount:      visits.filter(v => monthPrefix(v.visitDate) === thisMonth).length,
       firstVisitCount: visits.filter(v => v.visitStage === '1차').length,
       repeatVisitCount: visits.filter(v => v.visitStage !== '1차').length,
       referralOngoing: referrals.filter(r => r.status === '연계요청' || r.status === '읍면동상담중').length,
@@ -964,8 +1089,7 @@ export default function SupportRecordsPage() {
     });
   }, [rows, keyword, dongFilter, statusFilter]);
 
-  const detailRow = filteredRows.find(row => row.client.id === detailClientId)
-    ?? rows.find(row => row.client.id === detailClientId);
+  const detailRow = rows.find(row => row.client.id === detailClientId);
   const targetClient = clients.find(client => client.id === targetClientId) ?? null;
   const nextVisitNo = modalMode === 'visit' && targetClient ? targetClient.visitCount + 1 : 1;
 
@@ -1148,10 +1272,10 @@ export default function SupportRecordsPage() {
   const handleCsv = () => {
     downloadCsv(
       '이용자상담복지연계관리.csv',
-      ['연번', '기관명', '방문차수', '방문횟수', '대상자', '출생연도', '거주 읍면동', '최근 방문일', '2차 연계처', '기본상담', '연계상태'],
-      filteredRows.map(({ client, latestVisit, referral }, index) => [
+      ['연번', '기관명', '방문차수', '방문횟수', '대상자', '출생연도', '거주 읍면동', '최근 방문일', '2차 연계처', '기본상담', '연계상태', '다음 조치'],
+      filteredRows.map(({ client, latestVisit, referral, nextAction }, index) => [
         index + 1,
-        latestVisit?.orgName ?? '',
+        latestVisit?.orgName ?? '',   // CSV 는 서식 호환을 위해 정식 기관명
         latestVisit?.visitStage ?? '',
         client.visitCount,
         client.nameMasked,
@@ -1161,16 +1285,17 @@ export default function SupportRecordsPage() {
         referral?.linkedDong ?? '',
         latestVisit?.basicCounseling?.conducted ? 'O' : 'X',
         referral?.status ?? '미연계',
+        nextAction.label,
       ]),
     );
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* 페이지 헤더 */}
       <PageHeader
         title="이용자·상담 관리"
-        description="화성시 그냥드림 이용자의 방문 차수, 물품지원, 기본상담, 읍면동 복지연계를 통합 관리합니다."
+        description="즉시 물품지원부터 반복방문 감지, 읍면동 복지연계, 지속지원 판정까지 한 화면에서 관리합니다."
         actions={
           <button
             onClick={openNewClient}
@@ -1182,27 +1307,27 @@ export default function SupportRecordsPage() {
         }
       />
 
-      {/* 통계 카드 */}
+      {/* 통계 카드 — 지표마다 무엇을 뜻하는지 한 줄로 붙인다. */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="오늘 이용" value={`${stats.todayCount}건`} icon={Users} />
-        <StatCard label="이번 달 이용" value={`${stats.monthCount}건`} icon={CalendarDays} />
-        <StatCard label="1차 이용" value={`${stats.firstVisitCount}건`} icon={UserPlus} />
-        <StatCard label="2차 이상" value={`${stats.repeatVisitCount}건`} icon={RotateCcw} />
-        <StatCard label="복지연계 진행" value={`${stats.referralOngoing}건`} icon={MessageSquare} tone="warning" />
-        <StatCard label="복지연계 완료" value={`${stats.referralDone}건`} icon={CheckCircle2} tone="warning" />
+        <StatCard label="오늘 이용" value={`${stats.todayCount}건`} icon={Users} description="오늘 방문 접수" />
+        <StatCard label="이번 달 이용" value={`${stats.monthCount}건`} icon={CalendarDays} description={stats.monthLabel} />
+        <StatCard label="1차 이용" value={`${stats.firstVisitCount}건`} icon={UserPlus} description="신규 이용자 첫 방문" />
+        <StatCard label="2차 이상" value={`${stats.repeatVisitCount}건`} icon={RotateCcw} description="반복방문 감지" />
+        <StatCard label="복지연계 진행" value={`${stats.referralOngoing}건`} icon={MessageSquare} tone="warning" description="요청 · 읍면동 상담중" />
+        <StatCard label="복지연계 완료" value={`${stats.referralDone}건`} icon={CheckCircle2} description="지속지원 판단 대상" />
       </div>
 
       {/* 검색·필터 바 */}
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-slate-200 bg-white p-3.5">
         {/* 검색 */}
-        <label className="flex min-w-48 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-teal-500">
+        <label className="flex min-w-48 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm focus-within:border-teal-500 focus-within:ring-1 focus-within:ring-teal-500">
           <Search size={16} className="shrink-0 text-slate-400" />
           <input
             type="text"
             value={keyword}
             onChange={e => setKeyword(e.target.value)}
             placeholder="대상자명 또는 기관명 검색"
-            className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+            className="w-full bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
           />
         </label>
 
@@ -1210,7 +1335,7 @@ export default function SupportRecordsPage() {
         <select
           value={dongFilter}
           onChange={e => setDongFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
         >
           <option value="all">전체 연계처</option>
           {DONGS.map(d => <option key={d} value={d}>{d}</option>)}
@@ -1220,7 +1345,7 @@ export default function SupportRecordsPage() {
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
         >
           <option value="all">전체 연계상태</option>
           {REFERRAL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1246,7 +1371,10 @@ export default function SupportRecordsPage() {
       </div>
 
       {/* 결과 건수 */}
-      <p className="text-sm text-slate-500">총 {filteredRows.length}명</p>
+      <div className="flex items-baseline gap-2">
+        <p className="text-sm text-slate-600">총 <span className="font-semibold text-slate-900">{filteredRows.length}</span>명</p>
+        <p className="text-xs text-slate-400">행을 누르면 진행 단계와 이력을 볼 수 있습니다.</p>
+      </div>
 
       {/* 대상자 목록 테이블 — 개인정보는 마스킹 이름·출생연도·거주 읍면동까지만 */}
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -1254,7 +1382,7 @@ export default function SupportRecordsPage() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
-                {['연번', '기관명', '방문차수', '대상자', '출생연도', '거주 읍면동', '최근 방문일', '2차 연계처', '기본상담', '연계상태'].map(col => (
+                {['연번', '기관명', '방문차수', '대상자', '출생연도', '거주 읍면동', '최근 방문일', '2차 연계처', '기본상담', '연계상태', '다음 조치'].map(col => (
                   <th
                     key={col}
                     className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500"
@@ -1267,35 +1395,38 @@ export default function SupportRecordsPage() {
             <tbody className="divide-y divide-slate-100">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-16 text-center text-sm text-slate-400">
+                  <td colSpan={11} className="py-16 text-center text-sm text-slate-400">
                     검색 조건에 맞는 대상자가 없습니다.
                   </td>
                 </tr>
               ) : (
-                filteredRows.map(({ client, latestVisit, referral }, index) => (
+                filteredRows.map(({ client, latestVisit, referral, nextAction }, index) => (
                   <tr
                     key={client.id}
                     onClick={() => setDetailClientId(client.id)}
-                    className="cursor-pointer transition-colors hover:bg-teal-50/50"
+                    className="cursor-pointer transition-colors hover:bg-teal-50/40"
                   >
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">{index + 1}</td>
-                    <td className="max-w-[9rem] truncate px-4 py-3 font-medium text-slate-800">
-                      {latestVisit?.orgName ?? '-'}
+                    <td className="whitespace-nowrap px-4 py-3.5 text-xs text-slate-400">{index + 1}</td>
+                    <td className="max-w-[10rem] truncate px-4 py-3.5 text-slate-700">
+                      {latestVisit ? SITE_SHORT_NAME.get(latestVisit.siteId) ?? latestVisit.orgName : '-'}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3.5">
                       {latestVisit ? <StageBadge stage={latestVisit.visitStage} /> : '-'}
                       <span className="ml-1.5 text-xs text-slate-400">{client.visitCount}회</span>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800">{client.nameMasked}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{client.birthYear}년생</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{client.residenceDong || '-'}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{client.lastVisitDate}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{referral?.linkedDong || '-'}</td>
-                    <td className="whitespace-nowrap px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3.5 font-medium text-slate-900">{client.nameMasked}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{client.birthYear}년생</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{client.residenceDong || '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{client.lastVisitDate}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5 text-slate-600">{referral?.linkedDong || '-'}</td>
+                    <td className="whitespace-nowrap px-4 py-3.5">
                       <ConductedBadge done={latestVisit?.basicCounseling?.conducted ?? false} />
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3.5">
                       <ReferralBadge status={referral?.status ?? '미연계'} />
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3.5">
+                      <NextActionCell label={nextAction.label} tone={nextAction.tone} />
                     </td>
                   </tr>
                 ))
