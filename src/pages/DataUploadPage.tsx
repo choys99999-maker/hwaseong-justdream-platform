@@ -17,12 +17,14 @@ import ConversionPreview from '../components/upload/ConversionPreview';
 import ExcelPreview, { pickDefaultSheetName } from '../components/upload/ExcelPreview';
 import { fieldLabel, getColumnsForType } from '../utils/excel/schema';
 import { defaultMapping } from '../utils/excel/engine';
-import { sheetTypeLabel } from '../utils/submission';
+import { fileNameKey, sheetTypeLabel, suggestUniqueFileName } from '../utils/submission';
 import { isCentralStoreEnabled } from '../lib/supabase';
 import {
   listOrganizations,
+  listRegisteredFileNames,
   saveSubmission,
   type Organization,
+  type RegisteredFileName,
   type SheetPayload,
 } from '../store/remote';
 import type {
@@ -68,12 +70,17 @@ export default function DataUploadPage() {
   const [acknowledged, setAcknowledged] = useState(false);
   /** 중앙 저장소용 제출 기관(읍면동). 파일명에서 추론하지 않고 명시적으로 고른다. */
   const [organizations, setOrganizations] = useState<Organization[]>([]);
+  /** 이미 올라온 자료의 파일 이름. 이름 겹침을 저장 전에 잡기 위해서만 쓴다. */
+  const [registeredNames, setRegisteredNames] = useState<RegisteredFileName[]>([]);
+  /** 저장될 파일 이름. 겹치면 사용자가 여기서 고친다. */
+  const [fileName, setFileName] = useState('');
   const [orgId, setOrgId] = useState(() => localStorage.getItem(ORG_KEY) ?? '');
   const [orgLoadError, setOrgLoadError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const workerRef = useRef<Worker | null>(null);
   const fileNameRef = useRef('');
+  fileNameRef.current = fileName;
   /** Storage 업로드용 원본 파일. (worker에는 버퍼가 transfer되어 넘어간다) */
   const fileRef = useRef<File | null>(null);
 
@@ -220,6 +227,15 @@ export default function DataUploadPage() {
       );
   }, []);
 
+  // 이름 겹침을 확인하려면 이미 올라온 자료의 이름이 필요하다.
+  useEffect(() => {
+    if (!isCentralStoreEnabled) return;
+    listRegisteredFileNames()
+      .then(setRegisteredNames)
+      // 이름 확인은 보조 기능이다. 못 불러왔다고 업로드 자체를 막지는 않는다.
+      .catch(() => setRegisteredNames([]));
+  }, []);
+
   function selectOrg(id: string) {
     setOrgId(id);
     if (id) localStorage.setItem(ORG_KEY, id);
@@ -253,6 +269,7 @@ export default function DataUploadPage() {
     setCheckResults(null);
     setSavedSheetCount(0);
     setStep('uploading');
+    setFileName(file.name);
     fileNameRef.current = file.name;
     fileRef.current = file;
 
@@ -300,6 +317,10 @@ export default function DataUploadPage() {
       setError('제출 기관(읍면동)을 먼저 선택해주세요.');
       return;
     }
+    if (!fileName.trim()) {
+      setError('저장할 파일 이름을 입력해주세요.');
+      return;
+    }
     setError(null);
     setConvertResults([]);
     setStep('importing');
@@ -309,6 +330,7 @@ export default function DataUploadPage() {
 
   function handleReset() {
     fileRef.current = null;
+    setFileName('');
     setSheets([]);
     setActiveSheetName('');
     setSheetMappings({});
@@ -427,8 +449,29 @@ export default function DataUploadPage() {
 
   /** 중앙 저장소가 켜져 있으면 제출 기관을 고르기 전에는 저장하지 않는다. */
   const needsOrg = isCentralStoreEnabled && !orgId;
+
+  // ── 파일 이름 겹침 ────────────────────────────────────────
+  // 같은 기관에서 같은 이름 = 재제출. DB가 이전 자료를 대체하므로 정상이다.
+  // 다른 기관에서 같은 이름 = 목록에서 사람이 구분할 수 없다. 이름을 바꿔야 한다.
+  const currentOrgName = organizations.find((o) => o.id === orgId)?.name;
+  const nameMatches = useMemo(() => {
+    const key = fileNameKey(fileName);
+    if (!key) return [];
+    return registeredNames.filter((r) => fileNameKey(r.fileName) === key);
+  }, [registeredNames, fileName]);
+  const otherOrgMatches = nameMatches.filter((r) => r.organizationId !== orgId);
+  const sameOrgMatch = orgId ? nameMatches.some((r) => r.organizationId === orgId) : false;
+  /** 다른 동에 같은 이름이 있으면 이름을 바꾸기 전에는 저장하지 않는다. */
+  const hasNameConflict = otherOrgMatches.length > 0;
+
+  function applySuggestedName() {
+    setFileName(
+      suggestUniqueFileName(fileName, registeredNames.map((r) => r.fileName), currentOrgName),
+    );
+  }
   const canSave =
-    canRead && !hasDuplicateMapping && !isChecking && !needsOrg && (!needsConfirm || acknowledged);
+    canRead && !hasDuplicateMapping && !isChecking && !needsOrg && !hasNameConflict &&
+    fileName.trim() !== '' && (!needsConfirm || acknowledged);
 
   function renderOrgSelector() {
     if (!isCentralStoreEnabled) return null;
@@ -610,7 +653,7 @@ export default function DataUploadPage() {
                     : '자료를 확인했어요'}
             </h2>
 
-            <p className="mt-5 text-sm font-medium text-slate-800">{fileNameRef.current}</p>
+            <p className="mt-5 text-sm font-medium text-slate-800">{fileName}</p>
             <p className="mt-1 text-sm text-slate-500">
               {canRead
                 ? `${recognizedSheets.length}개 자료 · ${readableRows.toLocaleString()}건`
@@ -856,9 +899,9 @@ export default function DataUploadPage() {
                 {showPreview && (
                   <div className="mt-5">
                     <ExcelPreview
-                      key={fileNameRef.current}
+                      key={fileName}
                       sheets={sheets}
-                      fileName={fileNameRef.current}
+                      fileName={fileName}
                       mappings={sheetMappings}
                       workerRef={workerRef}
                     />
@@ -871,6 +914,66 @@ export default function DataUploadPage() {
           {/* 저장 */}
           <section className="rounded-2xl border border-slate-200 bg-white px-9 py-8">
             {renderOrgSelector()}
+
+            {/* 파일 이름 — 읍면동마다 같은 서식을 써서 이름이 그대로 겹친다 */}
+            {isCentralStoreEnabled && (
+              <div className="mt-6">
+                <label htmlFor="file-name" className="block text-sm font-medium text-slate-700">
+                  저장할 파일 이름
+                </label>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input
+                    id="file-name"
+                    type="text"
+                    value={fileName}
+                    onChange={(e) => setFileName(e.target.value)}
+                    aria-invalid={hasNameConflict}
+                    className={`w-full max-w-md rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                      hasNameConflict
+                        ? 'border-red-300 text-red-800 focus:ring-red-400'
+                        : 'border-slate-200 text-slate-700 focus:ring-teal-500'
+                    }`}
+                  />
+                  {hasNameConflict && (
+                    <button
+                      type="button"
+                      onClick={applySuggestedName}
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                    >
+                      겹치지 않는 이름 제안
+                    </button>
+                  )}
+                </div>
+
+                {hasNameConflict ? (
+                  <div className="mt-2 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
+                    <p className="text-sm font-medium text-red-800">
+                      같은 이름의 자료가 이미 있습니다
+                    </p>
+                    <ul className="mt-1 space-y-0.5">
+                      {otherOrgMatches.map((match) => (
+                        <li key={match.organizationId} className="text-sm text-red-700">
+                          {match.organizationName} · {match.fileName}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-xs text-red-700">
+                      다른 읍면동이 올린 자료와 이름이 같으면 자료 관리 목록에서 구분할 수
+                      없습니다. 이름을 바꾸거나 다른 파일을 올려주세요.
+                    </p>
+                  </div>
+                ) : sameOrgMatch ? (
+                  <p className="mt-2 text-sm text-amber-700">
+                    같은 이름으로 이미 올린 자료가 있습니다. 저장하면 재제출로 보고 이전 자료를
+                    대체합니다.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-400">
+                    이 이름으로 자료 관리 목록에 표시됩니다. 원본 파일은 그대로 보관됩니다.
+                  </p>
+                )}
+              </div>
+            )}
 
             {needsConfirm && !isChecking && canRead && (
               <label className="mt-6 flex items-start gap-2.5 text-sm text-slate-700">
@@ -903,6 +1006,12 @@ export default function DataUploadPage() {
                 다른 파일 선택
               </button>
             </div>
+
+            {hasNameConflict && (
+              <p className="mt-4 text-sm text-slate-500">
+                이름을 바꾸거나, "다른 파일 선택"으로 다른 자료를 올릴 수 있습니다.
+              </p>
+            )}
 
             {!canRead && (
               <p className="mt-4 text-sm text-slate-500">

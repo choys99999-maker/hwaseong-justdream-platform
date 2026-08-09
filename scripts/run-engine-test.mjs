@@ -21,8 +21,14 @@ if (build.status !== 0) process.exit(build.status ?? 1);
 mkdirSync(outDir, { recursive: true });
 writeFileSync(resolve(outDir, 'package.json'), '{ "type": "commonjs" }\n');
 
-const run = spawnSync(process.execPath, [resolve(outDir, 'scripts/excel-engine-test.js')], {
-  cwd: root,
-  stdio: 'inherit',
-});
-process.exit(run.status ?? 1);
+// 실행할 테스트를 인자로 고른다. 없으면 전부 돌린다.
+const targets = process.argv.slice(2);
+const scripts = targets.length > 0 ? targets : ['excel-engine-test', 'filename-test'];
+for (const name of scripts) {
+  const run = spawnSync(process.execPath, [resolve(outDir, `scripts/${name}.js`)], {
+    cwd: root,
+    stdio: 'inherit',
+  });
+  if (run.status !== 0) process.exit(run.status ?? 1);
+}
+process.exit(0);

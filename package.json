@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:excel": "node scripts/run-engine-test.mjs"
+    "test:excel": "node scripts/run-engine-test.mjs excel-engine-test",
+    "test:filename": "node scripts/run-engine-test.mjs filename-test",
+    "test:unit": "node scripts/run-engine-test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

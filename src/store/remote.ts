@@ -43,6 +43,37 @@ export async function listOrganizations(): Promise<Organization[]> {
   }));
 }
 
+/** 이미 등록된 자료의 파일 이름. 올리기 전 이름 겹침을 확인하는 데만 쓴다. */
+export interface RegisteredFileName {
+  fileName: string;
+  organizationId: string;
+  organizationName: string;
+}
+
+/**
+ * 현재 유효한 제출본들의 파일 이름 목록.
+ *
+ * 읍면동마다 같은 서식을 받아 쓰기 때문에 파일 이름이 그대로 겹치기 쉽다.
+ * 다른 기관 자료끼리 이름이 같으면 자료 관리 목록에서 사람이 구분할 수 없다.
+ * (같은 기관 안에서 같은 이름은 재제출이라 DB가 이전 것을 대체한다 — 그건 정상이다)
+ */
+export async function listRegisteredFileNames(): Promise<RegisteredFileName[]> {
+  const { data, error } = await client()
+    .from('submissions')
+    .select('file_name, organization_id, organizations(name)')
+    .eq('status', 'active');
+  if (error) throw new Error(`올라온 자료 목록을 불러오지 못했습니다: ${error.message}`);
+  return ((data ?? []) as unknown as Array<{
+    file_name: string;
+    organization_id: string;
+    organizations: { name: string } | null;
+  }>).map((row) => ({
+    fileName: row.file_name,
+    organizationId: row.organization_id,
+    organizationName: row.organizations?.name ?? '기관 미상',
+  }));
+}
+
 // ── 저장 ─────────────────────────────────────────────────
 export interface SheetPayload {
   sheetName: string;

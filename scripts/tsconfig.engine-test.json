@@ -15,5 +15,5 @@
     "outDir": "../.tmp-engine-test",
     "rootDir": ".."
   },
-  "include": ["excel-engine-test.ts"]
+  "include": ["excel-engine-test.ts", "filename-test.ts"]
 }

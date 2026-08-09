@@ -64,6 +64,51 @@ export function isSubmittedThisWeek(iso: string, now: Date = new Date()): boolea
   return date.getTime() >= weekStart;
 }
 
+// ── 파일 이름 ─────────────────────────────────────────────
+// 읍면동마다 같은 서식을 내려받아 쓰기 때문에 파일 이름이 그대로 겹친다.
+// 저장은 되지만 자료 관리 목록에서 어느 동 자료인지 사람이 구분할 수 없다.
+
+/** 이름 비교용 키. 표기 차이(자모 조합·대소문자·앞뒤 공백)로 다른 이름이 되지 않게. */
+export function fileNameKey(name: string): string {
+  return name.normalize('NFC').trim().toLowerCase();
+}
+
+function splitExtension(name: string): { stem: string; ext: string } {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return { stem: name, ext: '' };
+  return { stem: name.slice(0, dot), ext: name.slice(dot) };
+}
+
+/**
+ * 이미 쓰인 이름과 겹치지 않는 이름을 제안한다.
+ * 읍면동 이름을 앞에 붙이는 것이 가장 알아보기 쉽다. 그래도 겹치면 번호를 붙인다.
+ * 확장자는 그대로 둔다.
+ */
+export function suggestUniqueFileName(
+  name: string,
+  takenNames: Iterable<string>,
+  organizationName?: string,
+): string {
+  const taken = new Set(Array.from(takenNames, fileNameKey));
+  const { stem, ext } = splitExtension(name.trim());
+
+  const candidates: string[] = [];
+  if (organizationName && !stem.includes(organizationName)) {
+    candidates.push(`${organizationName}_${stem}${ext}`);
+  }
+  for (let n = 2; n <= 50; n++) {
+    if (organizationName && !stem.includes(organizationName)) {
+      candidates.push(`${organizationName}_${stem} (${n})${ext}`);
+    }
+    candidates.push(`${stem} (${n})${ext}`);
+  }
+
+  for (const candidate of candidates) {
+    if (!taken.has(fileNameKey(candidate))) return candidate;
+  }
+  return `${stem} (사본)${ext}`;
+}
+
 // ── 개인정보 ──────────────────────────────────────────────
 // 자료 관리·지역 상세는 다른 지역 담당자도 보는 화면이다. 집계·운영 값은 그대로
 // 보여주되 개인 식별 항목은 가려서 내보낸다.
