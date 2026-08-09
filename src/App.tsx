@@ -9,6 +9,7 @@ import ForecastPage from './pages/ForecastPage';
 import DataLibraryPage from './pages/DataLibraryPage';
 import DataUploadPage from './pages/DataUploadPage';
 import SubmissionDetailPage from './pages/SubmissionDetailPage';
+import SupportRecordsPage from './pages/SupportRecordsPage';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/regions" element={<RegionListPage />} />
         <Route path="/regions/:regionId" element={<RegionDetailPage />} />
         <Route path="/performance" element={<PerformancePage />} />
+        <Route path="/support-records" element={<SupportRecordsPage />} />
         <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/forecast" element={<ForecastPage />} />
         <Route path="/files" element={<DataLibraryPage />} />

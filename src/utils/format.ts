@@ -13,3 +13,11 @@ export function formatDateTime(isoDateTime: string): string {
 export function formatNumber(value: number): string {
   return value.toLocaleString('ko-KR');
 }
+
+/**
+ * 재고 표시. 값을 알 수 없으면(계산 근거 없음) 0 이 아니라 '—' 로 둔다.
+ * 0 은 "실제로 소진됨", '—' 는 "모름"이라 뜻이 다르다.
+ */
+export function formatStock(value: number | null): string {
+  return value === null ? '—' : formatNumber(value);
+}

@@ -2,6 +2,7 @@
 // 모든 소비 화면은 IndexedDB의 "활성 자료 1개"가 아니라 여기서 읽는다.
 // 집계 규칙(최신 제출본만/누계 시트 제외/유통기한 임박)은 전부 SQL view 쪽에 있다.
 import { supabase } from '../lib/supabase';
+import type { InventoryStatus as InventoryStatusLabel } from '../types';
 
 function client() {
   if (!supabase) throw new Error('중앙 저장소가 설정되지 않았습니다.');
@@ -24,9 +25,12 @@ export interface CityOverview {
   totalNoLinkageNeeded: number;
   referralRecordCount: number;
   inventoryItemCount: number;
+  /** 신뢰할 수 있는 품목만 더한 재고 합계. 이상 품목(확인 필요)은 빠진다. */
   inventoryTotalStock: number;
   expiringSoonCount: number;
   expiredCount: number;
+  /** 재고를 신뢰할 수 없어 합계에서 뺀 품목 수 */
+  unverifiedItemCount: number;
   periodStart: string | null;
   periodEnd: string | null;
   lastUploadedAt: string | null;
@@ -51,6 +55,7 @@ export async function getCityOverview(): Promise<CityOverview> {
     inventoryTotalStock: num('inventory_total_stock'),
     expiringSoonCount: num('expiring_soon_count'),
     expiredCount: num('expired_count'),
+    unverifiedItemCount: num('unverified_item_count'),
     periodStart: (r['period_start'] as string) ?? null,
     periodEnd: (r['period_end'] as string) ?? null,
     lastUploadedAt: (r['last_uploaded_at'] as string) ?? null,
@@ -71,7 +76,10 @@ export interface RegionUsage {
   noLinkageNeeded: number;
   referralCount: number;
   itemCount: number;
+  /** 신뢰할 수 있는 품목만 더한 재고 합계 */
   totalStock: number;
+  /** 재고를 신뢰할 수 없어 합계에서 뺀 품목 수 */
+  unverifiedItemCount: number;
   submissionCount: number;
   lastUploadedAt: string | null;
   periodStart: string | null;
@@ -93,6 +101,7 @@ function toRegionUsage(r: Record<string, unknown>): RegionUsage {
     referralCount: Number(r.referral_count ?? 0),
     itemCount: Number(r.item_count ?? 0),
     totalStock: Number(r.total_stock ?? 0),
+    unverifiedItemCount: Number(r.unverified_item_count ?? 0),
     submissionCount: Number(r.submission_count ?? 0),
     lastUploadedAt: (r.last_uploaded_at as string) ?? null,
     periodStart: (r.period_start as string) ?? null,
@@ -121,6 +130,30 @@ export async function getRegionUsage(organizationName: string): Promise<RegionUs
 }
 
 // ── 물품·재고 ─────────────────────────────────────────────
+
+/** 재고 값의 출처. `v_inventory_status` 가 판정한다. */
+export type StockSource =
+  /** 원본 서식의 `현재재고` 값을 그대로 씀 */
+  | 'reported'
+  /** `Σ입고 − Σ출고` 로 파생 계산 */
+  | 'derived'
+  /** 계산 근거가 없어 재고를 알 수 없음 */
+  | 'unknown';
+
+/** 데이터 이상 사유. `v_inventory_status.anomaly_codes` 값과 1:1 대응한다. */
+export type InventoryAnomalyCode =
+  | 'outbound_over_inbound'
+  | 'negative_stock'
+  | 'stock_mismatch'
+  | 'missing_basis';
+
+export const ANOMALY_LABELS: Record<InventoryAnomalyCode, string> = {
+  outbound_over_inbound: '출고가 입고보다 많습니다',
+  negative_stock: '계산된 재고가 음수입니다',
+  stock_mismatch: '현재재고가 입고−출고와 맞지 않습니다',
+  missing_basis: '재고를 계산할 값이 없습니다',
+};
+
 export interface InventoryStatus {
   organizationId: string;
   organizationName: string;
@@ -128,12 +161,21 @@ export interface InventoryStatus {
   itemName: string;
   inboundQuantity: number;
   outboundQuantity: number;
-  stock: number;
+  /** 재고 계산 SSOT 결과. 알 수 없으면 null (0 으로 단정하지 않는다) */
+  stock: number | null;
+  /** 합계용 재고. 이상 품목이면 null 이라 합계에 섞이지 않는다. */
+  trustedStock: number | null;
+  stockSource: StockSource;
   lastInboundDate: string | null;
   expirationDate: string | null;
   isExpired: boolean;
   isExpiringSoon: boolean;
   daysToExpiration: number | null;
+  /** 데이터 이상 여부. true 면 재고 값을 그대로 믿으면 안 된다. */
+  hasAnomaly: boolean;
+  anomalyCodes: InventoryAnomalyCode[];
+  /** 상태 라벨. DB(view)가 판정한 값이라 화면마다 달라지지 않는다. */
+  status: InventoryStatusLabel;
 }
 
 export async function listInventoryStatus(): Promise<InventoryStatus[]> {
@@ -143,20 +185,42 @@ export async function listInventoryStatus(): Promise<InventoryStatus[]> {
     .order('organization_name')
     .order('item_name');
   if (error) fail('재고 현황', error.message);
-  return (data ?? []).map((r) => ({
-    organizationId: String(r.organization_id),
-    organizationName: String(r.organization_name),
-    regionName: String(r.region_name),
-    itemName: String(r.item_name),
-    inboundQuantity: Number(r.inbound_quantity ?? 0),
-    outboundQuantity: Number(r.outbound_quantity ?? 0),
-    stock: Number(r.stock ?? 0),
-    lastInboundDate: (r.last_inbound_date as string) ?? null,
-    expirationDate: (r.expiration_date as string) ?? null,
-    isExpired: Boolean(r.is_expired),
-    isExpiringSoon: Boolean(r.is_expiring_soon),
-    daysToExpiration: r.days_to_expiration === null ? null : Number(r.days_to_expiration),
-  }));
+  return (data ?? []).map((r) => {
+    // 재고는 "모름"과 "0"이 다르다. null 을 0 으로 접지 않는다.
+    const stock = r.stock === null || r.stock === undefined ? null : Number(r.stock);
+    const hasAnomaly = Boolean(r.has_anomaly);
+
+    // Phase 3 마이그레이션 전 DB에는 `trusted_stock` 열 자체가 없다(undefined).
+    // 이때 null 로 두면 합계가 통째로 0 이 되어 대시보드 KPI 와 어긋나므로,
+    // 열이 없을 때만 기존 동작(= stock 을 그대로 합산)으로 되돌린다.
+    // 열이 있는데 값이 null 인 것은 "이상 품목이라 일부러 뺐다"는 뜻이므로 그대로 둔다.
+    const trustedStock =
+      r.trusted_stock === undefined
+        ? (hasAnomaly ? null : stock)
+        : r.trusted_stock === null
+          ? null
+          : Number(r.trusted_stock);
+
+    return {
+      organizationId: String(r.organization_id),
+      organizationName: String(r.organization_name),
+      regionName: String(r.region_name),
+      itemName: String(r.item_name),
+      inboundQuantity: Number(r.inbound_quantity ?? 0),
+      outboundQuantity: Number(r.outbound_quantity ?? 0),
+      stock,
+      trustedStock,
+      stockSource: (r.stock_source as StockSource) ?? 'unknown',
+      lastInboundDate: (r.last_inbound_date as string) ?? null,
+      expirationDate: (r.expiration_date as string) ?? null,
+      isExpired: Boolean(r.is_expired),
+      isExpiringSoon: Boolean(r.is_expiring_soon),
+      daysToExpiration: r.days_to_expiration === null ? null : Number(r.days_to_expiration),
+      hasAnomaly,
+      anomalyCodes: (r.anomaly_codes as InventoryAnomalyCode[]) ?? [],
+      status: r.status as InventoryStatusLabel,
+    };
+  });
 }
 
 // ── 복지연계 집계 (개인정보 없음) ─────────────────────────

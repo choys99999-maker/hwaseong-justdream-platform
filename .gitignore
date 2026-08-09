@@ -149,3 +149,6 @@ vite.log
 
 # 좌표 확정 스크립트가 만드는 임시 페이지 (앱 키 포함, 실행 후 자동 삭제)
 public/__geocode.html
+
+# 엑셀 엔진 회귀 테스트 산출물
+.tmp-engine-test/

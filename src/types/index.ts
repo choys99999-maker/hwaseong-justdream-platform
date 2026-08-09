@@ -39,13 +39,18 @@ export interface SupportRecord {
 
 export type InventoryStatus = '정상' | '임박' | '부족' | '확인 필요';
 
+export type ItemCategory = '식품' | '위생용품' | '생필품' | '영유아용품' | '기타';
+
 export interface InventoryItem {
   id: string;
   name: string;
+  category: ItemCategory;
   regionId: RegionId;
   regionName: string;
+  baseStock: number;
   inboundQuantity: number;
   outboundQuantity: number;
+  discardQuantity: number;
   currentStock: number;
   expiryDate: string;
   status: InventoryStatus;
@@ -182,6 +187,160 @@ export interface SecondReferralCase {
   note?: string;
   underReview: boolean;
   noLinkageNeeded: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 원본 서식 시드 전용 타입 (`src/data/mockCounselingRecords.ts`)
+//
+// 화성시 "2차 연계 대상자" 엑셀 서식을 그대로 옮긴 형태다. 런타임 도메인 모델은
+// 아래의 Client / Visit / WelfareReferral 이며, 시드는 `mockClientRecords.ts` 가
+// 한 번 변환해서 쓴다. 새 코드에서 이 타입들을 직접 참조하지 않는다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** (시드 전용) 복지연계 최종 상태 */
+export type LinkageStatus = '연계완료' | '검토중' | '연계불요' | '기타';
+
+/** (시드 전용) 연계상담 실시 여부. 서식 표기(O/X)를 그대로 옮긴 값이다. */
+export type LinkageConductedFlag = 'O' | 'X';
+
+/** (시드 전용) 이용자 1회 방문 기록 */
+export interface CounselingVisit {
+  visitNo: number;
+  visitDate: string;
+  visitType: VisitType;
+  counselingNote?: string;
+  linkageConducted: LinkageConductedFlag;
+  linkageStatus?: LinkageStatus;
+  linkageService?: string;
+  secondReferralDong?: string;
+}
+
+/** (시드 전용) 화성시 2차 연계 대상자 통합 관리 레코드 */
+export interface CounselingRecord {
+  id: string;
+  seq: number;
+  orgName: string;
+  regionId: RegionId;
+  visitType: VisitType;
+  clientName: string;
+  birthDate: string;
+  address: string;
+  counselingDate: string;
+  secondReferralDong: string;
+  linkageConducted: LinkageConductedFlag;
+  linkageStatus: LinkageStatus;
+  linkageService?: string;
+  note?: string;
+  history: CounselingVisit[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 이용·상담 관리 도메인 모델
+//
+// 현행 그냥드림 운영 흐름을 그대로 따른다.
+//   1차: 본인확인 → 자가 체크리스트 → 담당자 지원 판단 → 물품지원
+//   2차: 재방문 확인 → 기본상담 → 물품지원 → 추가지원 필요 판단 → 읍면동 연계
+//   3차+: 읍면동 추가상담 완료 확인 → 지속지원 필요성 판정 → 지속 물품지원
+//
+// Client 1 : N Visit 1 : 0..1 WelfareReferral
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** 방문 차수. `visitNo` 에서 파생하며 따로 저장하지 않는다. */
+export type VisitStage = '1차' | '2차' | '3차+';
+
+/** 담당자 지원 판단 */
+export type SupportDecision = '지원' | '미지원' | '보류';
+
+/** 복지연계 진행 상태 */
+export type ReferralStatus = '미연계' | '연계요청' | '읍면동상담중' | '연계완료' | '연계불요';
+
+/** 지속지원 필요성 판정 (3차 이용) */
+export type ContinuedSupport = '가능' | '불가' | '미판정';
+
+/** 이용자 1명. 방문 이력과 분리해서 관리한다. */
+export interface Client {
+  id: string;
+  /** 목록·인쇄에 나가는 마스킹 이름 (예: 홍○동) */
+  nameMasked: string;
+  /** 목록에는 출생연도까지만 노출한다. */
+  birthYear: number;
+  /** 전체 생년월일. 상세 화면에서만 쓴다. */
+  birthDate?: string;
+  /** 목록에는 거주 읍면동까지만 노출한다. */
+  residenceDong: string;
+  /** 상세주소. 상세 화면에서만 쓴다. */
+  addressDetail?: string;
+  regionId: RegionId;
+  firstVisitDate: string;
+  lastVisitDate: string;
+  /** 방문 횟수. 반복방문 감지 기준값이며 방문 추가 시 갱신한다. */
+  visitCount: number;
+}
+
+/**
+ * 1회 방문에서 지원한 물품 1줄.
+ *
+ * `itemId` 는 품목 고유 식별자, `itemName` 은 화면 표시명이다. 둘을 같은 값으로
+ * 쓰지 않는다. 재고·출고 연동은 integration 단계에서 `outboundRecordId` 로 잇는다.
+ */
+export interface SupportItem {
+  itemId: string;
+  itemName: string;
+  quantity: number;
+  unit?: string;
+  /** 재고 브랜치의 출고 레코드와 연결되면 채워진다. 이 브랜치에서는 항상 비어 있다. */
+  outboundRecordId?: string;
+}
+
+/** 기본상담. 복지연계와 분리된 별개 단계다. */
+export interface BasicCounseling {
+  conducted: boolean;
+  note?: string;
+  /** 추가지원 필요 판단. true 면 읍면동 복지연계로 넘어간다. */
+  needsAdditionalSupport: boolean;
+}
+
+/** 방문 1회 = 흐름의 1차 / 2차 / 3차+ 한 단계 */
+export interface Visit {
+  id: string;
+  clientId: string;
+  /** 1부터 자동 누적된다. */
+  visitNo: number;
+  /** `visitNo` 에서 파생한 표시값 */
+  visitStage: VisitStage;
+  visitDate: string;
+  /** 그냥드림 사업장 25개소 id (`justdream_sites_25.ts`) */
+  siteId: string;
+  orgName: string;
+  identityVerified: boolean;
+  /** 자가 체크리스트 완료 여부. 공식 문항이 확정되면 여기에 문항 배열을 덧붙인다. */
+  checklistCompleted: boolean;
+  supportDecision: SupportDecision;
+  supportItems: SupportItem[];
+  /** 1차에는 없을 수 있다. 2차부터 입력한다. */
+  basicCounseling?: BasicCounseling;
+  /** 이 방문에서 복지연계가 시작되면 채워진다. */
+  referralId?: string;
+}
+
+/** 읍면동 맞춤형복지팀 연계 1건. 이용자당 최대 1건을 진행 상태로 관리한다. */
+export interface WelfareReferral {
+  id: string;
+  clientId: string;
+  /** 연계가 시작된 방문 */
+  originVisitId: string;
+  status: ReferralStatus;
+  /** 연계한 읍면동. 화면 라벨은 화성시 서식대로 '2차 연계처(읍면동)' 를 쓴다. */
+  linkedDong: string;
+  linkedTeam?: string;
+  requestedAt?: string;
+  /** 읍면동 추가상담 완료일. 3차 이용의 전제 조건이다. */
+  dongCounselingDoneAt?: string;
+  linkageType?: LinkageCompletionType;
+  linkageService?: string;
+  continuedSupport: ContinuedSupport;
+  resultNote?: string;
+  updatedAt: string;
 }
 
 /** GeoJSON 링: `[경도, 위도]` 좌표 배열 */
