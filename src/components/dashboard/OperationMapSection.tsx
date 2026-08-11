@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Expand, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Expand, SlidersHorizontal, X } from 'lucide-react';
 import type { DistrictId, FacilityType, OperationSite, SiteStatus } from '../../types';
-import KakaoDistrictMap from '../map/KakaoDistrictMap';
+import KakaoDistrictMap, { type MapFocusRequest } from '../map/KakaoDistrictMap';
 import DistrictFilter from '../map/DistrictFilter';
 import MapLegend from '../map/MapLegend';
+import MapSearch from '../map/MapSearch';
 import OperationActionPanel from './OperationActionPanel';
 import { mockSites, getSiteById } from '../../data/mockSites';
 import { districtRiskLevels } from '../../data/operationSummary';
@@ -46,6 +47,14 @@ export default function OperationMapSection() {
   const [facilityTypeFilter, setFacilityTypeFilter] = useState<FacilityTypeFilter>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
 
+  /** 시설유형·운영상태처럼 자주 안 쓰는 필터는 팝오버 안으로 옮긴다. */
+  const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
+  const filterPopoverRef = useRef<HTMLDivElement | null>(null);
+
+  /** 검색 결과 선택 → KakaoDistrictMap 에 지도 이동을 요청한다. */
+  const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
+  const focusTokenRef = useRef(0);
+
   const filterFn = useCallback(
     (site: OperationSite) => {
       if (programTypeFilter !== 'ALL') {
@@ -75,8 +84,39 @@ export default function OperationMapSection() {
     setSelectedSiteId(siteId);
   }, []);
 
+  /**
+   * 검색 결과 선택. marker 클릭과 동일한 selectedSiteId state 를 사용하되(단일 selection source of truth),
+   * 검색은 필터와 무관하게 전체 데이터에서 이뤄지므로 선택한 거점이 필터에 가려 안 보이는 일이 없도록
+   * 구·유형 필터를 초기화하고 지도 focusRequest 로 해당 좌표까지 이동시킨다.
+   */
+  const handleSelectSiteFromSearch = useCallback((site: OperationSite) => {
+    setSelectedDistrict(null);
+    setProgramTypeFilter('ALL');
+    setFacilityTypeFilter('ALL');
+    setStatusFilter('ALL');
+    setSelectedSiteId(site.id);
+    focusTokenRef.current += 1;
+    setFocusRequest({ siteId: site.id, token: focusTokenRef.current });
+  }, []);
+
   const openFocusMode = useCallback(() => setIsFocusMode(true), []);
   const closeFocusMode = useCallback(() => setIsFocusMode(false), []);
+
+  useEffect(() => {
+    if (!isFilterPopoverOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!filterPopoverRef.current?.contains(event.target as Node)) setIsFilterPopoverOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsFilterPopoverOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isFilterPopoverOpen]);
 
   useEffect(() => {
     if (!isFocusMode) return;
@@ -94,6 +134,7 @@ export default function OperationMapSection() {
   }, [isFocusMode, closeFocusMode]);
 
   const selectedSite = getSiteById(selectedSiteId);
+  const hasSecondaryFilters = facilityTypeFilter !== 'ALL' || statusFilter !== 'ALL';
 
   const totalSiteCount = mockSites.length;
   const visibleSiteCount = useMemo(
@@ -139,7 +180,8 @@ export default function OperationMapSection() {
           </div>
         )}
 
-        {/* 필터 — 단일 행, compact */}
+        {/* 검색 + 필터 — 단일 행, compact. 기본으로 보이는 건 검색·구·사업유형뿐이고
+            시설유형·운영상태는 "필터" 팝오버 안으로 옮겼다. */}
         <div
           className={
             isFocusMode
@@ -147,15 +189,16 @@ export default function OperationMapSection() {
               : 'flex flex-wrap items-center gap-1.5'
           }
           role="group"
-          aria-label="지도 필터"
+          aria-label="지도 검색 및 필터"
         >
+          <MapSearch sites={mockSites} onSelectSite={handleSelectSiteFromSearch} />
+          <div className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
           <DistrictFilter
             compact
             selectedDistrict={selectedDistrict}
             districtRiskLevels={districtRiskLevels}
             onSelect={handleSelectDistrict}
           />
-          <div className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
           <select
             className={SELECT_CLASS}
             value={programTypeFilter}
@@ -166,33 +209,64 @@ export default function OperationMapSection() {
             <option value="NATIONAL">국가형</option>
             <option value="HWASEONG">화성형</option>
           </select>
-          <select
-            className={SELECT_CLASS}
-            value={facilityTypeFilter}
-            onChange={(e) => setFacilityTypeFilter(e.target.value as FacilityTypeFilter)}
-            aria-label="시설 유형 필터"
+
+          <div ref={filterPopoverRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFilterPopoverOpen((v) => !v)}
+              aria-expanded={isFilterPopoverOpen}
+              aria-haspopup="true"
+              className={`inline-flex items-center gap-1 rounded border px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+                hasSecondaryFilters
+                  ? 'border-teal-500 bg-teal-50 text-teal-700'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:bg-teal-50/40'
+              }`}
+            >
+              <SlidersHorizontal size={12} />
+              필터
+              {hasSecondaryFilters && <span className="h-1.5 w-1.5 rounded-full bg-teal-500" aria-hidden />}
+            </button>
+
+            {isFilterPopoverOpen && (
+              <div className="absolute left-0 top-[calc(100%+4px)] z-20 flex w-44 flex-col gap-1.5 rounded-lg border border-slate-200 bg-white p-2 shadow-md">
+                <label className="text-[11px] text-slate-400">
+                  시설 유형
+                  <select
+                    className={`${SELECT_CLASS} mt-0.5 w-full`}
+                    value={facilityTypeFilter}
+                    onChange={(e) => setFacilityTypeFilter(e.target.value as FacilityTypeFilter)}
+                    aria-label="시설 유형 필터"
+                  >
+                    <option value="ALL">시설유형 전체</option>
+                    <option value="행정복지센터">행정복지센터</option>
+                    <option value="복지관">복지관</option>
+                    <option value="푸드뱅크·기타">푸드뱅크·기타</option>
+                  </select>
+                </label>
+                <label className="text-[11px] text-slate-400">
+                  운영 상태
+                  <select
+                    className={`${SELECT_CLASS} mt-0.5 w-full`}
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                    aria-label="운영 상태 필터"
+                  >
+                    <option value="ALL">운영상태 전체</option>
+                    <option value="normal">정상 운영</option>
+                    <option value="shortage">물품 부족</option>
+                    <option value="expiring">유통기한 임박</option>
+                    <option value="missing">자료 확인 필요</option>
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
+
+          <span
+            className="ml-auto shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500"
+            aria-live="polite"
           >
-            <option value="ALL">시설유형 전체</option>
-            <option value="행정복지센터">행정복지센터</option>
-            <option value="복지관">복지관</option>
-            <option value="푸드뱅크·기타">푸드뱅크·기타</option>
-          </select>
-          <select
-            className={SELECT_CLASS}
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
-            aria-label="운영 상태 필터"
-          >
-            <option value="ALL">운영상태 전체</option>
-            <option value="normal">정상 운영</option>
-            <option value="shortage">물품 부족</option>
-            <option value="expiring">유통기한 임박</option>
-            <option value="missing">자료 확인 필요</option>
-          </select>
-          <span className="ml-auto shrink-0 text-xs text-slate-400" aria-live="polite">
-            {visibleSiteCount < totalSiteCount
-              ? `${totalSiteCount}곳 중 ${visibleSiteCount}곳`
-              : `전체 ${totalSiteCount}곳`}
+            {visibleSiteCount < totalSiteCount ? `지도 위치 ${visibleSiteCount}/${totalSiteCount}` : `지도 위치 ${totalSiteCount}`}
           </span>
         </div>
 
@@ -213,18 +287,20 @@ export default function OperationMapSection() {
             onSelectSite={handleSelectSite}
             onMapClick={isFocusMode ? undefined : openFocusMode}
             filterFn={filterFn}
+            focusRequest={focusRequest}
           />
         </div>
 
-        {/* 범례 */}
+        {/* 범례 — 전체화면에서는 크게, 기본 화면에서는 compact 하게.
+            전체화면 우측 하단에 둬 지도 자체의 "전체 보기" 버튼(좌측 하단)과 겹치지 않게 한다. */}
         <div
           className={
             isFocusMode
-              ? 'absolute bottom-4 left-4 z-10 rounded-lg bg-white/90 px-3 py-2 shadow-sm'
+              ? 'absolute bottom-4 right-4 z-10 rounded-lg bg-white/90 px-3 py-2 shadow-sm'
               : 'mt-2 space-y-1'
           }
         >
-          <MapLegend />
+          <MapLegend size={isFocusMode ? 'large' : 'compact'} />
           {!isFocusMode && (
             <p className="text-[10px] leading-relaxed text-slate-400">
               전체 사업 프로그램 {JUSTDREAM_PROGRAM_TOTALS.totalPrograms}개 · 지도 위치 확인{' '}

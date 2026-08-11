@@ -35,6 +35,8 @@ const DISTRICT_BOUNDS_PADDING = 12;
 const RELAYOUT_DEBOUNCE_MS = 160;
 /** 지도 최초 생성 레벨. 화성시 전체가 뷰포트에 들어온다. */
 const INITIAL_LEVEL = 9;
+/** 검색 결과 선택 시 이동할 확대 레벨. 클러스터 임계값보다 한참 낮아 개별 마커가 바로 보인다. */
+const FOCUS_SITE_LEVEL = 4;
 /**
  * 카카오맵 레벨(level) 이 이 값 이상이면 구 단위 요약 오버레이만 표시하고 개별 마커는 숨긴다.
  * 두 표현의 역할을 분리한다.
@@ -171,6 +173,12 @@ function layoutLabels(entries: MarkerEntry[]): void {
 
 type MapPhase = 'loading' | 'ready' | 'missing-key' | 'error';
 
+/** 검색 결과 선택 등 외부에서 특정 거점으로 지도를 이동시키고 싶을 때 쓴다. token 을 매번 올려 같은 거점을 다시 선택해도 이동이 재실행되게 한다. */
+export interface MapFocusRequest {
+  siteId: string;
+  token: number;
+}
+
 interface KakaoDistrictMapProps {
   sites: OperationSite[];
   districtRiskLevels: Record<DistrictId, SiteStatus>;
@@ -182,6 +190,8 @@ interface KakaoDistrictMapProps {
   onMapClick?: () => void;
   /** 마커 가시성 필터. 반환값이 false 면 해당 거점 마커를 숨긴다. */
   filterFn?: (site: OperationSite) => boolean;
+  /** 설정되면 해당 거점 좌표로 지도 center/zoom 을 이동한다. (검색 결과 선택 등) */
+  focusRequest?: MapFocusRequest | null;
 }
 
 interface PolygonEntry {
@@ -301,6 +311,7 @@ export default function KakaoDistrictMap({
   onSelectSite,
   onMapClick,
   filterFn,
+  focusRequest,
 }: KakaoDistrictMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapsRef = useRef<KakaoMapsNamespace | null>(null);
@@ -649,12 +660,13 @@ export default function KakaoDistrictMap({
     scheduleLabelLayout();
   }, [phase, selectedDistrict, filterFn, clusterMode, paintPolygons, scheduleLabelLayout]);
 
-  // 3) 거점 선택 표시
+  // 3) 거점 선택 표시. 선택된 마커는 강조하고, 나머지는 opacity 를 소폭 낮춰 대비를 준다.
   useEffect(() => {
     if (phase !== 'ready') return;
     markersRef.current.forEach(({ site, element, overlay }) => {
       const isSelected = site.id === selectedSiteId;
       element.dataset.selected = String(isSelected);
+      element.style.opacity = selectedSiteId && !isSelected ? '0.55' : '1';
       overlay.setZIndex(isSelected ? 9 : 5);
     });
     // 선택 시 라벨 굵기가 바뀌어 폭이 달라지므로 배치를 다시 잡는다.
@@ -666,6 +678,19 @@ export default function KakaoDistrictMap({
     if (phase !== 'ready') return;
     fitMapToDistrict(selectedDistrict);
   }, [phase, selectedDistrict, fitMapToDistrict]);
+
+  // 4b) 검색 결과 선택 등 외부 focusRequest → 해당 거점 좌표로 이동. district-fit 이후에 실행되어 우선한다.
+  useEffect(() => {
+    if (phase !== 'ready' || !focusRequest) return;
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+    const entry = markersRef.current.find((m) => m.site.id === focusRequest.siteId);
+    if (!entry) return;
+    map.setCenter(new maps.LatLng(entry.site.latitude, entry.site.longitude));
+    map.setLevel(FOCUS_SITE_LEVEL);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, focusRequest?.siteId, focusRequest?.token]);
 
   // 5) 사이드바 접기 등으로 컨테이너 크기가 바뀌면 relayout 후 범위를 다시 맞춘다.
   useEffect(() => {

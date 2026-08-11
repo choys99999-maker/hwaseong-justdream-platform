@@ -32,6 +32,8 @@ body {
   border: 0;
   background: none;
   cursor: pointer;
+  /* 거점 선택 시 다른 마커를 소폭 흐리게(opacity) 만 처리한다 — KakaoDistrictMap 이 style.opacity 를 직접 지정한다. */
+  transition: opacity 120ms ease-in-out;
 }
 
 .gj-marker::before {
@@ -90,6 +92,10 @@ body {
 /*
  * 기관명 라벨. 지도 도로명·지명을 덜 가리도록 흰 배경 + 얇은 회색 테두리로 눌러 둔다.
  * 최대 2줄까지 접히고, 그보다 길면 말줄임한다. (이름을 통째로 숨기지는 않는다)
+ *
+ * 기본은 숨김이다 — hover 시 tooltip, 선택 시에만 계속 보이는 라벨로 노출한다.
+ * opacity 로 숨겨(display:none 아님) getBoundingClientRect 가 항상 실제 크기를 반환하므로
+ * layoutLabels() 의 겹침 계산은 라벨이 보이지 않는 동안에도 그대로 동작한다.
  */
 .gj-marker-label {
   position: absolute;
@@ -119,7 +125,10 @@ body {
   word-break: keep-all;
   overflow-wrap: anywhere;
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+  opacity: 0;
+  pointer-events: none;
   transition:
+    opacity 120ms ease-in-out,
     border-color 120ms ease-in-out,
     transform 120ms ease-in-out,
     box-shadow 120ms ease-in-out;
@@ -172,6 +181,8 @@ body {
 }
 
 .gj-marker:hover .gj-marker-label {
+  opacity: 1;
+  pointer-events: auto;
   border-color: #94a3b8;
   box-shadow: 0 2px 4px rgb(15 23 42 / 0.12);
 }
@@ -193,6 +204,8 @@ body {
 
 .gj-marker:focus-visible .gj-marker-label,
 .gj-marker[data-selected='true'] .gj-marker-label {
+  opacity: 1;
+  pointer-events: auto;
   border-color: #0d9488;
   color: #0f172a;
   font-weight: 600;
