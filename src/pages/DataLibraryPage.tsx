@@ -1,6 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, ChevronRight, FolderClosed, Plus } from 'lucide-react';
+import {
+  AlertCircle,
+  ChevronRight,
+  Database,
+  FileSpreadsheet,
+  FolderClosed,
+  Plus,
+  RefreshCw,
+  ScanSearch,
+  ShieldCheck,
+} from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
 import { useCentralData } from '../hooks/useCentralData';
@@ -13,6 +23,15 @@ import {
 } from '../utils/submission';
 
 const MY_REGION_KEY = 'jd-my-region';
+
+/** 자료 처리 흐름 — 현재 실제 구현(Excel 업로드 파이프라인)을 그대로 시각화한 것뿐, 새 단계 아님 */
+const PROCESS_STEPS = [
+  { label: '기관 자료', icon: FileSpreadsheet },
+  { label: '자동 인식', icon: ScanSearch },
+  { label: '오류 검증', icon: ShieldCheck },
+  { label: '공통 형식 변환', icon: RefreshCw },
+  { label: '중앙 집계', icon: Database },
+] as const;
 
 /** 목록 한 줄. 중앙 DB의 유효 제출본만 들어온다. */
 interface SubmissionView {
@@ -116,9 +135,29 @@ export default function DataLibraryPage() {
     <div className="mx-auto w-full max-w-[1280px]">
       <PageHeader
         title="자료·데이터 관리"
-        description="읍면동 제출 자료를 수집·검수하는 허브입니다. 여기서 저장된 자료가 대시보드·재고·실적 화면의 기준 데이터가 됩니다."
+        description="읍면동 제출 자료를 수집·검수하는 허브입니다. 여기서 저장된 자료가 대시보드·재고·실적 화면의 기준이 됩니다."
         actions={uploadButton}
       />
+
+      {/* 자료 처리 흐름 — 새 기능이 아니라 현재 Excel 파이프라인을 시각화한 것 */}
+      <section
+        aria-label="자료 처리 흐름"
+        className="mb-4 flex items-center gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white px-4 py-3"
+      >
+        {PROCESS_STEPS.map((step, index) => (
+          <div key={step.label} className="flex shrink-0 items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-50 text-teal-600">
+                <step.icon size={13} />
+              </span>
+              <span className="whitespace-nowrap text-xs font-medium text-slate-700">{step.label}</span>
+            </div>
+            {index < PROCESS_STEPS.length - 1 && (
+              <ChevronRight size={14} className="shrink-0 text-slate-300" />
+            )}
+          </div>
+        ))}
+      </section>
 
       {remoteError && (
         <div className="mb-4 flex items-start gap-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
@@ -151,7 +190,7 @@ export default function DataLibraryPage() {
           }`}
         >
           <span className="text-sm text-slate-500">미제출</span>
-          <span className="mt-1.5 block text-2xl font-semibold tabular-nums text-slate-900">
+          <span className="mt-1.5 block text-[28px] font-bold leading-none tabular-nums text-slate-900">
             {missingOrganizations.length.toLocaleString()}
             <span className="ml-1 text-sm font-normal text-slate-400">곳</span>
           </span>
@@ -341,7 +380,7 @@ function SummaryTile({
       }`}
     >
       <dt className="text-sm text-slate-500">{label}</dt>
-      <dd className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900">
+      <dd className="mt-1.5 text-[28px] font-bold leading-none tabular-nums text-slate-900">
         {value.toLocaleString()}
         <span className="ml-1 text-sm font-normal text-slate-400">{unit}</span>
       </dd>

@@ -29,14 +29,17 @@ function MetricTile({
   value,
   unit,
   source,
+  compact = false,
 }: {
   label: string;
   value: number | null;
   unit: string;
   source: '확정' | '시연' | '중앙';
+  /** 부가 지표 — 1차 지표(부족/확인 필요/등록 거점)보다 한 단계 낮은 시각 위계 */
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded-lg bg-slate-50 p-3">
+    <div className={compact ? 'rounded-lg bg-slate-50 px-3 py-2' : 'rounded-lg bg-slate-50 p-3'}>
       <dt className="flex items-center justify-between gap-1 text-xs text-slate-500">
         {label}
         <span
@@ -51,7 +54,13 @@ function MetricTile({
           {source === '중앙' ? '제출 자료' : source === '확정' ? '확정' : '시연'}
         </span>
       </dt>
-      <dd className="mt-1 text-lg font-semibold text-slate-900">
+      <dd
+        className={
+          compact
+            ? 'mt-1 text-base font-semibold text-slate-800'
+            : 'mt-1.5 text-[26px] font-bold leading-none text-slate-900'
+        }
+      >
         {value === null ? '—' : formatNumber(value)}
         <span className="ml-1 text-xs font-normal text-slate-400">{unit}</span>
       </dd>
@@ -155,7 +164,7 @@ export default function RegionListPage() {
     <div className="space-y-5">
       <PageHeader
         title="거점 운영"
-        description="화성시 그냥드림 거점의 운영 현황을 지역별로 확인하는 화면입니다. 구를 선택하면 기관 목록과 자료 제출 현황이 함께 좁혀집니다."
+        description="시청이 확인해야 할 거점을 지역별로 봅니다. 구를 선택하면 목록과 자료 제출 현황이 함께 좁혀집니다."
       />
 
       {/* 구 선택 */}
@@ -175,7 +184,7 @@ export default function RegionListPage() {
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-xs text-slate-400">
               <CalendarClock size={14} />
-              최근 자료 제출{' '}
+              최근 자료 기준일{' '}
               {scopeCentral?.lastUploadedAt ? formatUpdatedAt(scopeCentral.lastUploadedAt) : '없음'}
             </span>
             {selectedDistrict && (
@@ -190,13 +199,30 @@ export default function RegionListPage() {
           </div>
         </div>
 
-        <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          <MetricTile label="운영 기관" value={scopeSummary.siteCount} unit="개소" source="확정" />
+        {/* 1차 지표 — 시청이 어느 거점을 확인해야 하는지 판단하는 데 바로 쓰는 값만 크게 보여준다 */}
+        <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <MetricTile label="데이터 등록 거점" value={scopeSummary.siteCount} unit="개소" source="확정" />
           <MetricTile label="물품 부족 기관" value={scopeSummary.shortageSiteCount} unit="개소" source="시연" />
-          <MetricTile label="유통기한 임박" value={scopeSummary.expiringQuantity} unit="개" source="시연" />
           <MetricTile label="자료 확인 필요" value={scopeSummary.missingSiteCount} unit="개소" source="시연" />
-          <MetricTile label="이용자 수" value={scopeCentral ? scopeCentral.userCount : null} unit="명" source="중앙" />
-          <MetricTile label="현재 재고" value={scopeCentral ? scopeCentral.totalStock : null} unit="개" source="중앙" />
+        </dl>
+
+        {/* 2차 지표 — 세부 운영 수치. 위 1차 지표보다 한 단계 낮은 위계로 보조 참고용이다 */}
+        <dl className="mt-2 grid grid-cols-3 gap-3">
+          <MetricTile compact label="유통기한 임박" value={scopeSummary.expiringQuantity} unit="개" source="시연" />
+          <MetricTile
+            compact
+            label="이용자 수"
+            value={scopeCentral ? scopeCentral.userCount : null}
+            unit="명"
+            source="중앙"
+          />
+          <MetricTile
+            compact
+            label="현재 재고"
+            value={scopeCentral ? scopeCentral.totalStock : null}
+            unit="개"
+            source="중앙"
+          />
         </dl>
       </section>
 
@@ -227,6 +253,12 @@ export default function RegionListPage() {
             },
             { key: 'facilityType', header: '기관 유형', render: (row) => row.facilityType },
             { key: 'district', header: '구', render: (row) => REGION_NAMES[row.district] },
+            { key: 'status', header: '운영 상태', render: (row) => <SiteStatusBadge status={row.status} /> },
+            {
+              key: 'lastUpdatedAt',
+              header: '최근 데이터',
+              render: (row) => <span className="text-slate-400">{formatDateTime(row.lastUpdatedAt)}</span>,
+            },
             { key: 'inventoryCount', header: '현재 재고', render: (row) => `${formatNumber(row.inventoryCount)}개` },
             {
               key: 'expectedShortage',
@@ -247,12 +279,6 @@ export default function RegionListPage() {
                 ) : (
                   '-'
                 ),
-            },
-            { key: 'status', header: '상태', render: (row) => <SiteStatusBadge status={row.status} /> },
-            {
-              key: 'lastUpdatedAt',
-              header: '최근 데이터',
-              render: (row) => <span className="text-slate-400">{formatDateTime(row.lastUpdatedAt)}</span>,
             },
           ]}
           data={siteRows}

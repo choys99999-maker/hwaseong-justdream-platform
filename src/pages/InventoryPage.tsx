@@ -193,7 +193,7 @@ function AlertCard({
         count === 0 ? 'cursor-default border-slate-100 bg-white opacity-40' : active ? s.active : s.inactive
       }`}
     >
-      <p className={`text-2xl font-bold ${count === 0 ? 'text-slate-400' : s.count}`}>{count}건</p>
+      <p className={`text-[28px] font-bold leading-none ${count === 0 ? 'text-slate-400' : s.count}`}>{count}건</p>
       <p className="mt-1 text-sm font-medium text-slate-700">{label}</p>
       <p className="mt-0.5 text-xs text-slate-400">{sublabel}</p>
     </button>

@@ -21,7 +21,7 @@ import { useCentralData } from '../hooks/useCentralData';
 import { getCityOverview, listInventoryStatus } from '../store/analytics';
 import { listOrganizations, listSubmissions } from '../store/remote';
 import { citySummary } from '../data/operationSummary';
-import { JUSTDREAM_SITE_SUMMARY } from '../data/justdreamSummary';
+import { JUSTDREAM_SITE_SUMMARY, JUSTDREAM_PROGRAM_TOTALS } from '../data/justdreamSummary';
 import { mockVisits, mockWelfareReferrals } from '../data/mockClientRecords';
 import { inventoryStatusOf } from '../utils/inventoryStatus';
 import { formatUpdatedAt } from '../utils/submission';
@@ -97,7 +97,33 @@ export default function DashboardPage() {
   const hasCentralData = (overview?.submissionCount ?? 0) > 0;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      {/* 사업 규모 Hero — 화성시 그냥드림 전체 규모를 첫눈에 전달한다. 43은 사업 프로그램 수다. */}
+      <section
+        aria-label="화성시 그냥드림 사업 규모"
+        className="rounded-xl border border-slate-200 bg-white px-5 py-3.5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1.5">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2 className="text-sm font-medium text-slate-500">화성시 그냥드림 통합 운영</h2>
+            <p className="text-[26px] font-bold leading-none text-slate-900">
+              {JUSTDREAM_PROGRAM_TOTALS.totalPrograms}개 프로그램
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">
+            <span>
+              국가형 <strong className="font-semibold text-slate-800">{JUSTDREAM_PROGRAM_TOTALS.national}</strong>{' '}
+              · 화성형 <strong className="font-semibold text-slate-800">{JUSTDREAM_PROGRAM_TOTALS.hwaseong}</strong>
+            </span>
+            <span className="hidden text-slate-300 sm:inline">|</span>
+            <span className="text-xs text-slate-400">
+              화성형: 읍면동 {JUSTDREAM_PROGRAM_TOTALS.hwaseongAdminCenter} · 복지관{' '}
+              {JUSTDREAM_PROGRAM_TOTALS.hwaseongWelfareCenter}
+            </span>
+          </div>
+        </div>
+      </section>
+
       {/*
         핵심 운영 지표 5개 — 전부 실제 데이터(확정 거점 명단 또는 중앙 저장소 집계)만 쓴다.
         시연/시뮬레이션 값은 여기 섞지 않고 아래 '운영 시뮬레이션' 영역으로 분리했다.
@@ -113,13 +139,15 @@ export default function DashboardPage() {
           <button
             type="button"
             onClick={() => setIsCompositionModalOpen(true)}
-            className="rounded-xl border border-slate-200 bg-white p-3 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="rounded-xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
           >
             <div className="flex items-start justify-between">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs text-slate-500">데이터 등록 거점</p>
-                <p className="mt-1.5 text-xl font-semibold text-slate-900">{JUSTDREAM_SITE_SUMMARY.total}곳</p>
-                <p className="mt-0.5 text-xs text-teal-600">
+                <p className="mt-1.5 text-[28px] font-bold leading-none text-slate-900">
+                  {JUSTDREAM_SITE_SUMMARY.total}곳
+                </p>
+                <p className="mt-1.5 text-xs text-teal-600">
                   복지기관 {JUSTDREAM_SITE_SUMMARY.welfareOrgCount} · 협의체 {JUSTDREAM_SITE_SUMMARY.councilCount} ↗
                 </p>
               </div>
@@ -158,14 +186,20 @@ export default function DashboardPage() {
 
       {isCompositionModalOpen && <SiteCompositionModal onClose={() => setIsCompositionModalOpen(false)} />}
 
+      {/* 지도 — KPI 바로 아래 핵심 영역. 확인이 필요한 위치를 공간적으로 확인한다. */}
+      <OperationMapSection />
+
+      {/* 오늘 확인이 필요한 사항 — 거점 시연 데이터 기준이다. */}
+      <TodayActionSection />
+
       {/*
         운영 시뮬레이션 — 아직 확정되지 않은 시연/시뮬레이션 값이다.
-        위 '핵심 운영 지표'(실제 데이터)와 같은 시각 위계로 섞이지 않도록 점선 테두리로 구분한다.
+        지도·실제 집계보다 아래로 내리고, 카드 크기도 한 단계 낮춰(compact) 시각 위계를 구분한다.
         화성시 전체 현황 판단에는 쓰지 않는다.
       */}
       <section
         aria-label="운영 시뮬레이션"
-        className="rounded-xl border border-dashed border-amber-300 bg-amber-50/40 p-3"
+        className="rounded-xl border border-dashed border-amber-300 bg-amber-50/30 p-3"
       >
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
           <h2 className="text-xs font-medium text-amber-800">운영 시뮬레이션</h2>
@@ -173,18 +207,19 @@ export default function DashboardPage() {
             시연 데이터 · 실제 값 아님
           </span>
         </div>
-        <p className="mb-2 text-[11px] text-amber-800/80">
-          거점 시연 데이터(mockSites)와 세션 시드 이용 기록에서 계산한 값입니다. 화성시 전체 현황 판단에는
-          사용하지 마세요.
+        <p className="mb-2 text-[11px] text-amber-800/70">
+          거점 시연 데이터(mockSites)와 세션 시드 이용 기록 기준입니다. 화성시 전체 현황 판단에는 사용하지 마세요.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <StatCard
+            size="compact"
             label="이번 주 이용자"
             value={`${formatNumber(thisWeekUserCount)}명`}
             icon={Users}
-            description="최근 7일 이용 기록 기준(시연)"
+            description="최근 7일 이용 기록(시연)"
           />
           <StatCard
+            size="compact"
             label="물품 부족 보고 거점"
             value={`${formatNumber(citySummary.shortageSiteCount)}곳`}
             icon={PackageSearch}
@@ -192,6 +227,7 @@ export default function DashboardPage() {
             tone="danger"
           />
           <StatCard
+            size="compact"
             label="복지연계 확인 필요"
             value={`${formatNumber(linkageNeedsCheckCount)}건`}
             icon={HeartHandshake}
@@ -200,12 +236,6 @@ export default function DashboardPage() {
           />
         </div>
       </section>
-
-      {/* 오늘 확인이 필요한 사항 — 위 시뮬레이션과 같은 거점 시연 데이터 기준이다. */}
-      <TodayActionSection />
-
-      {/* 지도 — 확인이 필요한 위치를 공간적으로 확인한다. */}
-      <OperationMapSection />
 
       {/* 중앙 저장소 집계 — 읍면동이 올린 Excel 자료에서 계산한 실제 값이다. */}
       <section aria-label="중앙 자료 집계">

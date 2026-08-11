@@ -42,15 +42,15 @@ function FunnelStep({
 }) {
   return (
     <>
-      <div className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
-        <p className="truncate text-xs text-slate-500">{label}</p>
-        <p className="mt-1 text-lg font-semibold text-slate-900">
+      <div className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-4 py-3.5">
+        <p className="truncate text-xs font-medium text-slate-500">{label}</p>
+        <p className="mt-1.5 text-[26px] font-bold leading-none text-slate-900">
           {formatNumber(value)}
           <span className="ml-0.5 text-xs font-normal text-slate-400">{unit}</span>
         </p>
-        <p className="mt-0.5 truncate text-[11px] text-slate-400">{hint}</p>
+        <p className="mt-1.5 truncate text-[11px] text-slate-400">{hint}</p>
       </div>
-      {!isLast && <ArrowRight size={15} className="shrink-0 text-teal-500" />}
+      {!isLast && <ArrowRight size={18} strokeWidth={2.5} className="shrink-0 text-teal-500" />}
     </>
   );
 }
@@ -130,15 +130,15 @@ export default function CounselingLinkageTab() {
   return (
     <div className="space-y-5">
       {/* 핵심 흐름 요약 */}
-      <section className="rounded-xl border border-slate-200 bg-white p-4" aria-label="이용·연계 흐름 요약">
+      <section className="rounded-xl border border-slate-200 bg-white p-5" aria-label="이용·연계 흐름 요약">
         <div className="flex flex-wrap items-center gap-1.5">
-          <h3 className="text-sm font-semibold text-slate-900">이용 → 상담 → 복지연계 흐름</h3>
+          <h3 className="text-base font-semibold text-slate-900">이용 → 상담 → 복지연계 흐름</h3>
           <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 ring-1 ring-amber-600/20">
             시연 데이터
           </span>
           <span className="text-[11px] text-slate-400">이용 현황 탭의 이용자 기록 기준</span>
         </div>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3.5 flex items-center gap-2">
           <FunnelStep label="1차 이용" value={funnel.firstVisit} unit="명" hint="물품지원 · 본인확인" />
           <FunnelStep label="2차 상담" value={funnel.counselingDone} unit="건" hint="기본상담 실시" />
           <FunnelStep label="복지연계" value={funnel.referralCount} unit="건" hint="읍면동 맞춤형복지팀" />
