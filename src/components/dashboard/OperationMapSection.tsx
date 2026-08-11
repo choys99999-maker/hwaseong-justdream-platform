@@ -54,6 +54,8 @@ export default function OperationMapSection() {
   /** 검색 결과 선택 → KakaoDistrictMap 에 지도 이동을 요청한다. */
   const [focusRequest, setFocusRequest] = useState<MapFocusRequest | null>(null);
   const focusTokenRef = useRef(0);
+  /** 검색 선택과 마커 직접 클릭을 구분한다. 검색어 삭제는 SEARCH 선택만 해제한다. */
+  const [selectionSource, setSelectionSource] = useState<'SEARCH' | 'MAP' | null>(null);
 
   const filterFn = useCallback(
     (site: OperationSite) => {
@@ -82,6 +84,7 @@ export default function OperationMapSection() {
 
   const handleSelectSite = useCallback((siteId: string) => {
     setSelectedSiteId(siteId);
+    setSelectionSource('MAP');
   }, []);
 
   /**
@@ -95,9 +98,18 @@ export default function OperationMapSection() {
     setFacilityTypeFilter('ALL');
     setStatusFilter('ALL');
     setSelectedSiteId(site.id);
+    setSelectionSource('SEARCH');
     focusTokenRef.current += 1;
     setFocusRequest({ siteId: site.id, token: focusTokenRef.current });
   }, []);
+
+  const handleClearSearch = useCallback(() => {
+    if (selectionSource === 'SEARCH') {
+      setSelectedSiteId(null);
+      setFocusRequest(null);
+      setSelectionSource(null);
+    }
+  }, [selectionSource]);
 
   const openFocusMode = useCallback(() => setIsFocusMode(true), []);
   const closeFocusMode = useCallback(() => setIsFocusMode(false), []);
@@ -191,7 +203,7 @@ export default function OperationMapSection() {
           role="group"
           aria-label="지도 검색 및 필터"
         >
-          <MapSearch sites={mockSites} onSelectSite={handleSelectSiteFromSearch} />
+          <MapSearch sites={mockSites} onSelectSite={handleSelectSiteFromSearch} onClearSearch={handleClearSearch} />
           <div className="mx-0.5 h-4 w-px shrink-0 bg-slate-200" aria-hidden />
           <DistrictFilter
             compact
@@ -272,11 +284,7 @@ export default function OperationMapSection() {
 
         {/* 지도 — 높이를 뷰포트 기반으로 설정 */}
         <div
-          className={
-            isFocusMode
-              ? 'relative flex-1'
-              : 'relative mt-2 h-[clamp(440px,calc(100vh-420px),720px)]'
-          }
+          className={`${isFocusMode ? 'relative flex-1' : 'relative mt-2 h-[clamp(440px,calc(100vh-420px),720px)]'}${selectionSource === 'SEARCH' ? ' gj-map-search-active' : ''}`}
         >
           <KakaoDistrictMap
             sites={mockSites}

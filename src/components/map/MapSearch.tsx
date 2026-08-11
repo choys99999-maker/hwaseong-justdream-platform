@@ -8,6 +8,7 @@ import { siteAreaOf } from '../../data/mockSites';
 interface MapSearchProps {
   sites: OperationSite[];
   onSelectSite: (site: OperationSite) => void;
+  onClearSearch?: () => void;
   className?: string;
 }
 
@@ -26,7 +27,7 @@ function normalize(value: string): string {
  * 지도 위 floating 검색창. 기관명·읍면동·구역명으로 로컬 거점 데이터(mockSites)에서만 찾는다.
  * 결과 선택은 marker 클릭과 동일한 onSelectSite 콜백을 타 selection source of truth 를 하나로 유지한다.
  */
-export default function MapSearch({ sites, onSelectSite, className }: MapSearchProps) {
+export default function MapSearch({ sites, onSelectSite, onClearSearch, className }: MapSearchProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -101,8 +102,10 @@ export default function MapSearch({ sites, onSelectSite, className }: MapSearchP
           type="text"
           value={query}
           onChange={(e) => {
-            setQuery(e.target.value);
+            const value = e.target.value;
+            setQuery(value);
             setIsOpen(true);
+            if (value === '') onClearSearch?.();
           }}
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
@@ -120,6 +123,7 @@ export default function MapSearch({ sites, onSelectSite, className }: MapSearchP
             onClick={() => {
               setQuery('');
               setIsOpen(false);
+              onClearSearch?.();
               inputRef.current?.focus();
             }}
             aria-label="검색어 지우기"
