@@ -1,10 +1,10 @@
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Boxes,
   FileSpreadsheet,
+  HeartHandshake,
   MapPin,
   PackageSearch,
-  Repeat2,
   TimerReset,
   Users,
 } from 'lucide-react';
@@ -19,44 +19,49 @@ import MonthlyFlowChart from '../components/charts/MonthlyFlowChart';
 import DistrictRiskChart from '../components/charts/DistrictRiskChart';
 import { useCentralData } from '../hooks/useCentralData';
 import { getCityOverview, listInventoryStatus } from '../store/analytics';
-import { listSubmissions } from '../store/remote';
-import { mockRedistributionRecords } from '../data/mockRedistributions';
-import { citySummary, redistributionRecommendations } from '../data/operationSummary';
-import { EXPIRING_THRESHOLD, mockSites } from '../data/mockSites';
+import { listOrganizations, listSubmissions } from '../store/remote';
+import { citySummary } from '../data/operationSummary';
 import { JUSTDREAM_SITE_SUMMARY } from '../data/justdreamSummary';
-import { countPendingReview, getPlanSnapshot, subscribePlan } from '../store/redistributionPlan';
+import { mockVisits, mockWelfareReferrals } from '../data/mockClientRecords';
 import { inventoryStatusOf } from '../utils/inventoryStatus';
 import { formatUpdatedAt } from '../utils/submission';
 import { formatDate, formatNumber } from '../utils/format';
-
-const recentRedistributions = [...mockRedistributionRecords]
-  .sort((a, b) => b.date.localeCompare(a.date))
-  .slice(0, 5);
-
-/** 유통기한 임박 수량이 기준 이상인 거점 수 (시연 데이터 기준) */
-const expiringSiteCount = mockSites.filter((site) => site.expiringCount >= EXPIRING_THRESHOLD).length;
 
 /** 유통기한 임박 패널에 올릴 최대 건수 */
 const EXPIRING_PANEL_LIMIT = 5;
 /** 확인 필요 알림 패널에 올릴 최대 건수 */
 const ISSUE_PANEL_LIMIT = 5;
 
+/** "이번 주"는 오늘 포함 최근 7일이다. 시연 이용 기록(mockVisits) 기준 사실 집계이며 예측이 아니다. */
+function isWithinLastWeek(dateIso: string): boolean {
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 6);
+  const weekAgoIso = weekAgo.toISOString().slice(0, 10);
+  return dateIso >= weekAgoIso;
+}
+
+const thisWeekUserCount = mockVisits.filter((visit) => isWithinLastWeek(visit.visitDate)).length;
+const linkageNeedsCheckCount = mockWelfareReferrals.filter(
+  (referral) => referral.status === '연계요청' || referral.status === '읍면동상담중',
+).length;
+
 export default function DashboardPage() {
   const [isCompositionModalOpen, setIsCompositionModalOpen] = useState(false);
-
-  // 재배분 검토 상태 — 배분·재배분 화면에서 처리하면 이 KPI가 즉시 줄어든다.
-  const planStatuses = useSyncExternalStore(subscribePlan, getPlanSnapshot);
-  const pendingRedistribution = countPendingReview(
-    planStatuses,
-    redistributionRecommendations.map((rec) => rec.id),
-  );
 
   // 중앙 저장소 집계. 지도·거점 현황·조치 목록은 이 조회와 무관하게 항상 그려진다.
   const { data, error, isLoading } = useCentralData(
     () =>
-      Promise.all([getCityOverview(), listInventoryStatus(), listSubmissions()]).then(
-        ([overview, inventory, submissions]) => ({ overview, inventory, submissions }),
-      ),
+      Promise.all([
+        getCityOverview(),
+        listInventoryStatus(),
+        listSubmissions(),
+        listOrganizations(),
+      ]).then(([overview, inventory, submissions, organizations]) => ({
+        overview,
+        inventory,
+        submissions,
+        organizations,
+      })),
     [],
   );
 
@@ -73,30 +78,38 @@ export default function DashboardPage() {
   );
 
   /** 저장 시 검증이 값 오류를 잡은 제출 자료. */
-  const flaggedSubmissions = useMemo(
-    () =>
-      (data?.submissions ?? [])
-        .filter((submission) => submission.issueCount > 0)
-        .slice(0, ISSUE_PANEL_LIMIT),
+  const allFlaggedSubmissions = useMemo(
+    () => (data?.submissions ?? []).filter((submission) => submission.issueCount > 0),
     [data],
   );
+  const flaggedSubmissions = useMemo(
+    () => allFlaggedSubmissions.slice(0, ISSUE_PANEL_LIMIT),
+    [allFlaggedSubmissions],
+  );
+
+  /** 자료를 한 번이라도 제출한 기관 수. 미제출 기관은 자료·데이터 관리에서 명단을 볼 수 있다. */
+  const submittedOrgCount = useMemo(() => {
+    const names = new Set((data?.submissions ?? []).map((s) => s.organizationName));
+    return names.size;
+  }, [data]);
+  const totalOrgCount = data?.organizations.length ?? 0;
 
   const hasCentralData = (overview?.submissionCount ?? 0) > 0;
 
   return (
     <div className="space-y-3">
       {/*
-        핵심 KPI 4개 — 담당자가 화면을 열자마자 "어디에 문제가 있는지"를 판단하는 값.
-        운영 기관 수는 확정 자료(justdream_sites_25), 부족·임박·재배분은 시연용 합성 수치다.
+        핵심 운영 지표 5개 — 전부 실제 데이터(확정 거점 명단 또는 중앙 저장소 집계)만 쓴다.
+        시연/시뮬레이션 값은 여기 섞지 않고 아래 '운영 시뮬레이션' 영역으로 분리했다.
       */}
       <section aria-label="핵심 운영 지표">
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
           <h2 className="text-xs font-medium text-slate-500">핵심 운영 지표</h2>
-          <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 ring-1 ring-amber-600/20">
-            부족·임박·재배분은 시연 데이터
+          <span className="rounded bg-teal-50 px-1.5 py-px text-[10px] font-medium text-teal-700 ring-1 ring-teal-600/20">
+            시스템 집계
           </span>
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <button
             type="button"
             onClick={() => setIsCompositionModalOpen(true)}
@@ -104,7 +117,7 @@ export default function DashboardPage() {
           >
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs text-slate-500">운영 기관</p>
+                <p className="text-xs text-slate-500">데이터 등록 거점</p>
                 <p className="mt-1.5 text-xl font-semibold text-slate-900">{JUSTDREAM_SITE_SUMMARY.total}곳</p>
                 <p className="mt-0.5 text-xs text-teal-600">
                   복지기관 {JUSTDREAM_SITE_SUMMARY.welfareOrgCount} · 협의체 {JUSTDREAM_SITE_SUMMARY.councilCount} ↗
@@ -116,34 +129,82 @@ export default function DashboardPage() {
             </div>
           </button>
           <StatCard
-            label="부족 위험 기관"
-            value={`${formatNumber(citySummary.shortageSiteCount)}곳`}
-            icon={PackageSearch}
-            description={`7일 내 ${formatNumber(citySummary.shortageQuantity)}개 부족 예상`}
-            tone="danger"
+            label="자료 제출 완료"
+            value={`${formatNumber(submittedOrgCount)} / ${formatNumber(totalOrgCount)}`}
+            icon={FileSpreadsheet}
+            description="제출 대상 읍면동 기준"
           />
           <StatCard
-            label="유통기한 임박 수량"
-            value={`${formatNumber(citySummary.expiringQuantity)}개`}
+            label="누적 이용자"
+            value={`${formatNumber(overview?.totalUsers ?? 0)}명`}
+            icon={Users}
+            description="중앙 저장소 제출 자료 기준"
+          />
+          <StatCard
+            label="중앙 집계 재고"
+            value={`${formatNumber(overview?.inventoryTotalStock ?? 0)}개`}
+            icon={Boxes}
+            description={`${formatNumber(overview?.inventoryItemCount ?? 0)}개 품목`}
+          />
+          <StatCard
+            label="데이터 오류·확인 필요"
+            value={`${formatNumber(allFlaggedSubmissions.length)}건`}
             icon={TimerReset}
-            description={`임박 기준 초과 기관 ${formatNumber(expiringSiteCount)}곳`}
-            tone="warning"
-          />
-          <StatCard
-            label="재배분 검토"
-            value={`${formatNumber(pendingRedistribution)}건`}
-            icon={Repeat2}
-            description={`전체 제안 ${formatNumber(redistributionRecommendations.length)}건`}
+            description="제출 자료 값 검증 기준"
+            tone={allFlaggedSubmissions.length > 0 ? 'warning' : 'default'}
           />
         </div>
       </section>
 
       {isCompositionModalOpen && <SiteCompositionModal onClose={() => setIsCompositionModalOpen(false)} />}
 
-      {/* 오늘 조치가 필요한 사항 — KPI 바로 아래, 지도보다 먼저 온다. */}
+      {/*
+        운영 시뮬레이션 — 아직 확정되지 않은 시연/시뮬레이션 값이다.
+        위 '핵심 운영 지표'(실제 데이터)와 같은 시각 위계로 섞이지 않도록 점선 테두리로 구분한다.
+        화성시 전체 현황 판단에는 쓰지 않는다.
+      */}
+      <section
+        aria-label="운영 시뮬레이션"
+        className="rounded-xl border border-dashed border-amber-300 bg-amber-50/40 p-3"
+      >
+        <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+          <h2 className="text-xs font-medium text-amber-800">운영 시뮬레이션</h2>
+          <span className="rounded bg-amber-100 px-1.5 py-px text-[10px] font-medium text-amber-800 ring-1 ring-amber-600/30">
+            시연 데이터 · 실제 값 아님
+          </span>
+        </div>
+        <p className="mb-2 text-[11px] text-amber-800/80">
+          거점 시연 데이터(mockSites)와 세션 시드 이용 기록에서 계산한 값입니다. 화성시 전체 현황 판단에는
+          사용하지 마세요.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <StatCard
+            label="이번 주 이용자"
+            value={`${formatNumber(thisWeekUserCount)}명`}
+            icon={Users}
+            description="최근 7일 이용 기록 기준(시연)"
+          />
+          <StatCard
+            label="물품 부족 보고 거점"
+            value={`${formatNumber(citySummary.shortageSiteCount)}곳`}
+            icon={PackageSearch}
+            description="즉시 확인 필요(시연)"
+            tone="danger"
+          />
+          <StatCard
+            label="복지연계 확인 필요"
+            value={`${formatNumber(linkageNeedsCheckCount)}건`}
+            icon={HeartHandshake}
+            description="연계요청·읍면동상담중(시연)"
+            tone="warning"
+          />
+        </div>
+      </section>
+
+      {/* 오늘 확인이 필요한 사항 — 위 시뮬레이션과 같은 거점 시연 데이터 기준이다. */}
       <TodayActionSection />
 
-      {/* 지도 — 조치가 필요한 위치를 공간적으로 확인한다. */}
+      {/* 지도 — 확인이 필요한 위치를 공간적으로 확인한다. */}
       <OperationMapSection />
 
       {/* 중앙 저장소 집계 — 읍면동이 올린 Excel 자료에서 계산한 실제 값이다. */}
@@ -151,7 +212,7 @@ export default function DashboardPage() {
         <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
           <h2 className="text-xs font-medium text-slate-500">중앙 자료 집계</h2>
           <span className="rounded bg-teal-50 px-1.5 py-px text-[10px] font-medium text-teal-700 ring-1 ring-teal-600/20">
-            실제 제출 데이터
+            테스트 업로드 기반 집계
           </span>
           <span className="text-[11px] text-slate-400">
             재제출로 대체된 자료와 누계 시트는 빼고 집계합니다
@@ -205,42 +266,8 @@ export default function DashboardPage() {
         <DistrictRiskChart />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-1">
-          <div className="flex items-center gap-1.5">
-            <h3 className="text-base font-semibold text-slate-900">최근 재배분 내역</h3>
-            <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 ring-1 ring-amber-600/20">
-              시연
-            </span>
-          </div>
-          <div className="mt-3 space-y-2">
-            {recentRedistributions.length === 0 ? (
-              <EmptyState message="최근 재배분 내역이 없습니다." />
-            ) : (
-              recentRedistributions.map((record) => (
-                <div
-                  key={record.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border border-slate-100 px-3 py-2 text-sm"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-slate-800">
-                      {record.fromSiteName} → {record.toSiteName}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {record.districtName} · {formatDate(record.date)}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right text-xs text-slate-500">
-                    <p>{record.item}</p>
-                    <p>{formatNumber(record.quantity)}개</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-1">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h3 className="text-base font-semibold text-slate-900">유통기한 임박 물품</h3>
           <div className="mt-3 space-y-2">
             {!hasCentralData ? (
@@ -269,7 +296,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 lg:col-span-1">
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h3 className="text-base font-semibold text-slate-900">데이터 오류 및 확인 필요 알림</h3>
           <div className="mt-3 space-y-2">
             {!hasCentralData ? (

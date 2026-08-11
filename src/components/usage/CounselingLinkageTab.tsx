@@ -195,7 +195,7 @@ export default function CounselingLinkageTab() {
             <h3 className="text-sm font-semibold text-slate-900">
               2차 연계 대상자
               <span className="ml-1.5 rounded bg-teal-50 px-1.5 py-px text-[10px] font-medium text-teal-700 ring-1 ring-teal-600/20">
-                실제 제출 데이터
+                테스트 업로드 기반 집계
               </span>
             </h3>
             <p className="mt-1 text-sm text-slate-500">읍면동이 제출한 2차 상담 연계 의뢰 대상자별 상세 현황입니다.</p>

@@ -6,7 +6,6 @@ const STATUS_STYLES: Record<string, string> = {
   '연계 진행중': 'bg-sky-50 text-sky-700 ring-sky-600/20',
   '확인 필요': 'bg-slate-100 text-slate-600 ring-slate-500/20',
   '부족': 'bg-rose-50 text-rose-700 ring-rose-600/20',
-  '과잉': 'bg-sky-50 text-sky-700 ring-sky-600/20',
   '미연계': 'bg-slate-100 text-slate-600 ring-slate-500/20',
 };
 

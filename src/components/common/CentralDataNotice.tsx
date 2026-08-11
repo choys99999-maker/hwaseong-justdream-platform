@@ -19,7 +19,7 @@ export default function CentralDataNotice({
   isLoading,
   error,
   isEmpty = false,
-  emptyMessage = '자료 관리에서 Excel 파일을 올리면 이 영역에 실제 값이 표시됩니다.',
+  emptyMessage = '자료·데이터 관리에서 Excel 파일을 올리면 이 영역에 실제 값이 표시됩니다.',
 }: CentralDataNoticeProps) {
   if (isLoading) {
     return (

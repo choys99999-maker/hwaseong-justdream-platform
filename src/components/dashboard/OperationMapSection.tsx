@@ -8,12 +8,13 @@ import OperationActionPanel from './OperationActionPanel';
 import { mockSites, getSiteById } from '../../data/mockSites';
 import { districtRiskLevels } from '../../data/operationSummary';
 import { BOUNDARY_ATTRIBUTION } from '../../data/districtBoundaries';
+import { JUSTDREAM_PROGRAM_TOTALS } from '../../data/justdreamSummary';
 
 /**
- * 확정 거점 25곳은 전부 화성형이라 선택지를 '전체'와 '화성형'으로만 둔다.
- * (데이터 모델의 `ProgramType` 은 국가형을 그대로 지원한다. 국가형 거점이 들어오면 선택지를 되살린다)
+ * 국가형+화성형 동시 운영 2곳(서부종합사회복지관, 봉담읍행정복지센터)이 포함된다.
+ * 지도 핀은 좌표가 확정된 25곳만 표시. 전체 사업 거점 43곳 = JUSTDREAM_PROGRAM_TOTALS 참조.
  */
-type ProgramTypeFilter = 'ALL' | 'HWASEONG';
+type ProgramTypeFilter = 'ALL' | 'NATIONAL' | 'HWASEONG';
 type FacilityTypeFilter = 'ALL' | Exclude<FacilityType, '푸드뱅크' | '기타'> | '푸드뱅크·기타';
 type StatusFilter = 'ALL' | SiteStatus;
 
@@ -162,6 +163,7 @@ export default function OperationMapSection() {
             aria-label="사업 유형 필터"
           >
             <option value="ALL">사업유형 전체</option>
+            <option value="NATIONAL">국가형</option>
             <option value="HWASEONG">화성형</option>
           </select>
           <select
@@ -182,11 +184,10 @@ export default function OperationMapSection() {
             aria-label="운영 상태 필터"
           >
             <option value="ALL">운영상태 전체</option>
-            <option value="normal">정상</option>
-            <option value="shortage">부족</option>
-            <option value="surplus">과잉</option>
+            <option value="normal">정상 운영</option>
+            <option value="shortage">물품 부족</option>
             <option value="expiring">유통기한 임박</option>
-            <option value="missing">데이터 미입력</option>
+            <option value="missing">자료 확인 필요</option>
           </select>
           <span className="ml-auto shrink-0 text-xs text-slate-400" aria-live="polite">
             {visibleSiteCount < totalSiteCount
@@ -224,6 +225,13 @@ export default function OperationMapSection() {
           }
         >
           <MapLegend />
+          {!isFocusMode && (
+            <p className="text-[10px] leading-relaxed text-slate-400">
+              전체 사업 프로그램 {JUSTDREAM_PROGRAM_TOTALS.totalPrograms}개 · 지도 위치 확인{' '}
+              {JUSTDREAM_PROGRAM_TOTALS.confirmedLocations}개 (거점 명단 중 위치 확인 중{' '}
+              {JUSTDREAM_PROGRAM_TOTALS.pendingLocations}개)
+            </p>
+          )}
           <p
             className={isFocusMode ? 'hidden' : 'text-[10px] leading-relaxed text-slate-400'}
             title={BOUNDARY_ATTRIBUTION}

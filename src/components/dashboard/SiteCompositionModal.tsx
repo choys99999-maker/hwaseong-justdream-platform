@@ -1,6 +1,10 @@
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
-import { JUSTDREAM_SITE_SUMMARY, SITE_COUNT_BY_DISTRICT } from '../../data/justdreamSummary';
+import {
+  JUSTDREAM_SITE_SUMMARY,
+  JUSTDREAM_PROGRAM_TOTALS,
+  SITE_COUNT_BY_DISTRICT,
+} from '../../data/justdreamSummary';
 
 interface SiteCompositionModalProps {
   onClose: () => void;
@@ -30,7 +34,7 @@ export default function SiteCompositionModal({ onClose }: SiteCompositionModalPr
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={onClose}>
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900">운영 거점 구성</h2>
+          <h2 className="text-base font-semibold text-slate-900">데이터 등록 거점 구성</h2>
           <button
             type="button"
             onClick={onClose}
@@ -42,32 +46,85 @@ export default function SiteCompositionModal({ onClose }: SiteCompositionModalPr
         </div>
 
         <dl className="mt-4 space-y-2.5">
-          <div className="flex items-center justify-between rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2.5">
-            <dt className="text-sm font-medium text-teal-800">전체 운영 거점</dt>
-            <dd className="text-sm font-semibold text-teal-900">{total}곳</dd>
-          </div>
-
-          <div className="rounded-lg border border-slate-100 px-3 py-2.5">
+          {/* 전체 사업 규모 */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
             <div className="flex items-center justify-between">
-              <dt className="text-sm font-medium text-slate-700">기관 유형별</dt>
-              <dd className="text-xs text-slate-400">{total}곳</dd>
+              <dt className="text-sm font-medium text-slate-700">전체 사업 거점</dt>
+              <dd className="text-sm font-semibold text-slate-900">
+                {JUSTDREAM_PROGRAM_TOTALS.totalPrograms}개소
+              </dd>
             </div>
             <div className="mt-2 space-y-1.5 pl-3 text-xs text-slate-500">
               <div className="flex items-center justify-between">
-                <span>복지기관</span>
-                <span className="font-medium text-slate-700">{welfareOrgCount}곳</span>
+                <span>국가형 그냥드림</span>
+                <span className="font-medium text-slate-700">
+                  {JUSTDREAM_PROGRAM_TOTALS.national}개소
+                </span>
               </div>
               <div className="flex items-center justify-between">
-                <span>지역사회보장협의체</span>
-                <span className="font-medium text-slate-700">{councilCount}곳</span>
+                <span>
+                  화성형 그냥드림
+                  <span className="ml-1 text-slate-400">
+                    (읍면동 {JUSTDREAM_PROGRAM_TOTALS.hwaseongAdminCenter} ·
+                    복지관 {JUSTDREAM_PROGRAM_TOTALS.hwaseongWelfareCenter})
+                  </span>
+                </span>
+                <span className="font-medium text-slate-700">
+                  {JUSTDREAM_PROGRAM_TOTALS.hwaseong}개소
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-slate-400">
+                <span>국가형+화성형 동시 운영 장소</span>
+                <span>{JUSTDREAM_PROGRAM_TOTALS.dualProgramLocations}개소</span>
               </div>
             </div>
           </div>
 
+          {/* 위치 확인 현황 */}
+          <div className="rounded-lg border border-slate-100 px-3 py-2.5">
+            <div className="flex items-center justify-between">
+              <dt className="text-sm font-medium text-slate-700">위치 확인 현황</dt>
+              <dd className="text-xs text-slate-400">거점 명단 기준</dd>
+            </div>
+            <div className="mt-2 space-y-1.5 pl-3 text-xs text-slate-500">
+              <div className="flex items-center justify-between">
+                <span>위치 확인 완료</span>
+                <span className="font-medium text-teal-700">
+                  {JUSTDREAM_PROGRAM_TOTALS.confirmedLocations}개소
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>주소·좌표 확인 중</span>
+                <span className="font-medium text-amber-700">
+                  {JUSTDREAM_PROGRAM_TOTALS.pendingLocations}개소
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 데이터 등록 거점 */}
+          <div className="rounded-lg border border-teal-100 bg-teal-50/60 px-3 py-2.5">
+            <div className="flex items-center justify-between">
+              <dt className="text-sm font-medium text-teal-800">데이터 등록 거점</dt>
+              <dd className="text-sm font-semibold text-teal-900">{total}곳</dd>
+            </div>
+            <div className="mt-2 space-y-1.5 pl-3 text-xs text-teal-700/80">
+              <div className="flex items-center justify-between">
+                <span>복지기관</span>
+                <span className="font-medium">{welfareOrgCount}곳</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>지역사회보장협의체</span>
+                <span className="font-medium">{councilCount}곳</span>
+              </div>
+            </div>
+          </div>
+
+          {/* 구별 분포 (데이터 등록 거점 기준) */}
           <div className="rounded-lg border border-slate-100 px-3 py-2.5">
             <div className="flex items-center justify-between">
               <dt className="text-sm font-medium text-slate-700">구별 분포</dt>
-              <dd className="text-xs text-slate-400">{districtCount}개 구</dd>
+              <dd className="text-xs text-slate-400">데이터 등록 거점 기준 · {districtCount}개 구</dd>
             </div>
             <div className="mt-2 space-y-1.5 pl-3 text-xs text-slate-500">
               {SITE_COUNT_BY_DISTRICT.map((district) => (
@@ -81,9 +138,12 @@ export default function SiteCompositionModal({ onClose }: SiteCompositionModalPr
         </dl>
 
         <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-relaxed text-slate-500">
-          화성형 그냥드림 실적 자료의 기관명을 기준으로 주소·좌표를 확정한 {total}곳입니다. 복지기관은 실제 시설
-          위치, 지역사회보장협의체는 해당 읍면동 행정복지센터를 운영 위치로 봅니다. 구 분류는 확정 좌표를 화성시
-          행정동 경계와 대조해 정했습니다.
+          전체 사업 거점 {JUSTDREAM_PROGRAM_TOTALS.totalPrograms}개소는 국가형{' '}
+          {JUSTDREAM_PROGRAM_TOTALS.national} + 화성형 {JUSTDREAM_PROGRAM_TOTALS.hwaseong}(읍면동{' '}
+          {JUSTDREAM_PROGRAM_TOTALS.hwaseongAdminCenter} · 복지관{' '}
+          {JUSTDREAM_PROGRAM_TOTALS.hwaseongWelfareCenter})입니다. 데이터 등록 거점 {total}곳은 실적
+          자료에서 확인된 기관명으로 주소·좌표를 확정해 현재 시스템에 등록한 범위입니다. 두 값은 다른
+          기준이므로 혼용하지 않습니다.
         </p>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import type { SiteStatus } from '../../types';
 import { SITE_STATUS_COLORS, SITE_STATUS_LABELS } from '../../data/regionMeta';
 
-const LEGEND_ORDER: SiteStatus[] = ['normal', 'shortage', 'expiring', 'surplus', 'missing'];
+const LEGEND_ORDER: SiteStatus[] = ['normal', 'shortage', 'expiring', 'missing'];
 
 /** 색상만으로 상태를 구분하지 않도록 색 점과 텍스트를 함께 제공한다. */
 export default function MapLegend() {

@@ -5,7 +5,7 @@ import { makeId } from '../utils/supportRecords';
  * 현장 출고 원장.
  *
  * 이용·상담 관리에서 물품지원이 확정되면 품목 1줄당 출고 레코드 1건을 만들고,
- * 그 id 를 `SupportItem.outboundRecordId` 에 되돌려 준다. 물품·재고 관리 화면은
+ * 그 id 를 `SupportItem.outboundRecordId` 에 되돌려 준다. 물품 현황 화면은
  * 이 원장을 구독해 해당 (읍면동 × 품목) 의 표시 재고에서 출고 수량을 뺀다.
  *
  * 저장 위치에 대해

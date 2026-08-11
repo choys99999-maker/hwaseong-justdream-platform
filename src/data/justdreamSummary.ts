@@ -1,5 +1,6 @@
 import type { DistrictId } from '../types';
 import { JUST_DREAM_SITES_25 } from './justdream_sites_25';
+import { JD_COUNTS } from './justdream_locations_43';
 import { mockSites } from './mockSites';
 import { REGION_NAMES, REGION_ORDER } from './regionMeta';
 
@@ -36,7 +37,7 @@ export const SITE_COUNT_BY_DISTRICT: DistrictSiteCount[] = REGION_ORDER.map((id)
   .sort((a, b) => b.count - a.count || REGION_ORDER.indexOf(a.id) - REGION_ORDER.indexOf(b.id));
 
 export const JUSTDREAM_SITE_SUMMARY = {
-  /** 전체 운영 거점 수 */
+  /** 현재 시스템에 데이터가 등록된 거점 수. 화성시 전체 그냥드림 거점 수와 다르다. */
   total: JUST_DREAM_SITES_25.length,
   /** 복지기관 (종합사회복지관·노인복지관·장애인복지관) */
   welfareOrgCount: countByCategory('복지기관'),
@@ -45,3 +46,12 @@ export const JUSTDREAM_SITE_SUMMARY = {
   /** 거점이 있는 구 수 */
   districtCount: SITE_COUNT_BY_DISTRICT.length,
 } as const;
+
+/**
+ * 화성시 그냥드림 전체 사업 규모.
+ * 위 JUSTDREAM_SITE_SUMMARY(데이터 등록 25개소)와 다른 값이다 — 혼용하지 않는다.
+ *
+ *   43 = 전체 사업 프로그램 수
+ *   25 = 현재 시스템에 상세 데이터가 등록된 거점 수
+ */
+export const JUSTDREAM_PROGRAM_TOTALS = JD_COUNTS;

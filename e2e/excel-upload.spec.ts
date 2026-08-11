@@ -60,7 +60,7 @@ const MESSY_FILE = writeWorkbook('봉담읍_8월.xlsx', [
  */
 async function upload(page: import('@playwright/test').Page, filePath: string) {
   await page.goto('/');
-  await page.getByRole('link', { name: '자료 관리', exact: true }).first().click();
+  await page.getByRole('link', { name: '자료·데이터 관리', exact: true }).first().click();
   await page.getByRole('link', { name: '자료 올리기' }).click();
   await expect(page.getByRole('heading', { name: '자료 올리기' })).toBeVisible();
   await page.setInputFiles('input[type="file"]', filePath);

@@ -1,19 +1,19 @@
-import { ArrowLeft, ArrowRight, CalendarClock, ExternalLink, Info, Package } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarClock, ExternalLink, Package } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import type { DistrictId, OperationSite, RedistributionRecommendation } from '../../types';
+import type { DistrictId, OperationSite } from '../../types';
 import SiteStatusBadge from '../common/SiteStatusBadge';
 import EmptyState from '../common/EmptyState';
 import { REGION_NAMES } from '../../data/regionMeta';
+import { citySummary, districtSummaryMap } from '../../data/operationSummary';
 import {
-  citySummary,
-  districtSummaryMap,
-  getRecommendationsByDistrict,
-  getRecommendationsBySite,
-  redistributionRecommendations,
-} from '../../data/operationSummary';
+  getActionItemsByDistrict,
+  getActionItemsBySite,
+  type ActionKind,
+  type OperationActionItem,
+} from '../../data/actionItems';
 import { formatDateTime, formatNumber } from '../../utils/format';
 
-const CITY_RECOMMENDATION_LIMIT = 3;
+const CITY_ACTION_LIMIT = 5;
 
 interface OperationActionPanelProps {
   selectedDistrict: DistrictId | null;
@@ -23,7 +23,7 @@ interface OperationActionPanelProps {
 }
 
 /**
- * 재고·수요·유통기한은 아직 확정 자료가 없는 시연용 수치다.
+ * 부족·확인필요 거점 수는 아직 확정 자료가 없는 시연용 수치다.
  * 확정된 기관 수(거점 수 등)와 같은 묶음으로 보이지 않도록 지표 그룹 위에 출처를 밝힌다.
  */
 function DemoMetricsLabel() {
@@ -49,62 +49,71 @@ function MetricTile({ label, value, unit }: { label: string; value: number; unit
   );
 }
 
-function RecommendationItem({ recommendation }: { recommendation: RedistributionRecommendation }) {
+const KIND_BADGE: Record<ActionKind, string> = {
+  '부족': 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  '유통기한 임박': 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  '자료 확인 필요': 'bg-slate-100 text-slate-600 ring-slate-500/20',
+};
+
+function ActionItemRow({ item, showSite = true }: { item: OperationActionItem; showSite?: boolean }) {
   return (
     <li className="rounded-lg border border-slate-100 bg-white px-3 py-2.5 text-sm">
       <div className="flex items-start justify-between gap-2">
-        <p className="font-medium text-slate-800">
-          {recommendation.toSiteName} {recommendation.item} {formatNumber(recommendation.shortageQuantity)}개 부족 예상
+        <p className="min-w-0 font-medium text-slate-800">
+          {showSite && <span className="mr-1">{item.siteName}</span>}
+          {item.summary}
         </p>
-        <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
-          우선순위 {recommendation.priority}
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${KIND_BADGE[item.kind]}`}
+        >
+          {item.kind}
         </span>
       </div>
       <p className="mt-1 flex items-center gap-1 text-xs text-teal-700">
         <ArrowRight size={13} className="shrink-0" />
-        {recommendation.fromSiteName}에서 {formatNumber(recommendation.moveQuantity)}개 이동 추천
+        {item.suggestion}
       </p>
-      <p className="mt-0.5 text-[11px] text-slate-400">{REGION_NAMES[recommendation.district]}</p>
+      {showSite && <p className="mt-0.5 text-[11px] text-slate-400">{item.districtName}</p>}
     </li>
   );
 }
 
-function RecommendationList({
+function ActionItemList({
   title,
-  recommendations,
+  items,
   emptyMessage,
+  linkTo,
+  showSite = true,
 }: {
   title: string;
-  recommendations: RedistributionRecommendation[];
+  items: OperationActionItem[];
   emptyMessage: string;
+  linkTo?: string;
+  showSite?: boolean;
 }) {
   return (
     <div className="mt-4">
       <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
-      {recommendations.length === 0 ? (
+      {items.length === 0 ? (
         <p className="mt-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
           {emptyMessage}
         </p>
       ) : (
         <ul className="mt-2 space-y-2">
-          {recommendations.map((recommendation) => (
-            <RecommendationItem key={recommendation.id} recommendation={recommendation} />
+          {items.map((item) => (
+            <ActionItemRow key={item.id} item={item} showSite={showSite} />
           ))}
         </ul>
       )}
-      {recommendations.length > 0 && (
+      {items.length > 0 && linkTo && (
         <Link
-          to="/redistribution"
+          to={linkTo}
           className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
-          배분·재배분에서 검토
+          이어서 확인
           <ArrowRight size={12} />
         </Link>
       )}
-      <p className="mt-2 flex items-start gap-1 text-[11px] text-slate-400">
-        <Info size={12} className="mt-0.5 shrink-0" />
-        합성 데이터에 부족·여유 수량 규칙을 적용한 결정론적 추천입니다.
-      </p>
     </div>
   );
 }
@@ -117,7 +126,7 @@ export default function OperationActionPanel({
 }: OperationActionPanelProps) {
   // C. 거점 상세 모드
   if (selectedSite) {
-    const siteRecommendations = getRecommendationsBySite(selectedSite.id);
+    const siteActions = getActionItemsBySite(selectedSite.id);
     return (
       <div className="flex h-full flex-col">
         <button
@@ -152,8 +161,7 @@ export default function OperationActionPanel({
         <DemoMetricsLabel />
         <dl className="mt-1.5 grid grid-cols-2 gap-3">
           <MetricTile label="현재 재고" value={selectedSite.inventoryCount} unit="개" />
-          <MetricTile label="7일 예상 수요" value={selectedSite.sevenDayDemand} unit="개" />
-          <MetricTile label="예상 부족 수량" value={selectedSite.expectedShortage} unit="개" />
+          <MetricTile label="부족 수량" value={selectedSite.expectedShortage} unit="개" />
           <MetricTile label="유통기한 임박" value={selectedSite.expiringCount} unit="개" />
         </dl>
 
@@ -177,13 +185,14 @@ export default function OperationActionPanel({
         </Link>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <RecommendationList
-            title="재배분 추천"
-            recommendations={siteRecommendations}
+          <ActionItemList
+            title="확인이 필요한 사항"
+            items={siteActions}
+            showSite={false}
             emptyMessage={
               selectedSite.status === 'missing'
-                ? '데이터가 입력되지 않아 추천을 계산할 수 없습니다.'
-                : '현재 이 거점에 필요한 재배분 추천이 없습니다.'
+                ? '데이터가 입력되지 않아 확인할 항목을 계산할 수 없습니다.'
+                : '현재 이 거점에 확인이 필요한 사항이 없습니다.'
             }
           />
         </div>
@@ -217,18 +226,16 @@ export default function OperationActionPanel({
 
         <DemoMetricsLabel />
         <dl className="mt-1.5 grid grid-cols-2 gap-3">
-          <MetricTile label="전체 재고" value={summary.inventoryTotal} unit="개" />
-          <MetricTile label="부족 예상 거점" value={summary.shortageSiteCount} unit="개소" />
-          <MetricTile label="유통기한 임박" value={summary.expiringQuantity} unit="개" />
-          <MetricTile label="재배분 필요" value={summary.recommendationCount} unit="건" />
-          <MetricTile label="데이터 미입력" value={summary.missingSiteCount} unit="개소" />
+          <MetricTile label="물품 부족 거점" value={summary.shortageSiteCount} unit="개소" />
+          <MetricTile label="유통기한 임박 수량" value={summary.expiringQuantity} unit="개" />
+          <MetricTile label="자료 확인 필요" value={summary.missingSiteCount} unit="개소" />
         </dl>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <RecommendationList
-            title="우선 재배분 추천"
-            recommendations={getRecommendationsByDistrict(selectedDistrict)}
-            emptyMessage="이 구에는 현재 재배분이 필요한 거점이 없습니다."
+          <ActionItemList
+            title="확인이 필요한 사항"
+            items={getActionItemsByDistrict(selectedDistrict)}
+            emptyMessage="이 구에는 현재 확인이 필요한 거점이 없습니다."
           />
         </div>
       </div>
@@ -250,17 +257,16 @@ export default function OperationActionPanel({
 
       <DemoMetricsLabel />
       <dl className="mt-1.5 grid grid-cols-2 gap-3">
-        <MetricTile label="부족 예상 거점" value={citySummary.shortageSiteCount} unit="개소" />
-        <MetricTile label="유통기한 임박" value={citySummary.expiringQuantity} unit="개" />
-        <MetricTile label="과잉 재고 거점" value={citySummary.surplusSiteCount} unit="개소" />
-        <MetricTile label="데이터 미입력 거점" value={citySummary.missingSiteCount} unit="개소" />
+        <MetricTile label="물품 부족 거점" value={citySummary.shortageSiteCount} unit="개소" />
+        <MetricTile label="유통기한 임박 수량" value={citySummary.expiringQuantity} unit="개" />
+        <MetricTile label="자료 확인 필요" value={citySummary.missingSiteCount} unit="개소" />
       </dl>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <RecommendationList
-          title="우선 검토가 필요한 재배분 추천"
-          recommendations={redistributionRecommendations.slice(0, CITY_RECOMMENDATION_LIMIT)}
-          emptyMessage="현재 재배분이 필요한 거점이 없습니다."
+        <ActionItemList
+          title="오늘 확인이 필요한 사항"
+          items={getActionItemsByDistrict(null).slice(0, CITY_ACTION_LIMIT)}
+          emptyMessage="현재 확인이 필요한 거점이 없습니다."
         />
       </div>
     </div>

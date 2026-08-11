@@ -115,7 +115,7 @@ export default function DataLibraryPage() {
   return (
     <div className="mx-auto w-full max-w-[1280px]">
       <PageHeader
-        title="자료 관리"
+        title="자료·데이터 관리"
         description="읍면동 제출 자료를 수집·검수하는 허브입니다. 여기서 저장된 자료가 대시보드·재고·실적 화면의 기준 데이터가 됩니다."
         actions={uploadButton}
       />

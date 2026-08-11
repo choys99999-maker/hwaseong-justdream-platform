@@ -32,7 +32,7 @@ export default function SubmissionDetailPage() {
       to="/files"
       className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-teal-600"
     >
-      <ArrowLeft size={16} /> 자료 관리
+      <ArrowLeft size={16} /> 자료·데이터 관리
     </Link>
   );
 

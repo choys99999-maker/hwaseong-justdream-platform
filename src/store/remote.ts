@@ -54,7 +54,7 @@ export interface RegisteredFileName {
  * 현재 유효한 제출본들의 파일 이름 목록.
  *
  * 읍면동마다 같은 서식을 받아 쓰기 때문에 파일 이름이 그대로 겹치기 쉽다.
- * 다른 기관 자료끼리 이름이 같으면 자료 관리 목록에서 사람이 구분할 수 없다.
+ * 다른 기관 자료끼리 이름이 같으면 자료·데이터 관리 목록에서 사람이 구분할 수 없다.
  * (같은 기관 안에서 같은 이름은 재제출이라 DB가 이전 것을 대체한다 — 그건 정상이다)
  */
 export async function listRegisteredFileNames(): Promise<RegisteredFileName[]> {
@@ -212,7 +212,7 @@ const SUMMARY_SELECT =
   'id, file_name, issue_count, record_count, period_start, period_end, uploaded_at, status, ' +
   'organizations(name, region_name), submission_sheets(sheet_type, record_count)';
 
-/** 자료 관리 목록. 대체된(superseded) 제출본은 빼고 현재 유효한 자료만 보여준다. */
+/** 자료·데이터 관리 목록. 대체된(superseded) 제출본은 빼고 현재 유효한 자료만 보여준다. */
 export async function listSubmissions(): Promise<RemoteSubmissionSummary[]> {
   const { data, error } = await client()
     .from('submissions')

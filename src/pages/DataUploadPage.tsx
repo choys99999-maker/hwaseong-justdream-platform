@@ -560,7 +560,7 @@ export default function DataUploadPage() {
           to="/files"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-teal-600"
         >
-          <ArrowLeft size={16} /> 자료 관리
+          <ArrowLeft size={16} /> 자료·데이터 관리
         </Link>
       </div>
 
@@ -1012,7 +1012,7 @@ export default function DataUploadPage() {
                   </p>
                 ) : (
                   <p className="mt-2 text-xs text-slate-400">
-                    이 이름으로 자료 관리 목록에 표시됩니다. 원본 파일은 그대로 보관됩니다.
+                    이 이름으로 자료·데이터 관리 목록에 표시됩니다. 원본 파일은 그대로 보관됩니다.
                   </p>
                 )}
               </div>
@@ -1091,7 +1091,7 @@ export default function DataUploadPage() {
                 to="/files"
                 className="rounded-lg bg-teal-600 px-7 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
               >
-                자료 관리로 돌아가기
+                자료·데이터 관리로 돌아가기
               </Link>
               <Link
                 to="/"

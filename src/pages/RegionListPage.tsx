@@ -123,8 +123,7 @@ export default function RegionListPage() {
       shortage: 0,
       expiring: 1,
       missing: 2,
-      surplus: 3,
-      normal: 4,
+      normal: 3,
     };
     return mockSites
       .filter((site) => selectedDistrict === null || site.district === selectedDistrict)
@@ -155,8 +154,8 @@ export default function RegionListPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="지역·기관 현황"
-        description="어느 지역·기관에 운영 문제가 있는지 찾아 내려가는 화면입니다. 구를 선택하면 기관 목록과 자료 제출 현황이 함께 좁혀집니다."
+        title="거점 운영"
+        description="화성시 그냥드림 거점의 운영 현황을 지역별로 확인하는 화면입니다. 구를 선택하면 기관 목록과 자료 제출 현황이 함께 좁혀집니다."
       />
 
       {/* 구 선택 */}
@@ -193,9 +192,9 @@ export default function RegionListPage() {
 
         <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
           <MetricTile label="운영 기관" value={scopeSummary.siteCount} unit="개소" source="확정" />
-          <MetricTile label="부족 예상 기관" value={scopeSummary.shortageSiteCount} unit="개소" source="시연" />
+          <MetricTile label="물품 부족 기관" value={scopeSummary.shortageSiteCount} unit="개소" source="시연" />
           <MetricTile label="유통기한 임박" value={scopeSummary.expiringQuantity} unit="개" source="시연" />
-          <MetricTile label="재배분 필요" value={scopeSummary.recommendationCount} unit="건" source="시연" />
+          <MetricTile label="자료 확인 필요" value={scopeSummary.missingSiteCount} unit="개소" source="시연" />
           <MetricTile label="이용자 수" value={scopeCentral ? scopeCentral.userCount : null} unit="명" source="중앙" />
           <MetricTile label="현재 재고" value={scopeCentral ? scopeCentral.totalStock : null} unit="개" source="중앙" />
         </dl>
@@ -212,7 +211,7 @@ export default function RegionListPage() {
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            부족 → 유통기한 임박 → 데이터 미입력 순서로 정렬합니다. 기관명·유형·위치는 확정 자료입니다.
+            부족 → 유통기한 임박 → 자료 확인 필요 순서로 정렬합니다. 기관명·유형·위치는 확정 자료입니다.
           </p>
         </div>
         <DataTable<OperationSite>
@@ -231,7 +230,7 @@ export default function RegionListPage() {
             { key: 'inventoryCount', header: '현재 재고', render: (row) => `${formatNumber(row.inventoryCount)}개` },
             {
               key: 'expectedShortage',
-              header: '부족 예상',
+              header: '부족 품목',
               render: (row) =>
                 row.expectedShortage > 0 ? (
                   <span className="font-medium text-rose-600">{formatNumber(row.expectedShortage)}개</span>
@@ -268,7 +267,7 @@ export default function RegionListPage() {
           <div className="flex items-center gap-1.5">
             <h3 className="text-base font-semibold text-slate-900">읍면동별 제출 현황</h3>
             <span className="rounded bg-teal-50 px-1.5 py-px text-[10px] font-medium text-teal-700 ring-1 ring-teal-600/20">
-              실제 제출 데이터
+              테스트 업로드 기반 집계
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-500">
@@ -317,6 +316,15 @@ export default function RegionListPage() {
                 render: (row) => (
                   <span className="text-slate-400">
                     {row.lastUploadedAt ? formatUpdatedAt(row.lastUploadedAt) : '—'}
+                  </span>
+                ),
+              },
+              {
+                key: 'dataSource',
+                header: '데이터 출처',
+                render: () => (
+                  <span className="rounded bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">
+                    EXCEL
                   </span>
                 ),
               },

@@ -37,8 +37,7 @@ export interface SupportRecord {
   counselingStatus: CounselingStatus;
 }
 
-/** '과잉'은 중앙 DB 판정에는 없고, 화면에서 배부량 대비 재고 여유로 파생하는 표시 상태다. */
-export type InventoryStatus = '정상' | '임박' | '부족' | '과잉' | '확인 필요';
+export type InventoryStatus = '정상' | '임박' | '부족' | '확인 필요';
 
 export type ItemCategory = '식품' | '위생용품' | '생필품' | '영유아용품' | '기타';
 
@@ -68,7 +67,13 @@ export interface DataIssueAlert {
 }
 
 /** 거점·구역 운영 상태. 지도 폴리곤과 거점 마커 색상 기준이 된다. */
-export type SiteStatus = 'normal' | 'shortage' | 'expiring' | 'surplus' | 'missing';
+export type SiteStatus = 'normal' | 'shortage' | 'expiring' | 'missing';
+
+/**
+ * 운영 데이터의 입력 출처. FMS(외부 시스템) 연동은 아직 구현하지 않지만,
+ * 앞으로 어댑터를 붙일 수 있도록 화면·타입에는 미리 반영해 둔다.
+ */
+export type DataSource = 'FMS' | 'EXCEL' | 'MANUAL' | 'NO_DATA';
 
 export type FacilityType = '행정복지센터' | '복지관' | '푸드뱅크' | '기타';
 
@@ -85,14 +90,14 @@ export interface OperationSite {
   status: SiteStatus;
   /** 현재 보유 재고 수량(개) */
   inventoryCount: number;
-  /** 7일 예상 수요(개) */
+  /** 참고용 시연 수치. 상태·부족 판정에는 쓰지 않는다(수요 예측 금지). */
   sevenDayDemand: number;
-  /** 예상 부족 수량(개). `sevenDayDemand - inventoryCount` 로 계산한다. */
+  /** 명시적으로 등록된 부족 수량(개). 예측값이 아니다 — 0이면 부족이 아니다. */
   expectedShortage: number;
   /** 유통기한 임박 수량(개) */
   expiringCount: number;
   lastUpdatedAt: string;
-  /** 재배분 판단 기준이 되는 주요 품목 */
+  /** 부족·확인 필요 판단 기준이 되는 주요 품목 */
   focusItem: string;
   /** 합성 데모 데이터 여부 */
   isDemo: boolean;
@@ -107,42 +112,16 @@ export interface OperationSite {
 export interface OperationSummary {
   siteCount: number;
   inventoryTotal: number;
-  sevenDayDemandTotal: number;
   shortageSiteCount: number;
   shortageQuantity: number;
   expiringQuantity: number;
-  surplusSiteCount: number;
   missingSiteCount: number;
-  recommendationCount: number;
 }
 
 export interface DistrictSummary extends OperationSummary {
   id: DistrictId;
   name: string;
   riskLevel: SiteStatus;
-}
-
-export interface RedistributionRecommendation {
-  id: string;
-  priority: number;
-  item: string;
-  district: DistrictId;
-  fromSiteId: string;
-  fromSiteName: string;
-  toSiteId: string;
-  toSiteName: string;
-  shortageQuantity: number;
-  moveQuantity: number;
-}
-
-export interface RedistributionRecord {
-  id: string;
-  date: string;
-  item: string;
-  quantity: number;
-  fromSiteName: string;
-  toSiteName: string;
-  districtName: string;
 }
 
 /** 복지서비스 연계완료 유형별 건수 */

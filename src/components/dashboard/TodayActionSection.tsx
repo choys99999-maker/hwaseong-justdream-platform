@@ -8,24 +8,27 @@ const VISIBLE_LIMIT = 4;
 const KIND_STYLES: Record<ActionKind, { bar: string; badge: string }> = {
   '부족': { bar: 'bg-rose-500', badge: 'bg-rose-50 text-rose-700 ring-rose-600/20' },
   '유통기한 임박': { bar: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 ring-amber-600/20' },
-  '과잉': { bar: 'bg-sky-500', badge: 'bg-sky-50 text-sky-700 ring-sky-600/20' },
-  '데이터 확인 필요': { bar: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600 ring-slate-500/20' },
+  '자료 확인 필요': { bar: 'bg-slate-400', badge: 'bg-slate-100 text-slate-600 ring-slate-500/20' },
 };
 
 /**
- * 오늘 조치가 필요한 사항.
- * 부족 → 유통기한 임박 → 데이터 확인 → 과잉 순서로 정렬된 파생 목록(`actionItems`)의
- * 상위 몇 건을 조치 버튼과 함께 보여준다. 대시보드의 최우선 구역이다.
+ * 오늘 확인이 필요한 사항.
+ * 부족 → 유통기한 임박 → 자료 확인 필요 순서로 정렬된 파생 목록(`actionItems`)의
+ * 상위 몇 건을 확인 버튼과 함께 보여준다. 대시보드의 최우선 구역이다.
+ * 전부 거점 시연 데이터(mockSites) 기준이라 실제 제출 자료와는 무관하다.
  */
 export default function TodayActionSection() {
   const visible = operationActionItems.slice(0, VISIBLE_LIMIT);
   const restCount = operationActionItems.length - visible.length;
 
   return (
-    <section aria-label="오늘 조치가 필요한 사항" className="rounded-xl border border-slate-200 bg-white p-4">
+    <section aria-label="오늘 확인이 필요한 사항" className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-base font-semibold text-slate-900">오늘 조치가 필요한 사항</h3>
+          <h3 className="text-base font-semibold text-slate-900">오늘 확인이 필요한 사항</h3>
+          <span className="rounded bg-amber-50 px-1.5 py-px text-[10px] font-medium text-amber-700 ring-1 ring-amber-600/20">
+            거점 시연 데이터
+          </span>
           <span className="flex flex-wrap items-center gap-1">
             {actionKindCounts
               .filter(({ count }) => count > 0)
@@ -40,10 +43,10 @@ export default function TodayActionSection() {
           </span>
         </div>
         <Link
-          to="/redistribution"
+          to="/regions"
           className="inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
-          배분·재배분에서 전체 검토
+          거점 운영에서 전체 확인
           <ArrowRight size={13} />
         </Link>
       </div>
@@ -92,7 +95,7 @@ export default function TodayActionSection() {
 
       {restCount > 0 && (
         <p className="mt-2 text-right text-[11px] text-slate-400">
-          외 {restCount}건 — 부족·과잉은 배분·재배분, 유통기한 임박은 물품·재고에서 이어서 검토합니다.
+          외 {restCount}건 — 물품 부족·유통기한 임박은 물품 현황, 자료 확인 필요는 자료·데이터 관리에서 이어서 확인합니다.
         </p>
       )}
     </section>
