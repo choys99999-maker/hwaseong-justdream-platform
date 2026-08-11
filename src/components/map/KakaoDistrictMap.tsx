@@ -177,6 +177,8 @@ type MapPhase = 'loading' | 'ready' | 'missing-key' | 'error';
 export interface MapFocusRequest {
   siteId: string;
   token: number;
+  /** true 면 center 이동만 하고 zoom 레벨은 바꾸지 않는다. 마커 직접 클릭 시 사용. */
+  panOnly?: boolean;
 }
 
 interface KakaoDistrictMapProps {
@@ -688,7 +690,9 @@ export default function KakaoDistrictMap({
     const entry = markersRef.current.find((m) => m.site.id === focusRequest.siteId);
     if (!entry) return;
     map.setCenter(new maps.LatLng(entry.site.latitude, entry.site.longitude));
-    map.setLevel(FOCUS_SITE_LEVEL);
+    if (!focusRequest.panOnly) {
+      map.setLevel(FOCUS_SITE_LEVEL);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, focusRequest?.siteId, focusRequest?.token]);
 

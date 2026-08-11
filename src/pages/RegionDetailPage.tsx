@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useEffect, useMemo } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Boxes, ClipboardList, ShieldCheck, TimerReset, Users } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatCard from '../components/common/StatCard';
@@ -23,6 +23,7 @@ import {
 } from '../store/analytics';
 import { getRegionById } from '../data/mockRegions';
 import { districtOfArea } from '../data/districtByArea';
+import { siteAreaOf } from '../data/mockSites';
 import { districtRiskLevels } from '../data/operationSummary';
 import { inventoryStatusOf } from '../utils/inventoryStatus';
 import { displayCellValue, formatUpdatedAt } from '../utils/submission';
@@ -31,7 +32,12 @@ import type { MonthlyTrendPoint } from '../types';
 
 export default function RegionDetailPage() {
   const { regionId } = useParams<{ regionId: string }>();
+  const [searchParams] = useSearchParams();
   const region = getRegionById(regionId);
+
+  // ?site= 파라미터로 특정 거점의 읍면동 행을 강조한다.
+  const siteIdParam = searchParams.get('site');
+  const highlightArea = siteIdParam ? siteAreaOf(siteIdParam) : null;
 
   // 이 구에 속한 읍면동의 중앙 자료만 모아 온다.
   // 어떤 읍면동이 어느 구인지는 지도와 같은 행정동 경계 데이터에서 찾는다.
@@ -79,6 +85,19 @@ export default function RegionDetailPage() {
     () => (data?.trend ?? []).map((point) => ({ month: monthLabel(point.month), count: point.count })),
     [data],
   );
+
+  // 읍면동별 현황 테이블에서 강조할 행의 rowKey (organizationId).
+  const highlightKey = useMemo(
+    () => (highlightArea ? (data?.areas.find((row) => row.organizationName === highlightArea)?.organizationId ?? null) : null),
+    [highlightArea, data],
+  );
+
+  // 강조 행이 뷰포트 밖이면 스크롤해서 보여준다.
+  useEffect(() => {
+    if (!highlightKey) return;
+    const el = document.querySelector('[data-highlight="true"]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightKey]);
 
   if (!region) {
     return (
@@ -174,6 +193,7 @@ export default function RegionDetailPage() {
           ]}
           data={data?.areas ?? []}
           rowKey={(row) => row.organizationId}
+          highlightKey={highlightKey}
           emptyMessage="자료를 제출한 읍면동이 없습니다."
         />
       </section>

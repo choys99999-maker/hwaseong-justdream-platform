@@ -82,10 +82,21 @@ export default function OperationMapSection() {
     setSelectedSiteId(null);
   }, []);
 
-  const handleSelectSite = useCallback((siteId: string) => {
-    setSelectedSiteId(siteId);
-    setSelectionSource('MAP');
-  }, []);
+  const handleSelectSite = useCallback(
+    (siteId: string) => {
+      if (siteId === selectedSiteId) {
+        setSelectedSiteId(null);
+        setSelectionSource(null);
+        setFocusRequest(null);
+        return;
+      }
+      setSelectedSiteId(siteId);
+      setSelectionSource('MAP');
+      focusTokenRef.current += 1;
+      setFocusRequest({ siteId, token: focusTokenRef.current, panOnly: true });
+    },
+    [selectedSiteId],
+  );
 
   /**
    * 검색 결과 선택. marker 클릭과 동일한 selectedSiteId state 를 사용하되(단일 selection source of truth),
@@ -368,7 +379,11 @@ export default function OperationMapSection() {
                 selectedDistrict={selectedDistrict}
                 selectedSite={selectedSite}
                 onSelectDistrict={handleSelectDistrict}
-                onClearSite={() => setSelectedSiteId(null)}
+                onClearSite={() => {
+                  setSelectedSiteId(null);
+                  setSelectionSource(null);
+                  setFocusRequest(null);
+                }}
               />
             </div>
           </div>

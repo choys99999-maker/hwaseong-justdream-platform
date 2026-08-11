@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, CalendarClock, ExternalLink, Package } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Package } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { DistrictId, OperationSite } from '../../types';
 import SiteStatusBadge from '../common/SiteStatusBadge';
@@ -11,7 +11,8 @@ import {
   type ActionKind,
   type OperationActionItem,
 } from '../../data/actionItems';
-import { formatDateTime, formatNumber } from '../../utils/format';
+import { formatNumber } from '../../utils/format';
+import { siteAreaOf, EXPIRING_THRESHOLD } from '../../data/mockSites';
 
 const CITY_ACTION_LIMIT = 5;
 
@@ -118,6 +119,17 @@ function ActionItemList({
   );
 }
 
+function formatShortDate(iso: string): string {
+  const parts = iso.split('T')[0].split('-');
+  return `${parseInt(parts[1])}월 ${parseInt(parts[2])}일`;
+}
+
+const ACTION_KIND_STYLE: Record<ActionKind, string> = {
+  '부족': 'bg-rose-50 text-rose-800',
+  '유통기한 임박': 'bg-amber-50 text-amber-800',
+  '자료 확인 필요': 'bg-slate-100 text-slate-700',
+};
+
 export default function OperationActionPanel({
   selectedDistrict,
   selectedSite,
@@ -127,8 +139,17 @@ export default function OperationActionPanel({
   // C. 거점 상세 모드
   if (selectedSite) {
     const siteActions = getActionItemsBySite(selectedSite.id);
+    const area = siteAreaOf(selectedSite.id);
+    const programLabel =
+      selectedSite.programTypes.includes('HWASEONG') && selectedSite.programTypes.includes('NATIONAL')
+        ? '화성형·국가형 동시 운영'
+        : selectedSite.programTypes.includes('NATIONAL')
+          ? '국가형'
+          : '화성형';
+
     return (
       <div className="flex h-full flex-col">
+        {/* 뒤로가기 */}
         <button
           type="button"
           onClick={onClearSite}
@@ -138,63 +159,86 @@ export default function OperationActionPanel({
           {selectedDistrict ? `${REGION_NAMES[selectedDistrict]} 요약으로 돌아가기` : '화성시 전체 요약으로 돌아가기'}
         </button>
 
-        <div className="mt-3 flex items-start justify-between gap-2">
-          <div>
-            <h4 className="text-base font-semibold text-slate-900">{selectedSite.name}</h4>
-            <p className="mt-0.5 text-xs text-slate-500">
-              {REGION_NAMES[selectedSite.district]} · {selectedSite.facilityType}
-              {selectedSite.isDemo && (
-                <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">데모 거점</span>
-              )}
-            </p>
-            <p className="mt-0.5 text-xs text-slate-400">
-              {selectedSite.programTypes.includes('HWASEONG') && selectedSite.programTypes.includes('NATIONAL')
-                ? '화성형·국가형 동시 운영'
-                : selectedSite.programTypes.includes('NATIONAL')
-                  ? '국가형'
-                  : '화성형'}
-            </p>
+        {/* A. Identity */}
+        <div className="mt-3">
+          <div className="flex items-start justify-between gap-2">
+            <h4 className="text-base font-semibold leading-tight text-slate-900">{selectedSite.name}</h4>
+            <SiteStatusBadge status={selectedSite.status} />
           </div>
-          <SiteStatusBadge status={selectedSite.status} />
+          <p className="mt-1 text-xs text-slate-500">
+            {programLabel} · {selectedSite.facilityType}
+          </p>
+          <p className="text-xs text-slate-400">
+            {REGION_NAMES[selectedSite.district]}
+            {area ? ` · ${area}` : ''}
+            {selectedSite.isDemo ? ' · 데모 거점' : ''}
+          </p>
+          {selectedSite.address && (
+            <p className="mt-0.5 truncate text-xs text-slate-400" title={selectedSite.address}>
+              {selectedSite.address}
+            </p>
+          )}
         </div>
 
-        <DemoMetricsLabel />
-        <dl className="mt-1.5 grid grid-cols-2 gap-3">
-          <MetricTile label="현재 재고" value={selectedSite.inventoryCount} unit="개" />
-          <MetricTile label="부족 수량" value={selectedSite.expectedShortage} unit="개" />
-          <MetricTile label="유통기한 임박" value={selectedSite.expiringCount} unit="개" />
-        </dl>
+        <hr className="mt-3 border-slate-100" />
 
-        <div className="mt-3 flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        {/* B. 지금 확인할 사항 */}
+        <div className="mt-3">
+          <p className="mb-2 text-xs font-semibold text-slate-700">지금 확인할 사항</p>
+          {siteActions.length === 0 ? (
+            <div className="flex items-center gap-2 rounded-lg bg-teal-50 px-3 py-2.5 text-sm text-teal-700">
+              <span className="font-bold">✓</span>
+              특이사항 없이 운영 중입니다.
+            </div>
+          ) : (
+            <ul className="space-y-1.5">
+              {siteActions.map((item, idx) => (
+                <li
+                  key={item.id}
+                  className={`rounded-lg px-3 py-2.5 text-sm ${idx === 0 ? ACTION_KIND_STYLE[item.kind] : 'bg-slate-50 text-slate-600'}`}
+                >
+                  <p className={idx === 0 ? 'font-medium' : ''}>
+                    <span className="mr-1.5">{idx === 0 ? '!' : '·'}</span>
+                    {item.summary}
+                  </p>
+                  {idx === 0 && <p className="mt-0.5 text-xs opacity-75">{item.suggestion}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <hr className="mt-3 border-slate-100" />
+
+        {/* C. 운영 요약 */}
+        <DemoMetricsLabel />
+        <dl className="mt-1.5 grid grid-cols-2 gap-2">
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
+            <dt className="text-xs text-slate-500">최근 자료</dt>
+            <dd className="mt-0.5 text-sm font-semibold text-slate-900">{formatShortDate(selectedSite.lastUpdatedAt)}</dd>
+          </div>
+          <MetricTile label="현재 재고" value={selectedSite.inventoryCount} unit="개" />
+          {selectedSite.expectedShortage > 0 && (
+            <MetricTile label="부족 수량" value={selectedSite.expectedShortage} unit="개" />
+          )}
+          {selectedSite.expiringCount >= EXPIRING_THRESHOLD && (
+            <MetricTile label="유통기한 임박" value={selectedSite.expiringCount} unit="개" />
+          )}
+        </dl>
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
           <Package size={13} className="shrink-0 text-slate-400" />
           <span className="text-slate-400">주요 품목</span>
           <span className="ml-1 font-medium">{selectedSite.focusItem}</span>
         </div>
 
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-slate-400">
-          <CalendarClock size={14} />
-          최근 데이터 입력: {formatDateTime(selectedSite.lastUpdatedAt)}
-        </div>
-
-        <Link
-          to={`/regions/${selectedSite.district}`}
-          className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-teal-300 hover:bg-teal-50/40 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-        >
-          <ExternalLink size={13} />
-          {REGION_NAMES[selectedSite.district]} 현황 보기
-        </Link>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <ActionItemList
-            title="확인이 필요한 사항"
-            items={siteActions}
-            showSite={false}
-            emptyMessage={
-              selectedSite.status === 'missing'
-                ? '데이터가 입력되지 않아 확인할 항목을 계산할 수 없습니다.'
-                : '현재 이 거점에 확인이 필요한 사항이 없습니다.'
-            }
-          />
+        {/* D. CTA */}
+        <div className="mt-auto pt-4">
+          <Link
+            to={`/regions/${selectedSite.district}?site=${selectedSite.id}`}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+          >
+            소속 지역 보기
+          </Link>
         </div>
       </div>
     );
@@ -251,8 +295,7 @@ export default function OperationActionPanel({
     <div className="flex h-full flex-col">
       <h4 className="text-base font-semibold text-slate-900">화성시 전체</h4>
       <p className="mt-0.5 text-xs text-slate-500">
-        운영 거점 <span className="font-medium text-slate-700">{citySummary.siteCount}곳</span> · 지도에서 구역을
-        선택하면 해당 구 요약으로 바뀝니다.
+        운영 거점 <span className="font-medium text-slate-700">{citySummary.siteCount}곳</span> · 거점 마커를 선택하면 운영 현황을 확인할 수 있습니다.
       </p>
 
       <DemoMetricsLabel />

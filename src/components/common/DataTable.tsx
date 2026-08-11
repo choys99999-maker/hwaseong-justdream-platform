@@ -13,9 +13,11 @@ interface DataTableProps<T> {
   data: T[];
   rowKey: (row: T) => string;
   emptyMessage?: string;
+  /** 이 key 와 일치하는 행을 teal 배경으로 강조한다. */
+  highlightKey?: string | null;
 }
 
-export default function DataTable<T>({ columns, data, rowKey, emptyMessage }: DataTableProps<T>) {
+export default function DataTable<T>({ columns, data, rowKey, emptyMessage, highlightKey }: DataTableProps<T>) {
   if (data.length === 0) {
     return <EmptyState message={emptyMessage ?? '표시할 데이터가 없습니다.'} />;
   }
@@ -33,15 +35,23 @@ export default function DataTable<T>({ columns, data, rowKey, emptyMessage }: Da
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100 bg-white">
-          {data.map((row) => (
-            <tr key={rowKey(row)} className="hover:bg-slate-50">
-              {columns.map((column) => (
-                <td key={column.key} className={`whitespace-nowrap px-4 py-3 text-slate-700 ${column.className ?? ''}`}>
-                  {column.render(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {data.map((row) => {
+            const key = rowKey(row);
+            const isHighlighted = highlightKey != null && key === highlightKey;
+            return (
+              <tr
+                key={key}
+                data-highlight={isHighlighted ? 'true' : undefined}
+                className={isHighlighted ? 'bg-teal-50 ring-1 ring-inset ring-teal-300' : 'hover:bg-slate-50'}
+              >
+                {columns.map((column) => (
+                  <td key={column.key} className={`whitespace-nowrap px-4 py-3 text-slate-700 ${column.className ?? ''}`}>
+                    {column.render(row)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
