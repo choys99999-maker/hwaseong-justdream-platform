@@ -3,6 +3,7 @@ import CitizenLayout from './components/layout/CitizenLayout';
 import AdminLayout from './components/layout/AdminLayout';
 
 // 시민용 기존 페이지
+import HomePage from './pages/citizen/HomePage';
 import CitizenHomePage from './pages/citizen/CitizenHomePage';
 import CitizenSiteDetailPage from './pages/citizen/CitizenSiteDetailPage';
 import CitizenHelpPage from './pages/citizen/CitizenHelpPage';
@@ -39,7 +40,8 @@ export default function App() {
     <Routes>
       {/* ── 시민 화면 ── */}
       <Route element={<CitizenLayout />}>
-        <Route path="/" element={<CitizenHomePage />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="/discover" element={<CitizenHomePage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/items" element={<ItemSearchPage />} />
         <Route path="/site/:id" element={<CitizenSiteDetailPage />} />
