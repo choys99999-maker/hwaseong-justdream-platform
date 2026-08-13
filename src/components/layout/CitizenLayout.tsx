@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import DemoRoleSwitcher from '../demo/DemoRoleSwitcher';
 
 /**
  * 시민 화면 공통 셸. 390×844 기준 모바일 퍼스트 — 폭을 480px로 제한해 데스크톱에서도
@@ -9,6 +10,7 @@ export default function CitizenLayout() {
   return (
     <div className="min-h-dvh bg-slate-50 text-[18px] leading-relaxed text-slate-900">
       <div className="mx-auto min-h-dvh w-full max-w-[480px] bg-white">
+        <DemoRoleSwitcher />
         <Outlet />
       </div>
     </div>

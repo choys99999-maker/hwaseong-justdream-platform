@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import DemoRoleSwitcher from '../demo/DemoRoleSwitcher';
 import { getPageTitle } from '../../config/navigation';
 
 export default function AdminLayout() {
@@ -11,6 +12,7 @@ export default function AdminLayout() {
     <div className="flex h-screen bg-slate-50">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
+        <DemoRoleSwitcher />
         <Header title={title} />
         <main className="flex-1 overflow-y-auto px-6 py-6">
           <Outlet />

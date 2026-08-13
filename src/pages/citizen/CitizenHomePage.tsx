@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { LocateFixed, Map, MapPin, PhoneCall, Sparkles } from 'lucide-react';
+import { LocateFixed, Map, MapPin, PhoneCall, PlayCircle, Sparkles } from 'lucide-react';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useCitizenSites } from '../../hooks/useCitizenSites';
 import { recommendCitizenSites } from '../../utils/citizenSite';
@@ -9,6 +9,7 @@ import BigButton from '../../components/citizen/BigButton';
 import RecommendationCard from '../../components/citizen/RecommendationCard';
 import DongPicker from '../../components/citizen/DongPicker';
 import CitizenMap from '../../components/citizen/CitizenMap';
+import DemoRoleSheet from '../../components/demo/DemoRoleSheet';
 
 /**
  * 시민 홈. 첫 화면은 지도도 메뉴도 아니라 질문 하나다 — "지금 받을 수 있는 곳을 찾으시나요?"
@@ -22,6 +23,7 @@ export default function CitizenHomePage() {
   const [originLabel, setOriginLabel] = useState<string | null>(null);
   const [showDongPicker, setShowDongPicker] = useState(false);
   const [showMap, setShowMap] = useState(false);
+  const [showDemoSheet, setShowDemoSheet] = useState(false);
 
   const origin = geo.status === 'granted' ? geo.coords : manualOrigin;
   const hasOrigin = origin !== null;
@@ -41,7 +43,18 @@ export default function CitizenHomePage() {
 
   return (
     <div className="pb-10">
-      <div className="px-5 pt-6">
+      <div className="flex justify-end px-5 pt-3">
+        <button
+          type="button"
+          onClick={() => setShowDemoSheet(true)}
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-slate-200 px-3 text-xs font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          <PlayCircle size={14} aria-hidden />
+          시연 모드
+        </button>
+      </div>
+
+      <div className="px-5 pt-2">
         <BigButton to="/easy" variant="outline" size="md" icon={Sparkles}>
           간편하게 이용하기
         </BigButton>
@@ -118,6 +131,7 @@ export default function CitizenHomePage() {
           onClose={() => setShowMap(false)}
         />
       )}
+      <DemoRoleSheet open={showDemoSheet} onClose={() => setShowDemoSheet(false)} />
     </div>
   );
 }
