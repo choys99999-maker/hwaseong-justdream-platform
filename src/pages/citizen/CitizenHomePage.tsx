@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, LocateFixed, MapPin, Navigation, Phone, PlayCircle, Type } from 'lucide-react';
+import { ArrowLeft, ChevronRight, LocateFixed, Navigation, Phone, Type } from 'lucide-react';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useCitizenSites } from '../../hooks/useCitizenSites';
 import {
@@ -22,22 +22,32 @@ import HelpRequestForm from '../../components/citizen/HelpRequestForm';
 import DemoRoleSheet from '../../components/demo/DemoRoleSheet';
 
 type Stage = 'intro' | 'recommend' | 'detail' | 'help';
+type SheetStage = Exclude<Stage, 'intro'>;
 
 /** 단계별 시트 최대 높이(화면 비율). 지도와의 공간 관계가 어느 단계에서도 끊기지 않게 한다. */
-const SHEET_RATIO: Record<Stage, number> = {
-  intro: 0.46,
+const SHEET_RATIO: Record<SheetStage, number> = {
   recommend: 0.64,
   detail: 0.76,
   help: 0.88,
 };
 
 /**
+ * 첫 화면에서 지도 프레이밍에 쓰는 아래 여백(px).
+ *
+ * 화성시는 동서로 아주 길어서(경도 0.43°) 390px 폭에 전체를 담으면 세로로는 화면의 20% 밖에
+ * 차지하지 못한다. 그 띠를 화면 한가운데 두면 중앙 CTA 가 정확히 그 위를 덮으므로,
+ * 여백을 크게 잡아 도시를 CTA 위쪽으로 올려 둔다 — 지도와 CTA 가 서로를 가리지 않는다.
+ */
+const INTRO_MAP_INSET = 460;
+
+/**
  * 시민 첫 화면.
  *
- * 화성시 전체 지도를 무대로 깔고, 그 위 시트 한 장에서 모든 단계가 바뀐다.
- * 시민이 25곳을 비교하지 않는다 — 버튼 하나를 누르면 서비스가 갈 곳 한 곳을 정해서 보여준다.
+ * 첫 화면은 설명 화면이 아니라 행동을 시작하는 화면이다 — 지도는 배경 무드로만 깔고
+ * (딤 한 겹 + 조용한 점 핀), 그 위 정중앙에 핵심 CTA 하나만 또렷하게 둔다.
+ * 정보형 UX(줌인·추천 ①②③·상세 시트)는 그 버튼을 누른 뒤에야 시작된다.
  *   첫 화면 → [내 주변에서 찾기] → 지도 줌인 + ①②③ → "지금은 여기가 가장 좋아요" → 길찾기
- *   첫 화면 → 직접 가기 어려움 → 도움 요청
+ *   첫 화면 → 도움 요청(작은 보조 액션)
  */
 export default function CitizenHomePage() {
   const geo = useGeolocation();
@@ -102,7 +112,7 @@ export default function CitizenHomePage() {
     setFocusToken((t) => t + 1);
   }
 
-  const dismissable = stage !== 'intro' ? handleBack : null;
+  const isIntro = stage === 'intro';
 
   return (
     <div className="relative h-full overflow-hidden bg-slate-200">
@@ -112,68 +122,58 @@ export default function CitizenHomePage() {
         userLocation={geo.status === 'granted' ? geo.coords : null}
         selectedId={selectedId}
         onSelect={handleSelectSite}
-        bottomInset={sheetHeight}
+        bottomInset={isIntro ? INTRO_MAP_INSET : sheetHeight}
         focusToken={focusToken}
         spotlightToken={spotlightToken}
+        quiet={isIntro}
       />
 
-      {/* 지도 위 보조 액션. 지도를 가리지 않도록 작게, 그리고 첫 CTA 보다 항상 약하게 둔다. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-3">
-        {/* 아주 좁은 폭(200% 확대 등)에서는 브랜드 칩을 접어 보조 액션 자리를 남긴다. */}
-        <span className="pointer-events-auto hidden rounded-full bg-white/90 px-3 py-1.5 text-sm font-bold text-teal-800 shadow-sm ring-1 ring-slate-900/5 min-[360px]:inline-flex">
-          화성 모아드림
-        </span>
-        <div className="pointer-events-auto ml-auto flex flex-wrap items-center justify-end gap-1.5">
-          <Link
-            to="/easy"
-            className="inline-flex min-h-[40px] items-center gap-1 rounded-full bg-white/90 px-3 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-900/5 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+      {isIntro ? (
+        <IntroOverlay
+          locating={geo.status === 'locating'}
+          geoBlocked={geo.status === 'denied' || geo.status === 'unsupported' || geo.status === 'error'}
+          onLocate={geo.request}
+          onPickDong={() => setShowDongPicker(true)}
+          onHelp={() => setStage('help')}
+          onDemo={() => setShowDemoSheet(true)}
+        />
+      ) : (
+        <>
+          {/* 첫 화면을 지난 뒤에도 큰 글씨 모드로 빠져나갈 길은 남긴다 — 작게, 시트보다 약하게. */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-end p-3">
+            <Link
+              to="/easy"
+              className="pointer-events-auto inline-flex min-h-[40px] items-center gap-1 rounded-full bg-white/90 px-3 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-900/5 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            >
+              <Type size={15} aria-hidden />
+              쉽게 보기
+            </Link>
+          </div>
+
+          <CitizenSheet
+            onHeightChange={handleSheetHeight}
+            onDismiss={handleBack}
+            maxHeightRatio={SHEET_RATIO[stage]}
+            labelledBy="citizen-sheet-title"
           >
-            <Type size={15} aria-hidden />
-            쉽게 보기
-          </Link>
-          <button
-            type="button"
-            onClick={() => setShowDemoSheet(true)}
-            className="inline-flex min-h-[40px] items-center gap-1 rounded-full bg-white/90 px-3 text-sm font-medium text-slate-500 shadow-sm ring-1 ring-slate-900/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-          >
-            <PlayCircle size={15} aria-hidden />
-            시연 모드
-          </button>
-        </div>
-      </div>
+            {stage === 'recommend' && (
+              <RecommendPanel
+                recommended={recommended}
+                originLabel={originLabel}
+                onSelectSite={handleSelectSite}
+                onHelp={() => setStage('help')}
+                onRestart={handleBack}
+              />
+            )}
 
-      <CitizenSheet
-        onHeightChange={handleSheetHeight}
-        onDismiss={dismissable}
-        maxHeightRatio={SHEET_RATIO[stage]}
-        labelledBy="citizen-sheet-title"
-      >
-        {stage === 'intro' && (
-          <IntroPanel
-            locating={geo.status === 'locating'}
-            geoBlocked={geo.status === 'denied' || geo.status === 'unsupported' || geo.status === 'error'}
-            onLocate={geo.request}
-            onPickDong={() => setShowDongPicker(true)}
-            onHelp={() => setStage('help')}
-          />
-        )}
+            {stage === 'detail' && selected && (
+              <DetailPanel site={selected} onBack={handleBack} onHelp={() => setStage('help')} />
+            )}
 
-        {stage === 'recommend' && (
-          <RecommendPanel
-            recommended={recommended}
-            originLabel={originLabel}
-            onSelectSite={handleSelectSite}
-            onHelp={() => setStage('help')}
-            onRestart={handleBack}
-          />
-        )}
-
-        {stage === 'detail' && selected && (
-          <DetailPanel site={selected} onBack={handleBack} onHelp={() => setStage('help')} />
-        )}
-
-        {stage === 'help' && <HelpPanel onBack={handleBack} />}
-      </CitizenSheet>
+            {stage === 'help' && <HelpPanel onBack={handleBack} />}
+          </CitizenSheet>
+        </>
+      )}
 
       {showDongPicker && <DongPicker onSelect={handleSelectDong} onClose={() => setShowDongPicker(false)} />}
       <DemoRoleSheet open={showDemoSheet} onClose={() => setShowDemoSheet(false)} />
@@ -183,56 +183,101 @@ export default function CitizenHomePage() {
 
 // ── 단계 1. 첫 화면 ────────────────────────────────────────────────────────
 
-function IntroPanel({
+/**
+ * 첫 진입 화면. 시트도 카드도 없이 지도 위에 바로 얹는다.
+ *
+ * 위계는 딱 세 단이다 — ① 화면 정중앙의 CTA 하나, ② 그 아래 작은 보조 액션 두 개,
+ * ③ 화면 맨 아래 아주 약한 부가 진입로. 설명문은 한 줄로 줄였고, 나머지는 전부 지웠다.
+ */
+function IntroOverlay({
   locating,
   geoBlocked,
   onLocate,
   onPickDong,
   onHelp,
+  onDemo,
 }: {
   locating: boolean;
   geoBlocked: boolean;
   onLocate: () => void;
   onPickDong: () => void;
   onHelp: () => void;
+  onDemo: () => void;
 }) {
   return (
-    <div className="pt-1">
-      <h1 className="text-[22px] font-bold leading-snug tracking-tight text-slate-900 min-[360px]:text-[26px]">
-        <span id="citizen-sheet-title">
-          지금 받을 수 있는 곳을
-          <br />
-          찾아드릴게요
-        </span>
-      </h1>
-      {/* 200% 확대처럼 폭이 아주 좁아지면 보조 설명부터 접어 핵심 CTA 를 화면 안에 남긴다. */}
-      <p className="mt-2 hidden text-base leading-relaxed text-slate-500 min-[360px]:block">
-        내 위치와 최신 물품 정보를 보고 가장 가기 좋은 곳을 알려드려요.
-      </p>
+    <div className="absolute inset-0 z-20">
+      {/* 지도를 지우지 않고 한 겹만 덮는다 — 가운데는 밝게(CTA 가독), 가장자리만 살짝 어둡게. */}
+      <div className="gjc-intro-scrim absolute inset-0" aria-hidden />
 
-      <div className="mt-5">
-        <BigButton onClick={onLocate} icon={LocateFixed} disabled={locating}>
-          {locating ? '위치를 확인하는 중이에요' : '내 주변에서 찾기'}
-        </BigButton>
+      {/*
+        화면이 아주 낮아지는 경우(200% 확대·가로 모드)에도 CTA 가 잘리면 안 된다.
+        평소에는 min-h-full + 가운데 정렬로 중앙 배치, 모자랄 때만 이 안에서 스크롤한다.
+      */}
+      <div className="relative h-full overflow-y-auto overscroll-contain">
+        <div className="gjc-intro-in flex min-h-full flex-col items-center px-6 pb-[max(12px,env(safe-area-inset-bottom))] pt-5">
+          {/* 화면이 아주 낮으면(200% 확대) 장식부터 접는다 — 남는 높이는 전부 CTA 몫이다. */}
+          <span className="hidden rounded-full bg-white/70 px-3 py-1 text-[13px] font-bold tracking-[0.16em] text-teal-800 backdrop-blur-sm [@media(min-height:560px)]:inline-flex">
+            화성 모아드림
+          </span>
+
+          <div className="flex w-full flex-1 flex-col items-center justify-center gap-4 py-4 [@media(min-height:560px)]:py-6">
+            <h1 className="text-balance text-center text-[21px] font-bold leading-snug tracking-tight text-slate-900">
+              가까운 그냥드림을 찾아드릴게요
+            </h1>
+
+            {/* 화면에서 가장 강한 요소 하나. 흰 링 + 그림자로 지도 배경에서 확실히 떠오르게 한다. */}
+            <div className="w-full max-w-[300px] rounded-2xl shadow-[0_14px_30px_-12px_rgba(13,118,110,0.75)] ring-4 ring-white/60">
+              <BigButton onClick={onLocate} icon={LocateFixed} disabled={locating}>
+                {locating ? '위치를 확인하는 중이에요' : '내 주변에서 찾기'}
+              </BigButton>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <IntroMiniAction onClick={onPickDong}>동네로 찾기</IntroMiniAction>
+              <IntroMiniAction onClick={onHelp}>도움 요청</IntroMiniAction>
+            </div>
+
+            {geoBlocked && (
+              <p className="rounded-full bg-white/85 px-3 py-1 text-center text-[15px] text-slate-600">
+                위치를 쓸 수 없어요. 동네로 찾아드릴게요.
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center rounded-full bg-white/65 px-1 text-[13px] backdrop-blur-sm">
+            <Link
+              to="/easy"
+              className="inline-flex min-h-[44px] items-center whitespace-nowrap rounded-full px-3 font-medium text-slate-500 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            >
+              쉽게 보기
+            </Link>
+            <span className="text-slate-300" aria-hidden>
+              ·
+            </span>
+            <button
+              type="button"
+              onClick={onDemo}
+              className="inline-flex min-h-[44px] items-center whitespace-nowrap rounded-full px-3 font-medium text-slate-500 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            >
+              시연 모드
+            </button>
+          </div>
+        </div>
       </div>
-
-      <button
-        type="button"
-        onClick={onPickDong}
-        className="mt-2.5 inline-flex min-h-[48px] w-full items-center justify-center gap-1.5 text-lg font-semibold text-slate-600 underline underline-offset-4 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40"
-      >
-        <MapPin size={18} aria-hidden />
-        사는 동네로 찾기
-      </button>
-
-      {geoBlocked && (
-        <p className="mt-2 text-base text-slate-500">
-          위치를 쓸 수 없어요. 사는 동네를 골라도 똑같이 찾아드려요.
-        </p>
-      )}
-
-      <HelpFooter onHelp={onHelp} />
     </div>
+  );
+}
+
+/** 첫 화면의 보조 액션. 메인 CTA 와 색·크기·무게를 모두 낮춰 한눈에 2순위로 읽히게 둔다. */
+function IntroMiniAction({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex min-h-[44px] items-center whitespace-nowrap rounded-full bg-white/85 px-4 text-[15px] font-semibold text-slate-600 ring-1 ring-slate-900/5 backdrop-blur-sm hover:text-teal-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40"
+    >
+      {children}
+    </button>
   );
 }
 

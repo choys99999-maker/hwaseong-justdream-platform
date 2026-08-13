@@ -16,55 +16,57 @@ test.describe('시민 홈 — 390×844', () => {
 
   test('첫 화면은 지도·메뉴가 아니라 질문 하나와 두 개의 시작 버튼', async ({ page }) => {
     await page.goto(BASE);
-    await expect(page.getByRole('heading', { name: /지금 받을 수 있는 곳을/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '가까운 그냥드림을 찾아드릴게요' })).toBeVisible();
     await expect(page.getByRole('button', { name: '내 주변에서 찾기' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '사는 동네 선택하기' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '간편하게 이용하기' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '동네로 찾기' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '쉽게 보기' })).toBeVisible();
   });
 
-  test('사는 동네 선택 → 추천 거점 최대 3개, 필터·검색 없이 바로 표시', async ({ page }) => {
+  test('동네로 찾기 → 추천 거점 최대 3개, 필터·검색 없이 바로 표시', async ({ page }) => {
     await page.goto(BASE);
-    await page.getByRole('button', { name: '사는 동네 선택하기' }).click();
+    await page.getByRole('button', { name: '동네로 찾기' }).click();
     await expect(page.getByRole('heading', { name: '사는 동네를 선택해 주세요' })).toBeVisible();
 
     await page.getByRole('button', { name: '동탄5동' }).click();
 
-    await expect(page.getByRole('heading', { name: '가까운 곳부터 보여드릴게요' })).toBeVisible();
-    const cards = page.locator('li:has-text("순위")');
-    await expect(cards).toHaveCount(3);
-    // 상태는 색만이 아니라 아이콘 + 문구로 함께 전달된다.
-    await expect(cards.first().getByText(/지금 받을 수 있어요|얼마 안 남았어요|최신 정보 확인이 필요해요/)).toBeVisible();
-    await expect(cards.first().getByRole('link', { name: '길찾기' })).toBeVisible();
-    await expect(cards.first().getByRole('link', { name: '자세히 보기' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '지금은 여기가 가장 좋아요' })).toBeVisible();
+    // 1순위는 <div> 카드 — 2·3순위만 <li>
+    await expect(page.locator('li:has-text("순위")')).toHaveCount(2);
+    // 1순위 진입로
+    await expect(page.getByRole('link', { name: '여기로 갈게요' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '이곳 자세히 보기' })).toBeVisible();
   });
 
-  test('위치 권한 허용 시 자동으로 추천 목록 표시', async ({ page, context }) => {
+  test('메인 CTA 를 누르면 위치 확인 후 바로 추천 화면', async ({ page, context }) => {
     await context.grantPermissions(['geolocation']);
     await context.setGeolocation({ latitude: 37.1996, longitude: 127.1127 }); // 동탄 인근
     await page.goto(BASE);
+    // 위치는 첫 화면 CTA 를 누른 시점에만 요청한다(자동 요청 없음).
     await page.getByRole('button', { name: '내 주변에서 찾기' }).click();
-    await expect(page.getByRole('heading', { name: '가까운 곳부터 보여드릴게요' })).toBeVisible({ timeout: 10000 });
-    await expect(page.locator('li:has-text("순위")')).toHaveCount(3);
+    // 위치가 확인되면 인트로가 사라지고 바로 추천 화면으로 넘어간다
+    await expect(page.getByRole('heading', { name: '지금은 여기가 가장 좋아요' })).toBeVisible({ timeout: 10000 });
+    // 1순위는 <div>, 2·3순위만 <li>
+    await expect(page.locator('li:has-text("순위")')).toHaveCount(2);
   });
 
-  test('위치 권한 거부해도 사는 동네 선택으로 계속 진행 가능', async ({ page, context }) => {
+  test('위치 권한 거부해도 동네로 찾기로 계속 진행 가능', async ({ page, context }) => {
     await context.grantPermissions([]); // geolocation 권한을 주지 않는다 → getCurrentPosition 이 거부로 처리된다
     await page.goto(BASE);
     await page.getByRole('button', { name: '내 주변에서 찾기' }).click();
-    // 거부 안내 후에도 동네 선택 버튼은 계속 눌러서 진행할 수 있다.
-    await expect(page.getByRole('button', { name: '사는 동네 선택하기' })).toBeVisible({ timeout: 10000 });
-    await page.getByRole('button', { name: '사는 동네 선택하기' }).click();
+    // 거부 후에도 동네로 찾기 버튼으로 진행할 수 있다
+    await expect(page.getByRole('button', { name: '동네로 찾기' })).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: '동네로 찾기' }).click();
     await page.getByRole('button', { name: '병점1동' }).click();
-    await expect(page.getByRole('heading', { name: '가까운 곳부터 보여드릴게요' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '지금은 여기가 가장 좋아요' })).toBeVisible();
   });
 
-  test('거점 상세 — 자세히 보기 진입 시 핵심 정보만 표시', async ({ page }) => {
+  test('거점 상세 — 이곳 자세히 보기 진입 시 핵심 정보만 표시', async ({ page }) => {
     await page.goto(BASE);
-    await page.getByRole('button', { name: '사는 동네 선택하기' }).click();
+    await page.getByRole('button', { name: '동네로 찾기' }).click();
     await page.getByRole('button', { name: '동탄5동' }).click();
-    await page.locator('li:has-text("순위")').first().getByRole('link', { name: '자세히 보기' }).click();
+    // 1순위 카드의 상세 보기 버튼 — 시트 안에서 전환, URL 변경 없음
+    await page.getByRole('button', { name: '이곳 자세히 보기' }).click();
 
-    await expect(page).toHaveURL(/\/site\//);
     await expect(page.getByRole('link', { name: '길찾기' })).toBeVisible();
     // 재고율·D-day 같은 관리자 숫자는 노출하지 않는다.
     const bodyText = await page.locator('body').innerText();
@@ -76,13 +78,12 @@ test.describe('시민 홈 — 390×844', () => {
   test('간편하게 이용하기 — 한 화면에 행동 최대 3개', async ({ page }) => {
     await page.goto(`${BASE}/easy`);
     await expect(page.getByRole('heading', { name: '간편하게 이용하기' })).toBeVisible();
-    const menuButtons = page.locator('main, div').filter({ hasText: '간편하게 이용하기' });
     await expect(page.getByRole('button', { name: '지금 받을 수 있는 곳' })).toBeVisible();
     await expect(page.getByRole('link', { name: '직접 가기 어려워요' })).toBeVisible();
     await expect(page.getByRole('link', { name: '전화로 도와주세요' })).toBeVisible();
-    void menuButtons;
 
     await page.getByRole('button', { name: '지금 받을 수 있는 곳' }).click();
+    // EasyModePage 는 RecommendationCard(<li>)로 3개 모두 같은 요소로 렌더링한다
     await expect(page.locator('li:has-text("순위")')).toHaveCount(3);
   });
 });
@@ -92,26 +93,30 @@ test.describe('375×812 화면에서도 첫 화면이 정상 표시', () => {
 
   test('시민 홈 헤딩·버튼 표시', async ({ page }) => {
     await page.goto(BASE);
-    await expect(page.getByRole('heading', { name: /지금 받을 수 있는 곳을/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '가까운 그냥드림을 찾아드릴게요' })).toBeVisible();
     await expect(page.getByRole('button', { name: '내 주변에서 찾기' })).toBeVisible();
   });
 });
 
 test.describe('200% 확대에서도 핵심 기능 사용 가능', () => {
-  test.use({ viewport: { width: 390, height: 844 } });
+  // 브라우저 200% 확대 = CSS 뷰포트가 절반(390×844 → 195×422). Playwright 는 OS 확대를
+  // 제어할 수 없으므로 같은 결과가 되는 뷰포트로 재현한다.
+  test.use({ viewport: { width: 195, height: 422 } });
 
-  test('본문 확대 후에도 핵심 CTA가 화면에 보인다', async ({ page }) => {
+  test('확대해도 핵심 CTA 가 스크롤 없이 화면 안에 있다', async ({ page }) => {
     await page.goto(BASE);
-    // CSS zoom 으로 브라우저 200% 확대를 근사한다(Playwright 는 실제 OS 확대를 제어할 수 없다).
-    await page.evaluate(() => {
-      document.body.style.zoom = '2';
-    });
     const cta = page.getByRole('button', { name: '내 주변에서 찾기' });
     await expect(cta).toBeVisible();
+
+    // 첫 화면은 시트 없이 중앙 정렬이라, 확대 시 CTA 가 화면 밖으로 밀리지 않는지가 핵심이다.
     const box = await cta.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.width).toBeGreaterThan(0);
-    expect(box!.height).toBeGreaterThan(0);
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(422);
+
+    // 보조 액션도 그대로 닿을 수 있어야 한다.
+    await expect(page.getByRole('button', { name: '동네로 찾기' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '도움 요청' })).toBeVisible();
   });
 });
 
@@ -122,11 +127,12 @@ test.describe('/help 도움 요청', () => {
     await page.goto(`${BASE}/help`);
     await expect(page.getByRole('heading', { name: '도움이 필요하신가요?' })).toBeVisible();
 
-    await page.getByLabel('연락 가능한 번호').fill('010-1234-5678');
-    await page.getByLabel('사는 읍면동').selectOption('동탄5동');
-    await page.getByRole('button', { name: '식품' }).click();
+    // 시민용(variant='citizen') 문구 — 관리자 접수 화면과 라벨이 다르다.
+    await page.getByLabel('연락받을 번호').fill('010-1234-5678');
+    await page.getByLabel('어디에 사세요?').selectOption('동탄5동');
+    await page.getByRole('button', { name: '먹거리' }).click();
 
-    await page.getByRole('button', { name: '요청 보내기' }).click();
+    await page.getByRole('button', { name: '도움 요청하기' }).click();
 
     // 새 Supabase 마이그레이션(help_requests)이 아직 적용되지 않은 환경에서는
     // 오류 메시지로 끝나는 것이 정상이다 — 두 결과 모두 "폼이 올바르게 동작했다"는 뜻이라

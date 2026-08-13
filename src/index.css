@@ -306,6 +306,23 @@ body {
   opacity: 0.28;
 }
 
+/*
+ * 첫 화면 — 핀은 "화성 전역에 거점이 있다" 는 배경 정보일 뿐이다.
+ * 상태 색(초록/주황/회색)까지 읽히면 시선이 흩어지므로 한 가지 색 작은 점으로 낮추고,
+ * 탭·클릭도 막는다(첫 화면의 행동은 중앙 CTA 하나뿐이어야 한다).
+ */
+.gjc-pin[data-quiet='true'] {
+  pointer-events: none;
+}
+
+.gjc-pin[data-quiet='true'] .gjc-pin-dot {
+  width: 10px;
+  height: 10px;
+  border-width: 2px;
+  background: #0f766e;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.28);
+}
+
 /* 추천 ①②③ */
 .gjc-pin[data-rank='1'] .gjc-pin-dot,
 .gjc-pin[data-rank='2'] .gjc-pin-dot,
@@ -361,6 +378,49 @@ body {
     transition: none;
   }
   .gjc-pin-enter .gjc-pin-dot {
+    animation: none;
+  }
+}
+
+/*
+ * 첫 화면 딤. 배경은 지도이되 주인공은 중앙 CTA 라는 관계를 이 한 겹으로 만든다.
+ * 세로로 세기를 다르게 준다 —
+ *   위(화성시가 있는 띠) 는 아주 옅게: 지도와 거점 점이 그대로 읽혀야 한다
+ *   가운데(CTA 대) 는 밝게: 큰 버튼과 문구의 대비를 확보한다
+ *   아래·가장자리 는 살짝 눌러: 빈 지도가 시선을 끌지 않게 뒤로 물린다
+ * 전체를 어둡게 덮지 않는다 — 어두운 인트로가 아니라 "딤 처리된 지도" 여야 한다.
+ */
+.gjc-intro-scrim {
+  background:
+    radial-gradient(72% 30% at 50% 52%, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0) 100%),
+    linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.2) 32%,
+      rgba(255, 255, 255, 0.46) 62%,
+      rgba(226, 232, 240, 0.66) 100%
+    ),
+    radial-gradient(122% 74% at 50% 44%, rgba(15, 23, 42, 0) 56%, rgba(15, 23, 42, 0.17) 100%);
+  backdrop-filter: blur(1.5px);
+}
+
+.gjc-intro-in {
+  animation: gjc-intro-in 380ms ease-out both;
+}
+
+@keyframes gjc-intro-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gjc-intro-in {
     animation: none;
   }
 }

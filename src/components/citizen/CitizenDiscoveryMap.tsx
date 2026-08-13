@@ -26,6 +26,16 @@ const ZOOM_MS = 520;
 const PAD_TOP = 88;
 const PAD_X = 40;
 const PAD_BOTTOM = 40;
+/**
+ * 첫 화면(quiet)의 좌우 여백만 따로 둔다.
+ *
+ * 화성시는 동서로 0.43° 나 되어서 390px 폭에 40px 여백까지 주면 한 배율 안에 겨우 들어간다.
+ * 375px 화면에서는 그 "겨우" 가 무너져 한 단계 더 축소되는데, 카카오 레벨은 2배 단위라
+ * 그 순간 지도에 대전·세종까지 들어와 배경이 화성 지도로 읽히지 않는다.
+ * 첫 화면 핀은 조작 대상이 아니라 배경이므로 화면 끝에 붙어도 문제가 없다 — 여백을 줄여
+ * 좁은 기기에서도 같은 배율(화성시가 화면을 채우는 배율)을 유지한다.
+ */
+const QUIET_PAD_X = 8;
 /** "한 단계 더 당겨도 되는가" 판정은 여백을 조금 더 크게 잡아 아슬아슬한 통과를 막는다. */
 const TIGHTEN_MARGIN = 1.3;
 
@@ -65,6 +75,11 @@ interface CitizenDiscoveryMapProps {
   focusToken: number;
   /** 값이 바뀔 때마다 selectedId 거점을 시트 위 영역 한가운데로 올린다. */
   spotlightToken: number;
+  /**
+   * 첫 화면(배경 무드) 모드. 핀을 상태 색 없이 작은 점 하나로 낮추고 조작도 막는다 —
+   * 첫 화면의 유일한 행동은 중앙 CTA 여야 하므로, 25개 핀이 시선도 탭 순서도 가져가면 안 된다.
+   */
+  quiet: boolean;
 }
 
 /**
@@ -84,6 +99,7 @@ export default function CitizenDiscoveryMap({
   bottomInset,
   focusToken,
   spotlightToken,
+  quiet,
 }: CitizenDiscoveryMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapsRef = useRef<KakaoMapsNamespace | null>(null);
@@ -107,6 +123,13 @@ export default function CitizenDiscoveryMap({
   bottomInsetRef.current = bottomInset;
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
+  const quietRef = useRef(quiet);
+  quietRef.current = quiet;
+
+  /** 지금 단계의 좌우 프레이밍 여백. 첫 화면만 좁게 잡는다(QUIET_PAD_X 주석 참고). */
+  function padX() {
+    return quietRef.current ? QUIET_PAD_X : PAD_X;
+  }
 
   function clearTimers() {
     for (const id of timersRef.current) window.clearTimeout(id);
@@ -162,8 +185,8 @@ export default function CitizenDiscoveryMap({
     const dLng = ne.getLng() - sw.getLng();
     const top = ne.getLat() - (dLat * PAD_TOP * TIGHTEN_MARGIN) / el.clientHeight;
     const bottom = sw.getLat() + (dLat * (inset + PAD_BOTTOM * TIGHTEN_MARGIN)) / el.clientHeight;
-    const left = sw.getLng() + (dLng * PAD_X * TIGHTEN_MARGIN) / el.clientWidth;
-    const right = ne.getLng() - (dLng * PAD_X * TIGHTEN_MARGIN) / el.clientWidth;
+    const left = sw.getLng() + (dLng * padX() * TIGHTEN_MARGIN) / el.clientWidth;
+    const right = ne.getLng() - (dLng * padX() * TIGHTEN_MARGIN) / el.clientWidth;
     return points.every((p) => p.lat <= top && p.lat >= bottom && p.lng >= left && p.lng <= right);
   }
 
@@ -171,17 +194,58 @@ export default function CitizenDiscoveryMap({
    * 점들이 시트 위쪽 영역에 딱 들어오도록 중심·레벨을 맞춘다.
    * 카카오 레벨은 2배씩 뛰어서 setBounds 만으로는 한 단계 과하게 축소되는 일이 잦다
    * (화성시만 보여주려는데 수도권 전체가 나온다). 한 단계 당겨 보고 그래도 다 보이면 그대로 둔다.
+   *
+   * 주의: Kakao setBounds 에 하단 여백을 캔버스 높이의 50% 이상 넘기면 여백을 무시하는 버그가 있다
+   * (인 시트가 844px 화면에서 540px 여서 580px 여백을 요청했을 때 핀이 시트 뒤로 숨는다).
+   * 이 때문에 setBounds 는 자연 여백(시트 없음)으로만 쓰고, 이후 중심을 직접 북쪽으로 밀어서
+   * 핀이 시트 위 가시 영역 안에 들어오게 만든다.
    */
   function fitPoints(points: LatLng[], inset: number) {
     const map = mapRef.current;
+    const maps = mapsRef.current;
+    const el = containerRef.current;
     const bounds = boundsOf(points);
-    if (!map || !bounds || bounds.isEmpty()) return;
-    map.setBounds(bounds, PAD_TOP, PAD_X, inset + PAD_BOTTOM, PAD_X);
-    const level = map.getLevel();
-    if (level > 1) {
-      map.setLevel(level - 1);
-      if (!allPointsClear(points, inset)) map.setLevel(level);
+    if (!map || !maps || !el || !bounds || bounds.isEmpty()) return;
+
+    /**
+     * 자연 setBounds 는 시트를 포함한 캔버스 전체를 기준으로 중심을 잡는다.
+     * 중심을 남쪽으로 내리면 지도가 남쪽 방향으로 이동하고, 고정 좌표인 핀들이
+     * 화면 위쪽(시트 위 가시 영역)으로 올라온다.
+     *   naturalY = 자연 setBounds 후 bounds 중심이 나타나는 화면 y
+     *   targetY  = 시트 위 가시 영역 중앙 y (핀이 있어야 할 곳)
+     */
+    function shiftAboveSheet() {
+      if (!map || !maps || !el) return;
+      const vh = el.clientHeight;
+      const naturalY = PAD_TOP + (vh - PAD_TOP - PAD_BOTTOM) / 2;
+      const safeH = Math.max(0, vh - PAD_TOP - inset - PAD_BOTTOM);
+      const targetY = PAD_TOP + safeH / 2;
+      const shiftPx = naturalY - targetY; // 양수 → 중심을 남쪽으로(핀이 위로 올라옴)
+      if (shiftPx <= 1) return;
+      const view = map.getBounds();
+      const dLat = view.getNorthEast().getLat() - view.getSouthWest().getLat();
+      const c = map.getCenter();
+      map.setCenter(new maps.LatLng(c.getLat() - (shiftPx / vh) * dLat, c.getLng()));
     }
+
+    // 시트 여백을 setBounds 에 넘기지 않는다 — 큰 값에서 무시되기 때문.
+    map.setBounds(bounds, PAD_TOP, padX(), PAD_BOTTOM, padX());
+    const natural = map.getLevel();
+    const center = map.getCenter();
+
+    /*
+     * 자연 배율은 "시트가 없을 때" 기준이라, 시트가 화면 절반을 덮는 단계에서는 그대로 두면
+     * 추천 ①②③ 중 일부가 시트 뒤나 화면 밖으로 밀린다. 카카오 레벨은 2배 단위여서 계산으로
+     * 한 번에 맞출 수 없으므로, 한 단계 당겨 보고 → 그래도 안 되면 한 단계씩 물러나며
+     * "가시 영역에 전부 들어오는 첫 배율" 을 실제로 확인해 고른다.
+     */
+    for (let level = Math.max(1, natural - 1); level <= natural + 2; level++) {
+      map.setLevel(level);
+      map.setCenter(center);
+      shiftAboveSheet();
+      if (allPointsClear(points, inset)) return;
+    }
+    // 두 단계를 물러나도 다 담기지 않으면(아주 낮은 화면 등) 마지막 배율을 그대로 둔다.
   }
 
   /**
@@ -306,6 +370,19 @@ export default function CitizenDiscoveryMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, sites.length]);
 
+  /*
+   * 첫 화면에서는 화성시 면이 배경 그림의 주인공이다.
+   * 이 배율에서는 서울·인천·평택까지 함께 보일 수밖에 없으므로(화성시가 동서로 길다)
+   * 면을 조금 더 진하게 깔아 "이 안이 화성시" 가 한눈에 잡히게 한다.
+   * 줌인한 뒤에는 다시 옅게 낮춘다 — 그때는 길·건물이 읽혀야 한다.
+   */
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    for (const polygon of cityShapeRef.current) {
+      polygon.setOptions({ fillOpacity: quiet ? 0.26 : 0.14 });
+    }
+  }, [phase, quiet]);
+
   // ── 핀 상태(추천 순위·선택·흐림) 반영 ────────────────────────────────────
   useEffect(() => {
     if (phase !== 'ready') return;
@@ -321,10 +398,14 @@ export default function CitizenDiscoveryMap({
       pin.button.dataset.rank = isRanked ? String(rank + 1) : '';
       pin.button.dataset.dim = focusing && !isRanked ? 'true' : 'false';
       pin.button.dataset.selected = site.id === selectedId ? 'true' : 'false';
+      pin.button.dataset.quiet = quiet ? 'true' : 'false';
       pin.button.setAttribute(
         'aria-label',
         `${isRanked ? `추천 ${rank + 1}순위 ` : ''}${site.displayName} · ${AVAILABILITY_LABEL[site.availability]}`,
       );
+      // 첫 화면에서는 핀이 배경이다 — 스크린리더 목록과 탭 순서에서 함께 빼서 CTA 만 남긴다.
+      pin.button.tabIndex = quiet ? -1 : 0;
+      pin.button.setAttribute('aria-hidden', quiet ? 'true' : 'false');
       pin.overlay.setZIndex(isRanked ? 40 - rank : 10);
 
       if (isRanked && !reduceMotion) {
@@ -335,7 +416,7 @@ export default function CitizenDiscoveryMap({
         pin.button.classList.add('gjc-pin-enter');
       }
     }
-  }, [phase, sites, highlightIds, selectedId, reduceMotion]);
+  }, [phase, sites, highlightIds, selectedId, reduceMotion, quiet]);
 
   // ── 내 위치 점 ───────────────────────────────────────────────────────────
   useEffect(() => {
