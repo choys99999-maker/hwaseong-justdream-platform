@@ -12,7 +12,7 @@ import { toSiteDisplayName } from './siteDisplayName';
  *   - 재고·수요·유통기한·주요품목 : 대시보드 시연용 수치
  *
  * 주의
- * - 기관명·주소·위경도는 확인된 실제 데이터, 재고·수요·날짜는 시연용 수치입니다.
+ * - 기관명·주소·위경도는 확인된 데이터, 재고·수요·날짜는 시연용 수치입니다.
  * - 런타임에 장소검색 API 를 호출하지 않습니다. 좌표는 전부 정적 값입니다.
  * - '부족' 판정은 수요 예측(sevenDayDemand − inventoryCount)이 아니라 `shortageQuantity`
  *   (담당자가 명시적으로 등록한 부족 수량이라고 가정한 시연 값)로만 계산한다. `sevenDayDemand`

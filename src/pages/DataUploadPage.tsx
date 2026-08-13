@@ -180,7 +180,7 @@ export default function DataUploadPage() {
           sheetsRef.current = parsedSheets;
           setSheetMappings(auto);
           sheetMappingsRef.current = auto;
-          // 실제 데이터가 있는 첫 업무 시트를 기본으로 고른다. ('안내' 같은 설명 시트는 건너뛴다)
+          // 데이터가 있는 첫 업무 시트를 기본으로 고른다. ('안내' 같은 설명 시트는 건너뛴다)
           setActiveSheetName(pickDefaultSheetName(parsedSheets));
           setCheckResults(null);
           setError(null);

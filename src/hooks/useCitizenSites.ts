@@ -37,5 +37,15 @@ export function useCitizenSites() {
     refresh();
   }, [refresh]);
 
+  // 시연에서 현장 담당자 화면을 다른 탭/창으로 열어 상태를 바꾼 뒤 돌아오는 경우가 있다.
+  // 역할 전환이 라우트 이동이면 재마운트로 이미 갱신되지만, 탭 복귀 경로도 함께 막아 둔다.
+  useEffect(() => {
+    function handleVisible() {
+      if (document.visibilityState === 'visible') refresh();
+    }
+    document.addEventListener('visibilitychange', handleVisible);
+    return () => document.removeEventListener('visibilitychange', handleVisible);
+  }, [refresh]);
+
   return { ...state, refresh };
 }

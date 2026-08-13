@@ -48,7 +48,7 @@ export default function CitizenSiteDetailPage() {
   }
 
   return (
-    <div className="px-5 py-6 pb-10">
+    <div className="px-5 py-6 pb-[max(40px,env(safe-area-inset-bottom))]">
       <BackLink />
 
       <h1 className="mt-3 text-[24px] font-bold leading-snug text-slate-900">{site.displayName}</h1>
@@ -98,7 +98,7 @@ function BackLink() {
       to="/"
       className="inline-flex min-h-[48px] items-center gap-1.5 text-lg font-medium text-slate-500 hover:text-teal-700"
     >
-      <ArrowLeft size={20} /> 목록으로
+      <ArrowLeft size={20} aria-hidden /> 지도로 돌아가기
     </Link>
   );
 }

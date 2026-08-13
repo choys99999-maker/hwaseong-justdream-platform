@@ -258,24 +258,111 @@ body {
 }
 
 /*
- * 시민용 지도 마커 (CitizenMap). 관리자 지도(.gj-marker)보다 훨씬 크게 잡는다 —
- * 시민 화면의 터치 목표 최소 크기(48px) 원칙을 지도 위 점에도 그대로 적용한다.
+ * 시민용 지도 핀 (CitizenDiscoveryMap).
+ *
+ * 첫 화면에서는 "화성 전역에 거점이 있다" 만 느껴지면 되므로 작은 점으로 조용히 깔고,
+ * 추천이 정해진 뒤에만 ①②③ 이 커지고 나머지가 흐려진다. 순위는 색이 아니라 숫자로
+ * 전달하므로 색각 이상·흑백 화면에서도 읽을 수 있다.
+ *
+ * 루트 <button> 은 40px 투명 히트 영역이다 — 지도 위 점이라도 터치 목표는 48px 원칙에
+ * 최대한 맞춘다. 보이는 원은 ::before 가 아니라 자식 span 이라, 숫자를 그 안에 넣을 수 있다.
  */
-.gjc-marker {
-  display: block;
-  width: 28px;
-  height: 28px;
+.gjc-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  border: 3px solid #ffffff;
-  border-radius: 9999px;
-  background: var(--gjc-color, #94a3b8);
-  box-shadow: 0 2px 6px rgb(15 23 42 / 0.35);
+  border: 0;
+  background: none;
   cursor: pointer;
+  transition: opacity 220ms ease-out;
 }
 
-.gjc-marker:focus-visible {
-  outline: 3px solid #0d9488;
-  outline-offset: 2px;
+.gjc-pin-dot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #ffffff;
+  border-radius: 9999px;
+  background: var(--gjc-color, #64748b);
+  color: #ffffff;
+  font-size: 0;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.3);
+  transition:
+    width 260ms ease-out,
+    height 260ms ease-out,
+    font-size 260ms ease-out,
+    box-shadow 200ms ease-out;
+}
+
+/* 추천에서 빠진 거점 — 지우지는 않되 배경으로 물러난다. */
+.gjc-pin[data-dim='true'] {
+  opacity: 0.28;
+}
+
+/* 추천 ①②③ */
+.gjc-pin[data-rank='1'] .gjc-pin-dot,
+.gjc-pin[data-rank='2'] .gjc-pin-dot,
+.gjc-pin[data-rank='3'] .gjc-pin-dot {
+  width: 30px;
+  height: 30px;
+  border-width: 3px;
+  font-size: 15px;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.35);
+}
+
+/* 1순위는 나머지 둘보다 확실히 크고, 옅은 링 하나로 시선을 잡는다. */
+.gjc-pin[data-rank='1'] .gjc-pin-dot {
+  width: 38px;
+  height: 38px;
+  font-size: 18px;
+  box-shadow:
+    0 0 0 6px rgb(13 148 136 / 0.22),
+    0 3px 10px rgb(15 23 42 / 0.4);
+}
+
+.gjc-pin[data-selected='true'] .gjc-pin-dot {
+  box-shadow:
+    0 0 0 5px rgb(13 148 136 / 0.35),
+    0 3px 10px rgb(15 23 42 / 0.4);
+}
+
+.gjc-pin:focus-visible .gjc-pin-dot {
+  outline: 3px solid #0f766e;
+  outline-offset: 3px;
+}
+
+/* ①②③ 가 순서대로 올라오며 등장 — 이 순서 자체가 추천 순위 설명이다. */
+.gjc-pin-enter .gjc-pin-dot {
+  animation: gjc-pin-pop 320ms ease-out both;
+  animation-delay: var(--gjc-delay, 0ms);
+}
+
+@keyframes gjc-pin-pop {
+  from {
+    opacity: 0;
+    transform: translateY(9px) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gjc-pin,
+  .gjc-pin-dot {
+    transition: none;
+  }
+  .gjc-pin-enter .gjc-pin-dot {
+    animation: none;
+  }
 }
 
 .gjc-user-dot {

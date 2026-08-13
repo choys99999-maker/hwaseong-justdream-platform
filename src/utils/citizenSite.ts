@@ -12,12 +12,6 @@ export const AVAILABILITY_LABEL: Record<SiteAvailability, string> = {
   unknown: '최신 정보 확인이 필요해요',
 };
 
-export const AVAILABILITY_ICON: Record<SiteAvailability, string> = {
-  available: '🟢',
-  low: '🟠',
-  unknown: '⚪',
-};
-
 /** 관리자 재고 상태(SiteStatus)를 시민 3단계로 접는다. 새 판정을 만들지 않고 있는 값만 재분류한다. */
 function availabilityFromSiteStatus(status: SiteStatus): SiteAvailability {
   if (status === 'missing') return 'unknown';
@@ -114,4 +108,31 @@ export function recommendCitizenSites(
   limit = 3,
 ): RankedCitizenSite[] {
   return rankCitizenSites(sites, origin).slice(0, limit);
+}
+
+/** "가까워서" 라고 말할 수 있는 한계. 이보다 멀면 근거로 쓰지 않는다. */
+const NEARBY_KM = 5;
+
+/**
+ * 1순위 카드 아래 한 줄로 붙는 추천 근거.
+ * 정렬에 실제로 쓴 사실만 문장으로 옮긴다 — 점수·확률·예상 소진 시각 같은
+ * 뒷받침 데이터가 없는 표현은 만들지 않는다. 근거가 하나도 없으면 null 을 준다.
+ */
+export function recommendReason(site: RankedCitizenSite, today: string): string | null {
+  // 조각마다 연결형(중간)과 종결형(마지막)을 함께 들고 있어야 어떤 조합에서도 문장이 자연스럽다.
+  const parts: { mid: string; end: string }[] = [];
+  if (site.distanceKm !== null && site.distanceKm <= NEARBY_KM) {
+    parts.push({ mid: '가깝고', end: '가까워요' });
+  }
+  if (site.updatedAt.slice(0, 10) === today) {
+    parts.push({ mid: '오늘 확인한 정보가 있고', end: '오늘 확인한 정보가 있어요' });
+  }
+  if (site.availability === 'available') {
+    parts.push({ mid: '지금 받을 물품이 있고', end: '지금 받을 물품이 있어요' });
+  } else if (site.availability === 'low') {
+    parts.push({ mid: '아직 남은 물품이 있고', end: '아직 남은 물품이 있어요' });
+  }
+
+  if (parts.length === 0) return null;
+  return parts.map((p, i) => (i === parts.length - 1 ? p.end : p.mid)).join(' · ');
 }

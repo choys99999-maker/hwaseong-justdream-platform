@@ -23,7 +23,7 @@ export function isGuideSheet(sheet: SheetParseResult): boolean {
   return sheet.role === 'guide' || sheet.columns.length === 0 || sheet.totalRows === 0;
 }
 
-/** 실제 데이터가 있는 첫 업무 시트. 없으면 있는 것 중 앞의 것. */
+/** 데이터가 있는 첫 업무 시트. 없으면 있는 것 중 앞의 것. */
 export function pickDefaultSheetName(sheets: SheetParseResult[]): string {
   const business = sheets.filter((s) => !isGuideSheet(s));
   return business[0]?.sheetName ?? sheets[0]?.sheetName ?? '';

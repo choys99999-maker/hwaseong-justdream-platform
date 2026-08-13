@@ -32,7 +32,7 @@ export default function CitizenEasyModePage() {
   }
 
   return (
-    <div className="px-5 py-6 pb-10">
+    <div className="px-5 py-6 pb-[max(40px,env(safe-area-inset-bottom))]">
       <Link
         to="/"
         className="inline-flex min-h-[48px] items-center gap-1.5 text-lg font-medium text-slate-500 hover:text-teal-700"
