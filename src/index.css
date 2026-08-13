@@ -432,4 +432,79 @@ body {
   background: #2563eb;
   border: 3px solid #ffffff;
   box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.22), 0 2px 4px rgb(15 23 42 / 0.3);
+ * 시민용 그냥드림 지도 핀.
+ * KakaoMap CustomOverlay 로 생성하는 DOM이라 전역 CSS로 정의한다.
+ */
+.cj-pin {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px 7px 10px;
+  border-radius: 20px;
+  background: #ffffff;
+  border: 2.5px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  transition: transform 120ms ease-in-out, box-shadow 120ms ease-in-out;
+  user-select: none;
+}
+
+.cj-pin:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.30);
+}
+
+.cj-pin[data-selected='true'] {
+  border-color: #0d9488;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.30), 0 0 0 3px rgba(13, 148, 136, 0.28);
+  transform: translateY(-2px);
+  z-index: 10;
+}
+
+.cj-pin-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.6);
+}
+
+.cj-pin[data-status='good'] .cj-pin-dot    { background: #16a34a; }
+.cj-pin[data-status='fair'] .cj-pin-dot    { background: #d97706; }
+.cj-pin[data-status='low'] .cj-pin-dot     { background: #dc2626; }
+.cj-pin[data-status='empty'] .cj-pin-dot   { background: #9ca3af; }
+
+.cj-pin-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1;
+}
+
+/* 현재 내 위치 파란 점 */
+.cj-my-loc {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.cj-my-loc-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.28);
+  animation: cj-pulse 2s infinite;
+}
+
+@keyframes cj-pulse {
+  0%, 100% { box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.28); }
+  50%       { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0.08); }
 }
