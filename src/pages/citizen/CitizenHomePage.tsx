@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, LocateFixed, Navigation, Phone, Type } from 'lucide-react';
+import { ArrowLeft, ChevronRight, LocateFixed, Menu, Navigation, Phone, Type } from 'lucide-react';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { useCitizenSites } from '../../hooks/useCitizenSites';
 import {
@@ -18,8 +18,8 @@ import AvailabilityBadge, { AvailabilityIcon } from '../../components/citizen/Av
 import DongPicker from '../../components/citizen/DongPicker';
 import CitizenSheet from '../../components/citizen/CitizenSheet';
 import CitizenDiscoveryMap from '../../components/citizen/CitizenDiscoveryMap';
+import CitizenDrawer from '../../components/citizen/CitizenDrawer';
 import HelpRequestForm from '../../components/citizen/HelpRequestForm';
-import DemoRoleSheet from '../../components/demo/DemoRoleSheet';
 
 type Stage = 'intro' | 'recommend' | 'detail' | 'help';
 type SheetStage = Exclude<Stage, 'intro'>;
@@ -61,7 +61,7 @@ export default function CitizenHomePage() {
   const [spotlightToken, setSpotlightToken] = useState(0);
   const [sheetHeight, setSheetHeight] = useState(320);
   const [showDongPicker, setShowDongPicker] = useState(false);
-  const [showDemoSheet, setShowDemoSheet] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
 
   const ranked = useMemo(() => rankCitizenSites(sites, origin), [sites, origin]);
   const recommended = useMemo(() => recommendCitizenSites(sites, origin, 3), [sites, origin]);
@@ -128,6 +128,27 @@ export default function CitizenHomePage() {
         quiet={isIntro}
       />
 
+      {/* 화면 상단은 최소 UI만 둔다 — 왼쪽 햄버거(전체 메뉴), 오른쪽 큰 글씨 모드. 어느 단계에서나 같은 자리. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center justify-between p-3 pt-[max(12px,env(safe-area-inset-top))]">
+        <button
+          type="button"
+          onClick={() => setShowDrawer(true)}
+          aria-label="전체 메뉴 열기"
+          className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-slate-700 shadow-sm ring-1 ring-slate-900/5 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          <Menu size={22} aria-hidden />
+        </button>
+        <Link
+          to="/easy"
+          className="pointer-events-auto inline-flex min-h-[40px] items-center gap-1 rounded-full bg-white/90 px-3 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-900/5 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          <Type size={15} aria-hidden />
+          쉽게 보기
+        </Link>
+      </div>
+
+      <CitizenDrawer open={showDrawer} onClose={() => setShowDrawer(false)} />
+
       {isIntro ? (
         <IntroOverlay
           locating={geo.status === 'locating'}
@@ -135,21 +156,9 @@ export default function CitizenHomePage() {
           onLocate={geo.request}
           onPickDong={() => setShowDongPicker(true)}
           onHelp={() => setStage('help')}
-          onDemo={() => setShowDemoSheet(true)}
         />
       ) : (
         <>
-          {/* 첫 화면을 지난 뒤에도 큰 글씨 모드로 빠져나갈 길은 남긴다 — 작게, 시트보다 약하게. */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-end p-3">
-            <Link
-              to="/easy"
-              className="pointer-events-auto inline-flex min-h-[40px] items-center gap-1 rounded-full bg-white/90 px-3 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-900/5 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            >
-              <Type size={15} aria-hidden />
-              쉽게 보기
-            </Link>
-          </div>
-
           <CitizenSheet
             onHeightChange={handleSheetHeight}
             onDismiss={handleBack}
@@ -176,7 +185,6 @@ export default function CitizenHomePage() {
       )}
 
       {showDongPicker && <DongPicker onSelect={handleSelectDong} onClose={() => setShowDongPicker(false)} />}
-      <DemoRoleSheet open={showDemoSheet} onClose={() => setShowDemoSheet(false)} />
     </div>
   );
 }
@@ -195,14 +203,12 @@ function IntroOverlay({
   onLocate,
   onPickDong,
   onHelp,
-  onDemo,
 }: {
   locating: boolean;
   geoBlocked: boolean;
   onLocate: () => void;
   onPickDong: () => void;
   onHelp: () => void;
-  onDemo: () => void;
 }) {
   return (
     <div className="absolute inset-0 z-20">
@@ -242,25 +248,6 @@ function IntroOverlay({
                 위치를 쓸 수 없어요. 동네로 찾아드릴게요.
               </p>
             )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-center rounded-full bg-white/65 px-1 text-[13px] backdrop-blur-sm">
-            <Link
-              to="/easy"
-              className="inline-flex min-h-[44px] items-center whitespace-nowrap rounded-full px-3 font-medium text-slate-500 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            >
-              쉽게 보기
-            </Link>
-            <span className="text-slate-300" aria-hidden>
-              ·
-            </span>
-            <button
-              type="button"
-              onClick={onDemo}
-              className="inline-flex min-h-[44px] items-center whitespace-nowrap rounded-full px-3 font-medium text-slate-500 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-            >
-              시연 모드
-            </button>
           </div>
         </div>
       </div>

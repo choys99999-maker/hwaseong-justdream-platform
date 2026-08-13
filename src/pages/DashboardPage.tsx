@@ -14,6 +14,7 @@ import EmptyState from '../components/common/EmptyState';
 import CentralDataNotice from '../components/common/CentralDataNotice';
 import TodayActionSection from '../components/dashboard/TodayActionSection';
 import TodayHelpRequestSection from '../components/dashboard/TodayHelpRequestSection';
+import TodayDonationSection from '../components/dashboard/TodayDonationSection';
 import OperationMapSection from '../components/dashboard/OperationMapSection';
 import SiteCompositionModal from '../components/dashboard/SiteCompositionModal';
 import MonthlyFlowChart from '../components/charts/MonthlyFlowChart';
@@ -101,6 +102,9 @@ export default function DashboardPage() {
     <div className="space-y-4">
       {/* 오늘 확인할 요청 — 시민 도움 요청 큐. 확인이 필요한 사람 관련 조치라 맨 위에 둔다. */}
       <TodayHelpRequestSection />
+
+      {/* 오늘 들어온 기부 — 같은 원칙으로 바로 아래에 둔다. */}
+      <TodayDonationSection />
 
       {/* 사업 규모 Hero — 화성시 그냥드림 전체 규모를 첫눈에 전달한다. 43은 사업 프로그램 수다. */}
       <section

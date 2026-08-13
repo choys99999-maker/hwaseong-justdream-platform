@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
-import { createHelpRequest, type HelpRequestChannel } from '../../store/helpRequests';
+import { createHelpRequest, type HelpRequestChannel, type HelpRequestType } from '../../store/helpRequests';
 import { AREA_LIST } from '../../data/mockSites';
 import type { ItemCategory } from '../../types';
 import BigButton from './BigButton';
+
+const REQUEST_TYPES: { value: HelpRequestType; label: string }[] = [
+  { value: 'SELF', label: '직접 갈 수 있어요' },
+  { value: 'DELIVERY', label: '전달 도움이 필요해요' },
+];
 
 /** 관리자 전화 대리 접수는 들어온 말을 그대로 분류할 수 있게 5종을 전부 쓴다. */
 const ADMIN_CATEGORIES: { value: ItemCategory; label: string }[] = [
@@ -52,6 +57,7 @@ export default function HelpRequestForm({
   const [phone, setPhone] = useState('');
   const [dong, setDong] = useState('');
   const [itemCategory, setItemCategory] = useState<ItemCategory | null>(null);
+  const [requestType, setRequestType] = useState<HelpRequestType | null>(null);
   const [message, setMessage] = useState('');
   const [showMessage, setShowMessage] = useState(variant === 'admin');
   const [submitting, setSubmitting] = useState(false);
@@ -60,7 +66,12 @@ export default function HelpRequestForm({
 
   const isCitizen = variant === 'citizen';
   const categories = isCitizen ? CITIZEN_CATEGORIES : ADMIN_CATEGORIES;
-  const canSubmit = phone.trim().length > 0 && dong.trim().length > 0 && itemCategory !== null && !submitting;
+  const canSubmit =
+    phone.trim().length > 0 &&
+    dong.trim().length > 0 &&
+    itemCategory !== null &&
+    (!isCitizen || requestType !== null) &&
+    !submitting;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,6 +85,7 @@ export default function HelpRequestForm({
         itemCategory,
         message: message.trim() || undefined,
         channel,
+        requestType: requestType ?? undefined,
       });
       setDone(true);
       onSubmitted?.();
@@ -169,6 +181,29 @@ export default function HelpRequestForm({
     </div>
   );
 
+  const requestTypeField = (
+    <div>
+      <p className="mb-2 text-lg font-bold text-slate-800">어떻게 도와드릴까요?</p>
+      <div className="grid grid-cols-1 gap-2.5">
+        {REQUEST_TYPES.map((type) => (
+          <button
+            key={type.value}
+            type="button"
+            onClick={() => setRequestType(type.value)}
+            aria-pressed={requestType === type.value}
+            className={`min-h-[56px] rounded-xl border-2 px-4 py-3 text-left text-lg font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40 ${
+              requestType === type.value
+                ? 'border-teal-600 bg-teal-50 text-teal-800'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'
+            }`}
+          >
+            {type.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   const messageField = showMessage ? (
     <div>
       <label htmlFor="help-message" className="mb-2 block text-lg font-bold text-slate-800">
@@ -200,6 +235,7 @@ export default function HelpRequestForm({
           {categoryField}
           {dongField}
           {phoneField}
+          {requestTypeField}
           {messageField}
         </>
       ) : (

@@ -5,6 +5,10 @@ import CitizenHomePage from './pages/citizen/CitizenHomePage';
 import CitizenSiteDetailPage from './pages/citizen/CitizenSiteDetailPage';
 import CitizenHelpPage from './pages/citizen/CitizenHelpPage';
 import CitizenEasyModePage from './pages/citizen/CitizenEasyModePage';
+import CitizenInfoPage from './pages/citizen/CitizenInfoPage';
+import CitizenFeedbackPage from './pages/citizen/CitizenFeedbackPage';
+import CitizenGuidePage from './pages/citizen/CitizenGuidePage';
+import CitizenDonatePage from './pages/citizen/CitizenDonatePage';
 import DashboardPage from './pages/DashboardPage';
 import RegionListPage from './pages/RegionListPage';
 import RegionDetailPage from './pages/RegionDetailPage';
@@ -32,6 +36,10 @@ export default function App() {
         <Route path="/site/:id" element={<CitizenSiteDetailPage />} />
         <Route path="/help" element={<CitizenHelpPage />} />
         <Route path="/easy" element={<CitizenEasyModePage />} />
+        <Route path="/donate" element={<CitizenDonatePage />} />
+        <Route path="/info" element={<CitizenInfoPage />} />
+        <Route path="/feedback" element={<CitizenFeedbackPage />} />
+        <Route path="/guide" element={<CitizenGuidePage />} />
       </Route>
 
       {/* 관리자 화면 — 기존 로직은 그대로, 경로만 /admin 아래로 옮긴다. */}

@@ -11,6 +11,8 @@ function client() {
 
 export type HelpRequestChannel = 'CITIZEN' | 'PHONE';
 export type HelpRequestStatus = 'NEW' | 'DONE';
+/** 직접 갈 수 있어요(SELF) / 전달 도움이 필요해요(DELIVERY). 전화 대리 입력은 굳이 묻지 않아도 된다. */
+export type HelpRequestType = 'SELF' | 'DELIVERY';
 
 export interface HelpRequest {
   id: string;
@@ -19,6 +21,8 @@ export interface HelpRequest {
   itemCategory: ItemCategory;
   message: string | null;
   channel: HelpRequestChannel;
+  requestType: HelpRequestType | null;
+  preferredSiteId: string | null;
   status: HelpRequestStatus;
   createdAt: string;
   resolvedAt: string | null;
@@ -30,6 +34,8 @@ export interface HelpRequestInput {
   itemCategory: ItemCategory;
   message?: string;
   channel?: HelpRequestChannel;
+  requestType?: HelpRequestType;
+  preferredSiteId?: string;
 }
 
 function toHelpRequest(r: Record<string, unknown>): HelpRequest {
@@ -40,6 +46,8 @@ function toHelpRequest(r: Record<string, unknown>): HelpRequest {
     itemCategory: r.item_category as ItemCategory,
     message: (r.message as string) ?? null,
     channel: r.channel as HelpRequestChannel,
+    requestType: (r.request_type as HelpRequestType) ?? null,
+    preferredSiteId: (r.preferred_site_id as string) ?? null,
     status: r.status as HelpRequestStatus,
     createdAt: String(r.created_at),
     resolvedAt: (r.resolved_at as string) ?? null,
@@ -54,6 +62,8 @@ export async function createHelpRequest(input: HelpRequestInput): Promise<string
     p_item_category: input.itemCategory,
     p_message: input.message ?? null,
     p_channel: input.channel ?? 'CITIZEN',
+    p_request_type: input.requestType ?? null,
+    p_preferred_site_id: input.preferredSiteId ?? null,
   });
   if (error) throw new Error(`요청 접수에 실패했습니다: ${error.message}`);
   return data as string;
