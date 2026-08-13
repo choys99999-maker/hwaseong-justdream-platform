@@ -234,7 +234,7 @@ export default function OperationActionPanel({
         {/* D. CTA */}
         <div className="mt-auto pt-4">
           <Link
-            to={`/regions/${selectedSite.district}?site=${selectedSite.id}`}
+            to={`/admin/regions/${selectedSite.district}?site=${selectedSite.id}`}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
           >
             소속 지역 보기

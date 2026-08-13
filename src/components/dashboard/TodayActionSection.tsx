@@ -43,7 +43,7 @@ export default function TodayActionSection() {
           </span>
         </div>
         <Link
-          to="/regions"
+          to="/admin/regions"
           className="inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
           거점 운영에서 전체 확인

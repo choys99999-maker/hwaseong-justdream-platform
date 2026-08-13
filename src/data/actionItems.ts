@@ -44,7 +44,7 @@ function shortageItems(): OperationActionItem[] {
       districtName: REGION_NAMES[site.district],
       summary: `${site.focusItem} · ${site.expectedShortage}개 부족`,
       suggestion: '발주 또는 신규 확보 검토',
-      to: '/inventory',
+      to: '/admin/inventory',
       ctaLabel: '재고 확인',
     }));
 }
@@ -62,7 +62,7 @@ function expiringItems(): OperationActionItem[] {
       districtName: REGION_NAMES[site.district],
       summary: `${site.focusItem} ${site.expiringCount}개 · 유통기한 임박`,
       suggestion: '우선 배부 검토',
-      to: '/inventory',
+      to: '/admin/inventory',
       ctaLabel: '재고 확인',
     }));
 }
@@ -79,7 +79,7 @@ function missingItems(): OperationActionItem[] {
       districtName: REGION_NAMES[site.district],
       summary: '최근 자료 미입력',
       suggestion: '자료 제출 여부 확인 필요',
-      to: '/files',
+      to: '/admin/files',
       ctaLabel: '자료 확인',
     }));
 }

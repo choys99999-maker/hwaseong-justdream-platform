@@ -69,7 +69,7 @@ async function settledMarkerCount(page: import('@playwright/test').Page): Promis
 
 test.describe(`운영 거점 지도 — ${TOTAL_SITES}곳 마커 및 필터`, () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto(BASE);
+    await page.goto(`${BASE}/admin`);
     // 대시보드가 렌더링될 때까지 대기
     await page.waitForSelector('[aria-label="지도 필터"]', { timeout: 10000 });
   });
@@ -118,7 +118,7 @@ test.describe(`운영 거점 지도 — ${TOTAL_SITES}곳 마커 및 필터`, ()
 
 test.describe('카카오 지도 마커 렌더링', () => {
   test(`지도 로드 후 .gj-marker ${TOTAL_SITES}개 생성 및 중복 없음`, async ({ page }) => {
-    await page.goto(BASE);
+    await page.goto(`${BASE}/admin`);
     await page.waitForSelector('[aria-label="지도 필터"]', { timeout: 10000 });
 
     const markerCount = await settledMarkerCount(page);
@@ -129,7 +129,7 @@ test.describe('카카오 지도 마커 렌더링', () => {
   });
 
   test(`시설유형=복지관 필터 적용 후 마커 ${WELFARE_CENTER_SITES}개만 표시`, async ({ page }) => {
-    await page.goto(BASE);
+    await page.goto(`${BASE}/admin`);
     await page.waitForSelector('[aria-label="지도 필터"]', { timeout: 10000 });
 
     // 마커가 로드될 때까지 대기
@@ -147,7 +147,7 @@ test.describe('카카오 지도 마커 렌더링', () => {
 
 test.describe('거점 상세 패널 — 마커 클릭', () => {
   test('마커 클릭 시 상세 패널에 필수 정보 표시', async ({ page }) => {
-    await page.goto(BASE);
+    await page.goto(`${BASE}/admin`);
     await page.waitForSelector('[aria-label="지도 필터"]', { timeout: 10000 });
 
     test.skip((await settledMarkerCount(page)) === 0, '카카오 SDK 미로드 — 마커 클릭 검증 스킵');
@@ -165,11 +165,11 @@ test.describe('거점 상세 패널 — 마커 클릭', () => {
 
     // href가 /regions/:districtId 로 끝나는지 확인 (dev 서버 base 경로가 앞에 붙을 수 있다)
     const href = await regionLink.getAttribute('href');
-    expect(href).toMatch(/\/regions\/(manse|hyohaeng|byeongjeom|dongtan)$/);
+    expect(href).toMatch(/\/admin\/regions\/(manse|hyohaeng|byeongjeom|dongtan)$/);
   });
 
   test('읍면동 현황 보기 링크가 실제 라우트로 이동', async ({ page }) => {
-    await page.goto(BASE);
+    await page.goto(`${BASE}/admin`);
     await page.waitForSelector('[aria-label="지도 필터"]', { timeout: 10000 });
 
     test.skip((await settledMarkerCount(page)) === 0, '카카오 SDK 미로드 — 네비게이션 검증 스킵');
@@ -180,22 +180,27 @@ test.describe('거점 상세 패널 — 마커 클릭', () => {
     await regionLink.click();
 
     // /regions/:regionId 경로로 이동했는지 확인
-    await expect(page).toHaveURL(/\/regions\/(manse|hyohaeng|byeongjeom|dongtan)/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/admin\/regions\/(manse|hyohaeng|byeongjeom|dongtan)/, { timeout: 5000 });
   });
 });
 
-test.describe('/regions/:districtId 라우팅 직접 검증', () => {
+test.describe('/admin/regions/:districtId 라우팅 직접 검증', () => {
   const districts = ['manse', 'hyohaeng', 'byeongjeom', 'dongtan'] as const;
 
   for (const district of districts) {
-    test(`/regions/${district} 페이지 접근 가능`, async ({ page }) => {
-      await page.goto(`${BASE}/regions/${district}`);
+    test(`/admin/regions/${district} 페이지 접근 가능`, async ({ page }) => {
+      await page.goto(`${BASE}/admin/regions/${district}`);
       // 404 또는 리다이렉트 없이 페이지 로드 확인
       await expect(page).not.toHaveURL('/');
       // 지역 정보가 포함된 헤딩 또는 콘텐츠 확인
       await page.waitForLoadState('domcontentloaded');
       const bodyText = await page.locator('body').innerText();
       expect(bodyText).not.toContain('페이지를 찾을 수 없습니다');
+    });
+
+    test(`예전 경로 /regions/${district} 는 /admin/regions/${district} 로 리다이렉트`, async ({ page }) => {
+      await page.goto(`${BASE}/regions/${district}`);
+      await expect(page).toHaveURL(new RegExp(`/admin/regions/${district}$`));
     });
   }
 });

@@ -124,7 +124,7 @@ export default function DataLibraryPage() {
 
   const uploadButton = (
     <Link
-      to="/files/upload"
+      to="/admin/files/upload"
       className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
     >
       <Plus size={16} /> 자료 올리기
@@ -312,7 +312,7 @@ export default function DataLibraryPage() {
                 {visible.map((s) => (
                   <li key={s.id}>
                     <Link
-                      to={`/files/${s.id}`}
+                      to={`/admin/files/${s.id}`}
                       className="grid grid-cols-[1.3fr_2fr_1fr_1fr_1fr_28px] items-center gap-4 px-5 py-4 text-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
                     >
                       <span className="flex min-w-0 items-center gap-2">

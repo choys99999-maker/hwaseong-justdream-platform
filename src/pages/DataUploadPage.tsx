@@ -557,7 +557,7 @@ export default function DataUploadPage() {
     <div className="mx-auto w-full max-w-[960px]">
       <div className="mb-4">
         <Link
-          to="/files"
+          to="/admin/files"
           className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-teal-600"
         >
           <ArrowLeft size={16} /> 자료·데이터 관리
@@ -1088,13 +1088,13 @@ export default function DataUploadPage() {
 
             <div className="mt-8 flex flex-wrap items-center gap-4">
               <Link
-                to="/files"
+                to="/admin/files"
                 className="rounded-lg bg-teal-600 px-7 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
               >
                 자료·데이터 관리로 돌아가기
               </Link>
               <Link
-                to="/"
+                to="/admin"
                 className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
               >
                 통합 대시보드 보기

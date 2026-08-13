@@ -29,7 +29,7 @@ export default function SubmissionDetailPage() {
 
   const backLink = (
     <Link
-      to="/files"
+      to="/admin/files"
       className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-teal-600"
     >
       <ArrowLeft size={16} /> 자료·데이터 관리
@@ -66,7 +66,7 @@ export default function SubmissionDetailPage() {
     if (!window.confirm('이 자료를 삭제하시겠습니까? 통합 현황에서도 함께 빠집니다.')) return;
     try {
       await deleteSubmission(summary.id);
-      navigate('/files');
+      navigate('/admin/files');
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '자료 삭제에 실패했습니다.');
     }
@@ -83,7 +83,7 @@ export default function SubmissionDetailPage() {
           <div className="flex items-center gap-2">
             {districtId && (
               <Link
-                to={`/regions/${districtId}`}
+                to={`/admin/regions/${districtId}`}
                 className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
               >
                 지역 현황에서 보기

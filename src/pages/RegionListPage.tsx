@@ -189,7 +189,7 @@ export default function RegionListPage() {
             </span>
             {selectedDistrict && (
               <Link
-                to={`/regions/${selectedDistrict}`}
+                to={`/admin/regions/${selectedDistrict}`}
                 className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-teal-300 hover:bg-teal-50/40 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
               >
                 구 상세보기

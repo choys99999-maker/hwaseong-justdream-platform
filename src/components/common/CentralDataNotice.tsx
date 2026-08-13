@@ -44,7 +44,7 @@ export default function CentralDataNotice({
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
         <span>{emptyMessage}</span>
         <Link
-          to="/files/upload"
+          to="/admin/files/upload"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
           <FileUp size={14} /> 자료 올리기

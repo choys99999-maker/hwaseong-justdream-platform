@@ -37,7 +37,7 @@ export default function Sidebar() {
       {/* Brand */}
       <div className="relative border-b border-slate-200">
         <Link
-          to="/"
+          to="/admin"
           aria-label="통합 대시보드 홈으로 이동"
           className={`flex flex-col items-center py-4 cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-inset overflow-hidden ${
             collapsed ? 'px-2' : 'px-5'
@@ -82,7 +82,7 @@ export default function Sidebar() {
             <div key={item.path} className="relative group">
               <NavLink
                 to={item.path}
-                end={item.path === '/'}
+                end={item.path === '/admin'}
                 className={({ isActive }) =>
                   `flex items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
                     collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'

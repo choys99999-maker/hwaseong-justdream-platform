@@ -256,3 +256,33 @@ body {
   transform: scale(1.09);
   box-shadow: 0 4px 12px rgb(15 23 42 / 0.38), 0 0 0 9px rgba(15, 118, 110, 0.20);
 }
+
+/*
+ * 시민용 지도 마커 (CitizenMap). 관리자 지도(.gj-marker)보다 훨씬 크게 잡는다 —
+ * 시민 화면의 터치 목표 최소 크기(48px) 원칙을 지도 위 점에도 그대로 적용한다.
+ */
+.gjc-marker {
+  display: block;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 3px solid #ffffff;
+  border-radius: 9999px;
+  background: var(--gjc-color, #94a3b8);
+  box-shadow: 0 2px 6px rgb(15 23 42 / 0.35);
+  cursor: pointer;
+}
+
+.gjc-marker:focus-visible {
+  outline: 3px solid #0d9488;
+  outline-offset: 2px;
+}
+
+.gjc-user-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.22), 0 2px 4px rgb(15 23 42 / 0.3);
+}

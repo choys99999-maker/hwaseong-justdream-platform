@@ -139,3 +139,35 @@ export function getSitesByDistrict(district: DistrictId | null): OperationSite[]
   if (!district) return mockSites;
   return mockSites.filter((site) => site.district === district);
 }
+
+export interface AreaCentroid {
+  area: string;
+  district: DistrictId;
+  /** 그 읍면동에 있는 거점들의 좌표 평균. 행정동 정확한 중심점이 아니라
+   *  "사는 동네 선택" 시 거리 정렬의 기준점으로만 쓰는 근사값이다. */
+  lat: number;
+  lng: number;
+}
+
+/**
+ * 읍면동(area) 목록 + 근사 중심 좌표.
+ * 위치 권한을 거부한 시민이 "사는 동네 선택하기"로 고른 읍면동을 원점 삼아
+ * 거리순 추천을 계산할 때 쓴다. 새 예측 데이터가 아니라 이미 있는 거점 좌표의 평균이다.
+ */
+export const AREA_LIST: AreaCentroid[] = (() => {
+  const sums = new Map<string, { district: DistrictId; lat: number; lng: number; count: number }>();
+  for (const site of mockSites) {
+    const extra = SITE_EXTRAS[site.id];
+    const entry = sums.get(extra.area) ?? { district: extra.district, lat: 0, lng: 0, count: 0 };
+    entry.lat += site.latitude;
+    entry.lng += site.longitude;
+    entry.count += 1;
+    sums.set(extra.area, entry);
+  }
+  return Array.from(sums, ([area, v]) => ({
+    area,
+    district: v.district,
+    lat: v.lat / v.count,
+    lng: v.lng / v.count,
+  })).sort((a, b) => a.area.localeCompare(b.area, 'ko'));
+})();
