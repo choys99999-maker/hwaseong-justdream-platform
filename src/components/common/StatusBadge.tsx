@@ -1,6 +1,10 @@
 const STATUS_STYLES: Record<string, string> = {
   '정상': 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
   '연계 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  // 시민 접수 큐(도움 요청·기부) — 저장소가 가진 두 상태를 그대로 부른다.
+  '접수': 'bg-sky-50 text-sky-700 ring-sky-600/20',
+  '완료': 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
+  '수령 완료': 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
   '주의': 'bg-amber-50 text-amber-700 ring-amber-600/20',
   '임박': 'bg-amber-50 text-amber-700 ring-amber-600/20',
   '연계 진행중': 'bg-sky-50 text-sky-700 ring-sky-600/20',

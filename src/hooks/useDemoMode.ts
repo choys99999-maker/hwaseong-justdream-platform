@@ -10,8 +10,8 @@ export const DEMO_ROLES: { key: DemoRole; label: string; description: string; pa
   {
     key: 'field',
     label: '현장 담당자로 보기',
-    description: '우리 거점의 현재 물품 상태 빠르게 입력',
-    path: '/admin/quick-status',
+    description: '우리 거점 상태 입력과 오늘 처리할 건',
+    path: '/admin',
   },
   { key: 'admin', label: '시청 관리자로 보기', description: '화성시 전체 운영 현황과 요청 확인', path: '/admin' },
 ];
@@ -23,10 +23,15 @@ export const DEMO_ROLE_LABELS: Record<DemoRole, string> = {
   admin: '시청 관리자',
 };
 
-/** 현재 역할은 저장하지 않고 경로에서 계산한다 — 역할 전환은 실제 라우트 이동이라 경로가 항상 최신 진실이다. */
-export function getDemoRoleFromPath(pathname: string): DemoRole {
-  if (pathname.startsWith('/admin/quick-status')) return 'field';
-  if (pathname.startsWith('/admin')) return 'admin';
+/**
+ * 현재 역할.
+ *
+ * 시민이냐 아니냐는 경로가 가른다(`/admin` 아래면 관리자 PC다).
+ * 관리자 PC 안에서 시청 관리자냐 현장 담당자냐는 경로가 아니라 선택한 역할이 가른다 —
+ * 두 역할이 같은 4개 메뉴를 쓰고 첫 화면 내용만 다르기 때문이다.
+ */
+export function getDemoRole(pathname: string, adminRole: 'admin' | 'field'): DemoRole {
+  if (pathname.startsWith('/admin')) return adminRole === 'field' ? 'field' : 'admin';
   return 'citizen';
 }
 

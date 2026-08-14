@@ -146,17 +146,30 @@ test.describe('/help 도움 요청', () => {
 test.describe('관리자 화면 회귀 — 데스크톱', () => {
   test.use({ viewport: { width: 1600, height: 1100 } });
 
-  test('/admin 접속 시 통합 대시보드가 그대로 뜬다', async ({ page }) => {
+  test('/admin 접속 시 오늘 할 일이 뜬다', async ({ page }) => {
     await page.goto(`${BASE}/admin`);
-    await expect(page.getByRole('heading', { name: '핵심 운영 지표', exact: false })).toBeVisible({
-      timeout: 10000,
-    });
-    await expect(page.locator('nav >> text=통합 대시보드')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '오늘 처리할 일' })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('nav >> text=오늘 할 일')).toBeVisible();
   });
 
-  test('예전 관리자 경로는 /admin 아래로 리다이렉트된다', async ({ page }) => {
+  test('사이드바 메뉴는 4개뿐이다', async ({ page }) => {
+    await page.goto(`${BASE}/admin`);
+    const nav = page.locator('aside nav');
+    await expect(nav.getByRole('link')).toHaveCount(4);
+    for (const label of ['오늘 할 일', '거점 운영', '시민 접수', '자료 관리']) {
+      await expect(nav.getByRole('link', { name: label })).toBeVisible();
+    }
+  });
+
+  test('4개 IA로 흡수된 예전 경로는 새 화면으로 리다이렉트된다', async ({ page }) => {
     await page.goto(`${BASE}/inventory`);
-    await expect(page).toHaveURL(/\/admin\/inventory$/);
+    await expect(page).toHaveURL(/\/admin\/sites\/inventory$/);
+
+    await page.goto(`${BASE}/admin/regions`);
+    await expect(page).toHaveURL(/\/admin\/sites$/);
+
+    await page.goto(`${BASE}/admin/usage`);
+    await expect(page).toHaveURL(/\/admin\/intake\?tab=usage$/);
 
     await page.goto(`${BASE}/files`);
     await expect(page).toHaveURL(/\/admin\/files$/);

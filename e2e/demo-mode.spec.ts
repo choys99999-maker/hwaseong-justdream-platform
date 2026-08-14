@@ -21,9 +21,7 @@ test.describe('시연 모드 — 일반 접근에서는 노출되지 않는다',
 
   test('demoMode 없이 /admin에 직접 들어가도 전환바는 뜨지 않는다', async ({ page }) => {
     await page.goto(`${BASE}/admin`);
-    await expect(page.getByRole('heading', { name: '핵심 운영 지표', exact: false })).toBeVisible({
-      timeout: 10000,
-    });
+    await expect(page.getByRole('heading', { name: '오늘 처리할 일' })).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('시연 중')).toHaveCount(0);
   });
 });
@@ -40,13 +38,14 @@ test.describe('시연 모드 — 390×844 전체 흐름', () => {
 
     // 2) 현장 담당자로 전환
     await page.getByRole('button', { name: /현장 담당자로 보기/ }).click();
-    await expect(page).toHaveURL(/\/admin\/quick-status/);
+    await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByText('시연 중')).toBeVisible();
 
-    // 3) 빠른 상태 저장
-    await page.waitForSelector('#qs-site');
+    // 3) 담당 거점을 고르면 첫 화면에서 바로 빠른 현황 입력을 할 수 있다
+    await page.getByLabel('우리 거점').selectOption({ index: 1 });
+    await expect(page.getByRole('heading', { name: '빠른 현황 입력' })).toBeVisible();
     await page.getByRole('button', { name: '지금 가능' }).click();
-    await page.getByRole('button', { name: /저장/ }).click();
+    await page.getByRole('button', { name: /^저장$/ }).click();
     const saved = page.getByText('저장 완료');
     const saveFailed = page.getByText('저장에 실패했습니다', { exact: false });
     await expect(saved.or(saveFailed)).toBeVisible({ timeout: 10000 });
@@ -75,10 +74,8 @@ test.describe('시연 모드 — 390×844 전체 흐름', () => {
     await page.getByRole('button', { name: '역할 변경' }).click();
     await page.getByRole('button', { name: /시청 관리자로 보기/ }).click();
     await expect(page).toHaveURL(/\/admin$/);
-    await expect(page.getByRole('heading', { name: '핵심 운영 지표', exact: false })).toBeVisible({
-      timeout: 10000,
-    });
-    await expect(page.getByRole('heading', { name: '오늘 확인할 요청' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '오늘 처리할 일' })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('button', { name: /^미처리 도움 요청/ })).toBeVisible();
 
     // 7) 새로고침 후에도 시연 모드가 유지된다
     await page.reload();
@@ -128,6 +125,8 @@ test.describe('시연 모드 — 데스크톱 관리자 전환바', () => {
     await expect(page.getByRole('button', { name: '시청 관리자', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: '현장 담당자', exact: true }).click();
-    await expect(page).toHaveURL(/\/admin\/quick-status/);
+    await expect(page).toHaveURL(/\/admin$/);
+    // 같은 경로에서 첫 화면만 현장 담당자용으로 바뀐다.
+    await expect(page.getByRole('heading', { name: /담당 거점을 선택해 주세요|빠른 현황 입력/ })).toBeVisible();
   });
 });

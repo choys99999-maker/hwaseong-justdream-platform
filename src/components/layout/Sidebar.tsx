@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { NAV_ITEMS } from '../../config/navigation';
+import { NAV_ITEMS, isNavItemActive } from '../../config/navigation';
 import hwaseongLogo from '../../assets/hwaseong-signature.png';
 
 const STORAGE_KEY = 'sidebar-collapsed';
@@ -9,6 +9,7 @@ const STORAGE_KEY = 'sidebar-collapsed';
 const NARROW_QUERY = '(max-width: 767px)';
 
 export default function Sidebar() {
+  const location = useLocation();
   const [userCollapsed, setUserCollapsed] = useState(
     () => localStorage.getItem(STORAGE_KEY) === 'true'
   );
@@ -38,7 +39,7 @@ export default function Sidebar() {
       <div className="relative border-b border-slate-200">
         <Link
           to="/admin"
-          aria-label="통합 대시보드 홈으로 이동"
+          aria-label="오늘 할 일 홈으로 이동"
           className={`flex flex-col items-center py-4 cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-inset overflow-hidden ${
             collapsed ? 'px-2' : 'px-5'
           }`}
@@ -78,20 +79,21 @@ export default function Sidebar() {
       <nav className="flex-1 space-y-1 px-2 py-4">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
+          // 흡수된 화면(구 상세·재고·빠른 입력 등)에서도 상위 메뉴가 켜져 있어야
+          // "내가 지금 어느 메뉴 안에 있는지"를 잃지 않는다.
+          const isActive = isNavItemActive(item, location.pathname);
           return (
             <div key={item.path} className="relative group">
               <NavLink
                 to={item.path}
-                end={item.path === '/admin'}
-                className={({ isActive }) =>
-                  `flex items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-                    collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
-                  } ${
-                    isActive
-                      ? 'bg-teal-50 text-teal-700'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`
-                }
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex items-center rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+                  collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
+                } ${
+                  isActive
+                    ? 'bg-teal-50 text-teal-700'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
               >
                 <Icon size={18} className="shrink-0" />
                 {!collapsed && item.label}

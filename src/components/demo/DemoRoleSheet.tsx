@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DEMO_ROLES, useDemoMode } from '../../hooks/useDemoMode';
+import { DEMO_ROLES, useDemoMode, type DemoRole } from '../../hooks/useDemoMode';
+import { setAdminRole } from '../../hooks/useAdminRole';
 
 interface DemoRoleSheetProps {
   open: boolean;
@@ -22,9 +23,11 @@ export default function DemoRoleSheet({ open, onClose }: DemoRoleSheetProps) {
 
   if (!open) return null;
 
-  function handleSelect(path: string) {
+  function handleSelect(role: DemoRole, path: string) {
     if (pending) return;
     setPending(true);
+    // 시청 관리자·현장 담당자는 같은 경로(/admin)를 쓰고 첫 화면만 다르다 — 역할을 먼저 정한다.
+    if (role !== 'citizen') setAdminRole(role === 'field' ? 'field' : 'admin');
     enterDemo();
     onClose();
     navigate(path);
@@ -54,7 +57,7 @@ export default function DemoRoleSheet({ open, onClose }: DemoRoleSheetProps) {
             <button
               key={role.key}
               type="button"
-              onClick={() => handleSelect(role.path)}
+              onClick={() => handleSelect(role.key, role.path)}
               disabled={pending}
               className="min-h-[48px] rounded-xl border border-slate-200 px-4 py-3 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/40 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
             >

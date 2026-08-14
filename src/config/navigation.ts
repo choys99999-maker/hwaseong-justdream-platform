@@ -1,11 +1,8 @@
 import {
+  ClipboardCheck,
   FolderClosed,
-  HeartHandshake,
-  LayoutDashboard,
+  Inbox,
   MapPinned,
-  PackageSearch,
-  Users,
-  Zap,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -13,36 +10,45 @@ export interface NavItem {
   path: string;
   label: string;
   icon: LucideIcon;
+  /** 이 메뉴가 활성으로 보여야 할 경로들. path 자체는 항상 포함한다. */
+  matches?: string[];
 }
 
 /**
- * 사이드바 메뉴. 화성시 그냥드림 거점의 운영 데이터를 표준화해 통합 관제하는
- * 흐름(현황 파악 → 거점 → 물품 → 이용 → 복지연계 → 자료) 순서다.
- * 재고 최적화·재분배 화면은 제품 정의에서 제외했다(모아드림은 FMS·행복e음을 대체하지 않는다).
+ * 관리자 사이드바 — 4개.
  *
- * 경로는 모두 `/admin` 아래에 있다 — 루트(`/`)는 시민용 화면이 쓴다.
+ * 공무원의 하루가 그대로 순서다: 오늘 할 일 → (거점을 고쳐야 하면) 거점 운영 →
+ * (시민 건을 처리해야 하면) 시민 접수 → (자료를 걷어야 하면) 자료 관리.
+ * 기능을 지우지 않고 이 4개 안으로 넣는다 — 물품 현황·빠른 입력·재고 관제는 거점 운영,
+ * 이용·지원·복지연계는 시민 접수, 실적·분석은 자료 관리 안에 있다.
  */
 export const NAV_ITEMS: NavItem[] = [
-  { path: '/admin', label: '통합 대시보드', icon: LayoutDashboard },
-  { path: '/admin/regions', label: '거점 운영', icon: MapPinned },
-  { path: '/admin/inventory', label: '물품 현황', icon: PackageSearch },
-  { path: '/admin/quick-status', label: '빠른 현황 입력', icon: Zap },
-  { path: '/admin/usage', label: '이용·지원 현황', icon: Users },
-  { path: '/admin/welfare-linkage', label: '복지연계 현황', icon: HeartHandshake },
-  { path: '/admin/files', label: '자료·데이터 관리', icon: FolderClosed },
+  { path: '/admin', label: '오늘 할 일', icon: ClipboardCheck },
+  {
+    path: '/admin/sites',
+    label: '거점 운영',
+    icon: MapPinned,
+    // 구 상세(지도에서 진입)·빠른 입력 단독 화면도 거점 운영 안이다.
+    matches: ['/admin/regions', '/admin/inventory', '/admin/quick-status'],
+  },
+  {
+    path: '/admin/intake',
+    label: '시민 접수',
+    icon: Inbox,
+    matches: ['/admin/help-requests'],
+  },
+  { path: '/admin/files', label: '자료 관리', icon: FolderClosed },
 ];
 
+/** 사이드바 활성 표시 판정. `/admin` 만 정확히 일치할 때 켜진다. */
+export function isNavItemActive(item: NavItem, pathname: string): boolean {
+  if (item.path === '/admin') return pathname === '/admin';
+  return [item.path, ...(item.matches ?? [])].some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
 export function getPageTitle(pathname: string): string {
-  if (pathname.startsWith('/admin/regions/') && pathname !== '/admin/regions') {
-    return '거점 운영';
-  }
-  // 업로드·자료 상세는 모두 "자료·데이터 관리" 안의 화면이다.
-  if (pathname.startsWith('/admin/files')) {
-    return '자료·데이터 관리';
-  }
-  if (pathname.startsWith('/admin/help-requests')) {
-    return '도움 요청 접수';
-  }
-  const match = NAV_ITEMS.find((item) => item.path === pathname);
+  const match = NAV_ITEMS.find((item) => isNavItemActive(item, pathname));
   return match?.label ?? '화성형 그냥드림';
 }

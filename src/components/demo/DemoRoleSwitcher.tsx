@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { DEMO_ROLES, DEMO_ROLE_LABELS, getDemoRoleFromPath, useDemoMode } from '../../hooks/useDemoMode';
+import { DEMO_ROLES, DEMO_ROLE_LABELS, getDemoRole, useDemoMode, type DemoRole } from '../../hooks/useDemoMode';
+import { setAdminRole, useAdminRole } from '../../hooks/useAdminRole';
 import DemoRoleSheet from './DemoRoleSheet';
 
 /**
@@ -10,6 +11,7 @@ import DemoRoleSheet from './DemoRoleSheet';
  */
 export default function DemoRoleSwitcher() {
   const { isDemoMode, exitDemo } = useDemoMode();
+  const { role: adminRole } = useAdminRole();
   const location = useLocation();
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
@@ -22,11 +24,13 @@ export default function DemoRoleSwitcher() {
 
   if (!isDemoMode) return null;
 
-  const currentRole = getDemoRoleFromPath(location.pathname);
+  const currentRole = getDemoRole(location.pathname, adminRole);
 
-  function goTo(path: string) {
+  // 관리자 PC 안의 두 역할은 경로가 같으므로, 이동 전에 역할부터 바꿔 둔다.
+  function goTo(role: DemoRole, path: string) {
     if (pending) return;
     setPending(true);
+    if (role === 'field' || role === 'admin') setAdminRole(role === 'field' ? 'field' : 'admin');
     navigate(path);
   }
 
@@ -50,7 +54,7 @@ export default function DemoRoleSwitcher() {
           <button
             key={role.key}
             type="button"
-            onClick={() => goTo(role.path)}
+            onClick={() => goTo(role.key, role.path)}
             disabled={pending}
             aria-pressed={role.key === currentRole}
             className={`min-h-[40px] shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${

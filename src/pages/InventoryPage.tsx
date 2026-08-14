@@ -358,7 +358,13 @@ function ItemDetailDrawer({
 
 type QuickFilter = 'shortage' | 'expiring' | 'disposal' | null;
 
-export default function InventoryPage() {
+/**
+ * 물품 현황(재고).
+ *
+ * 독립 메뉴가 아니라 [거점 운영 > 재고] 안에서 쓴다. 그 화면이 이미 제목을 갖고 있어
+ * `embedded` 로 들어오면 자기 제목을 그리지 않는다.
+ */
+export default function InventoryPage({ embedded = false }: { embedded?: boolean }) {
   const [keyword,      setKeyword]      = useState('');
   const [region,       setRegion]       = useState('전체');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -487,10 +493,12 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="물품 현황"
-        description="거점별 물품 입출고, 현재 보유량, 유통기한 현황을 확인합니다. 중앙 저장소에 올라온 자료를 기준으로 집계합니다."
-      />
+      {!embedded && (
+        <PageHeader
+          title="물품 현황"
+          description="거점별 물품 입출고, 현재 보유량, 유통기한 현황을 확인합니다. 중앙 저장소에 올라온 자료를 기준으로 집계합니다."
+        />
+      )}
 
       {notice}
 

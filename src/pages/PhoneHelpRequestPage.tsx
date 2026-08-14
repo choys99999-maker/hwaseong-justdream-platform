@@ -15,16 +15,16 @@ export default function PhoneHelpRequestPage() {
         to="/admin"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-teal-600"
       >
-        <ArrowLeft size={16} /> 통합 대시보드
+        <ArrowLeft size={16} /> 오늘 할 일
       </Link>
 
       <PageHeader
         title="전화 접수 대신 입력"
-        description="전화로 도움을 요청한 시민의 내용을 대신 입력합니다. 저장하면 시민이 직접 넣은 요청과 같은 목록(오늘 확인할 요청)에 표시됩니다."
+        description="전화로 도움을 요청한 시민의 내용을 대신 입력합니다. 저장하면 시민이 직접 넣은 요청과 같은 목록(시민 접수 > 도움 요청)에 표시됩니다."
       />
 
       <div className="rounded-xl border border-slate-200 bg-white">
-        <HelpRequestForm channel="PHONE" doneLinkTo="/admin" doneLinkLabel="대시보드로 돌아가기" />
+        <HelpRequestForm channel="PHONE" doneLinkTo="/admin/intake" doneLinkLabel="시민 접수로 돌아가기" />
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ChevronRight,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
+import DataAnalysisView from '../components/analysis/DataAnalysisView';
 import { useCentralData } from '../hooks/useCentralData';
 import { listOrganizations, listSubmissions, type RemoteSubmissionSummary } from '../store/remote';
 import {
@@ -60,7 +61,16 @@ function fromRemote(s: RemoteSubmissionSummary): SubmissionView {
 
 type StatusFilter = 'all' | 'ok' | 'issue';
 
+/**
+ * 자료 관리.
+ *
+ * 첫 화면의 목적은 하나다 — "새 자료를 올린다". 그래서 업로드가 가장 강한 CTA고,
+ * 그 아래에 최근 업로드 · 확인 필요 오류 · 기관별 제출 상태만 둔다.
+ * 매일 쓰지 않는 실적·추이는 [분석] 탭으로 내렸다.
+ */
 export default function DataLibraryPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isAnalysisTab = searchParams.get('tab') === 'analysis';
   const [scope, setScope] = useState<'all' | 'mine'>('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -120,43 +130,83 @@ export default function DataLibraryPage() {
     localStorage.setItem(MY_REGION_KEY, region);
   }
 
-  if (isLoading) return null;
-
-  const uploadButton = (
-    <Link
-      to="/admin/files/upload"
-      className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
-    >
-      <Plus size={16} /> 자료 올리기
-    </Link>
+  const tabBar = (
+    <div className="mb-4 inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1" role="tablist" aria-label="자료 관리 탭">
+      {[
+        { key: 'files', label: '자료' },
+        { key: 'analysis', label: '분석' },
+      ].map((tab) => {
+        const active = tab.key === 'analysis' ? isAnalysisTab : !isAnalysisTab;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => setSearchParams(tab.key === 'analysis' ? { tab: 'analysis' } : {}, { replace: true })}
+            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+              active ? 'bg-teal-50 text-teal-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+            }`}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
   );
+
+  if (isAnalysisTab) {
+    return (
+      <div className="mx-auto w-full max-w-[1280px]">
+        <PageHeader
+          title="자료 관리"
+          description="제출 자료에서 계산한 실적과 추이입니다. 예측이 아니라 올라온 자료의 집계입니다."
+        />
+        {tabBar}
+        <DataAnalysisView />
+      </div>
+    );
+  }
+
+  if (isLoading) return null;
 
   return (
     <div className="mx-auto w-full max-w-[1280px]">
       <PageHeader
-        title="자료·데이터 관리"
-        description="읍면동 제출 자료를 수집·검수하는 허브입니다. 여기서 저장된 자료가 대시보드·재고·실적 화면의 기준이 됩니다."
-        actions={uploadButton}
+        title="자료 관리"
+        description="읍면동 제출 자료를 수집·검수하는 허브입니다. 여기서 저장된 자료가 오늘 할 일·거점 운영 화면의 기준이 됩니다."
       />
 
-      {/* 자료 처리 흐름 — 새 기능이 아니라 현재 Excel 파이프라인을 시각화한 것 */}
+      {tabBar}
+
+      {/* 새 자료 올리기 — 이 화면에서 가장 자주 하는 일이라 가장 강한 CTA로 둔다.
+          업로드하면 무슨 처리가 일어나는지(자동 시트 인식 → 오류 검증 → 중앙 집계)를 같은 카드에서 알린다. */}
       <section
-        aria-label="자료 처리 흐름"
-        className="mb-4 flex items-center gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-white px-4 py-3"
+        aria-label="새 자료 올리기"
+        className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-teal-200 bg-teal-50/50 px-5 py-4"
       >
-        {PROCESS_STEPS.map((step, index) => (
-          <div key={step.label} className="flex shrink-0 items-center gap-2">
-            <div className="flex items-center gap-1.5">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-teal-50 text-teal-600">
-                <step.icon size={13} />
-              </span>
-              <span className="whitespace-nowrap text-xs font-medium text-slate-700">{step.label}</span>
-            </div>
-            {index < PROCESS_STEPS.length - 1 && (
-              <ChevronRight size={14} className="shrink-0 text-slate-300" />
-            )}
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-slate-900">새 자료 올리기</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {PROCESS_STEPS.map((step, index) => (
+              <div key={step.label} className="flex shrink-0 items-center gap-1.5">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-teal-600">
+                  <step.icon size={11} />
+                </span>
+                <span className="whitespace-nowrap text-xs text-slate-600">{step.label}</span>
+                {index < PROCESS_STEPS.length - 1 && (
+                  <ChevronRight size={12} className="shrink-0 text-teal-300" />
+                )}
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
+        <Link
+          to="/admin/files/upload"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+        >
+          <Plus size={16} /> 자료 올리기
+        </Link>
       </section>
 
       {remoteError && (
@@ -166,7 +216,8 @@ export default function DataLibraryPage() {
         </div>
       )}
 
-      {/* 제출 현황 요약 — 전체 기관 대비 어디까지 걷혔는지 */}
+      {/* 기관별 제출 상태 — 전체 기관 대비 어디까지 걷혔는지 */}
+      <h2 className="mb-1.5 text-xs font-medium text-slate-500">기관별 제출 상태</h2>
       <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <SummaryTile label="전체 기관" value={organizations.length} unit="곳" hint="자료 제출 대상 읍면동" />
         <SummaryTile
@@ -234,7 +285,8 @@ export default function DataLibraryPage() {
         </div>
       ) : (
         <>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
+          <h2 className="mt-6 text-xs font-medium text-slate-500">최근 업로드</h2>
+          <div className="mt-1.5 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
               <ScopeTab active={scope === 'all'} onClick={() => setScope('all')}>
                 전체 지역

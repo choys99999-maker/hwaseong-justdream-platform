@@ -159,28 +159,30 @@ test.describe('거점 상세 패널 — 마커 클릭', () => {
     // 상세 패널에 주요 품목 행 표시 확인
     await expect(page.locator('text=주요 품목')).toBeVisible({ timeout: 5000 });
 
-    // 읍면동 현황 보기 링크 존재 확인
-    const regionLink = page.locator('a:has-text("현황 보기")');
-    await expect(regionLink).toBeVisible();
+    // 거점 상세로 가는 CTA 확인 — 지도에서 고른 거점을 실제로 처리하는 화면이다
+    const detailLink = page.locator('a:has-text("거점 상세 열기")');
+    await expect(detailLink).toBeVisible();
+    expect(await detailLink.getAttribute('href')).toMatch(/\/admin\/sites\/justdream-\d+$/);
 
-    // href가 /regions/:districtId 로 끝나는지 확인 (dev 서버 base 경로가 앞에 붙을 수 있다)
+    // 소속 구 현황 링크도 함께 남아 있다
+    const regionLink = page.locator('a:has-text("소속 구 현황 보기")');
     const href = await regionLink.getAttribute('href');
-    expect(href).toMatch(/\/admin\/regions\/(manse|hyohaeng|byeongjeom|dongtan)$/);
+    expect(href).toMatch(/\/admin\/regions\/(manse|hyohaeng|byeongjeom|dongtan)/);
   });
 
-  test('읍면동 현황 보기 링크가 실제 라우트로 이동', async ({ page }) => {
+  test('거점 상세 열기 링크가 실제 라우트로 이동', async ({ page }) => {
     await page.goto(`${BASE}/admin`);
     await page.waitForSelector('[aria-label="지도 필터"]', { timeout: 10000 });
 
     test.skip((await settledMarkerCount(page)) === 0, '카카오 SDK 미로드 — 네비게이션 검증 스킵');
 
     await page.locator('.gj-marker').first().click();
-    const regionLink = page.locator('a:has-text("현황 보기")');
-    await expect(regionLink).toBeVisible({ timeout: 5000 });
-    await regionLink.click();
+    const detailLink = page.locator('a:has-text("거점 상세 열기")');
+    await expect(detailLink).toBeVisible({ timeout: 5000 });
+    await detailLink.click();
 
-    // /regions/:regionId 경로로 이동했는지 확인
-    await expect(page).toHaveURL(/\/admin\/regions\/(manse|hyohaeng|byeongjeom|dongtan)/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/admin\/sites\/justdream-\d+/, { timeout: 5000 });
+    await expect(page.getByRole('tab', { name: '빠른 입력' })).toBeVisible({ timeout: 5000 });
   });
 });
 

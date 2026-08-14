@@ -231,13 +231,19 @@ export default function OperationActionPanel({
           <span className="ml-1 font-medium">{selectedSite.focusItem}</span>
         </div>
 
-        {/* D. CTA */}
-        <div className="mt-auto pt-4">
+        {/* D. CTA — 지도에서 고른 거점을 실제로 처리하는 화면(거점 상세)으로 데려간다. */}
+        <div className="mt-auto space-y-1.5 pt-4">
           <Link
-            to={`/admin/regions/${selectedSite.district}?site=${selectedSite.id}`}
+            to={`/admin/sites/${selectedSite.id}`}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
           >
-            소속 지역 보기
+            거점 상세 열기
+          </Link>
+          <Link
+            to={`/admin/regions/${selectedSite.district}?site=${selectedSite.id}`}
+            className="block w-full text-center text-xs font-medium text-slate-500 transition-colors hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          >
+            소속 구 현황 보기
           </Link>
         </div>
       </div>
