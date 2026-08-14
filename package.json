@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "test:excel": "node scripts/run-engine-test.mjs excel-engine-test",
     "test:filename": "node scripts/run-engine-test.mjs filename-test",
+    "test:inventory-text": "node scripts/run-engine-test.mjs inventory-text-test",
     "test:unit": "node scripts/run-engine-test.mjs"
   },
   "dependencies": {

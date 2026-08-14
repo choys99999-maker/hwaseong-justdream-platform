@@ -12,6 +12,7 @@ import type { LucideIcon } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatusBadge from '../components/common/StatusBadge';
 import CentralDataNotice from '../components/common/CentralDataNotice';
+import InventoryUpdatePanel from '../components/inventory/InventoryUpdatePanel';
 import { useCentralData } from '../hooks/useCentralData';
 import { listInventoryStatus, type InventoryStatus as InventoryRow } from '../store/analytics';
 import { districtOfArea } from '../data/districtByArea';
@@ -374,10 +375,12 @@ export default function InventoryPage({ embedded = false }: { embedded?: boolean
   const [sortDir,      setSortDir]      = useState<SortDir>('asc');
   const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set());
   const [drawerItem,   setDrawerItem]   = useState<Row | null>(null);
+  /** 재고 입력으로 값이 바뀌면 올려 다시 읽는다. */
+  const [refreshKey,   setRefreshKey]   = useState(0);
 
   // 입고/출고는 기간 합계, 현재재고·유통기한은 최신 제출본 기준.
   // 재제출분 제외·누계 시트 제외 규칙은 모두 v_inventory_status 안에 있다.
-  const { data, error, isLoading } = useCentralData(() => listInventoryStatus(), []);
+  const { data, error, isLoading } = useCentralData(() => listInventoryStatus(), [refreshKey]);
 
   // 이용·상담 물품지원이 만든 현장 출고. 저장 즉시 이 화면의 표시 재고에 반영된다.
   const outboundRecords = useSyncExternalStore(subscribeOutbound, getOutboundSnapshot);
@@ -501,6 +504,16 @@ export default function InventoryPage({ embedded = false }: { embedded?: boolean
       )}
 
       {notice}
+
+      {/*
+        재고 입력. 현장이 쓰던 방식(말로 몇 개만 / 쓰던 Excel 통째로)을 그대로 받아
+        기존 저장 경로로 넘긴다. 자료가 아직 없어도 입력은 할 수 있어야 하므로
+        아래 목록(items.length > 0)과 달리 항상 그린다.
+      */}
+      <InventoryUpdatePanel
+        inventory={data ?? []}
+        onApplied={() => setRefreshKey((k) => k + 1)}
+      />
 
       {items.length > 0 && (
         <>

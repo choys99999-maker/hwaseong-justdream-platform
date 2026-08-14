@@ -23,7 +23,8 @@ writeFileSync(resolve(outDir, 'package.json'), '{ "type": "commonjs" }\n');
 
 // 실행할 테스트를 인자로 고른다. 없으면 전부 돌린다.
 const targets = process.argv.slice(2);
-const scripts = targets.length > 0 ? targets : ['excel-engine-test', 'filename-test'];
+const scripts =
+  targets.length > 0 ? targets : ['excel-engine-test', 'filename-test', 'inventory-text-test'];
 for (const name of scripts) {
   const run = spawnSync(process.execPath, [resolve(outDir, `scripts/${name}.js`)], {
     cwd: root,
