@@ -38,9 +38,9 @@ export default function DemoRoleSwitcher() {
   }
 
   return (
-    <div className="sticky top-0 z-40 flex min-h-[44px] items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-sm">
-      <span className="shrink-0 font-semibold text-amber-900">시연 중</span>
-      <span className="shrink-0 text-amber-300" aria-hidden="true">
+    <div className="sticky top-0 z-40 flex min-h-[44px] items-center gap-2 border-b border-warn-600/25 bg-warn-50 px-3 py-1.5 text-note">
+      <span className="shrink-0 font-bold text-warn-700">시연 중</span>
+      <span className="shrink-0 text-warn-600/40" aria-hidden="true">
         ·
       </span>
 
@@ -53,8 +53,8 @@ export default function DemoRoleSwitcher() {
             onClick={() => goTo(role.path)}
             disabled={pending}
             aria-pressed={role.key === currentRole}
-            className={`min-h-[40px] shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-              role.key === currentRole ? 'bg-amber-600 text-white' : 'bg-white text-amber-800 hover:bg-amber-100'
+            className={`min-h-[40px] shrink-0 rounded-full px-3 py-1.5 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+              role.key === currentRole ? 'bg-warn-600 text-white' : 'bg-surface text-warn-700 hover:bg-warn-50'
             }`}
           >
             {DEMO_ROLE_LABELS[role.key]}
@@ -64,11 +64,11 @@ export default function DemoRoleSwitcher() {
 
       {/* 640px 미만 — 현재 역할 텍스트 + 역할 변경 버튼으로 축약해 본문·핵심 CTA를 가리지 않는다 */}
       <div className="flex flex-1 items-center gap-2 overflow-hidden sm:hidden">
-        <span className="truncate font-medium text-amber-900">{DEMO_ROLE_LABELS[currentRole]}</span>
+        <span className="truncate font-medium text-warn-700">{DEMO_ROLE_LABELS[currentRole]}</span>
         <button
           type="button"
           onClick={() => setSheetOpen(true)}
-          className="min-h-[40px] shrink-0 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+          className="min-h-[40px] shrink-0 rounded-full bg-surface px-3 py-1.5 text-[13px] font-semibold text-warn-700 hover:bg-warn-50"
         >
           역할 변경
         </button>
@@ -78,7 +78,7 @@ export default function DemoRoleSwitcher() {
         type="button"
         onClick={handleExit}
         disabled={pending}
-        className="min-h-[40px] shrink-0 rounded-full border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+        className="min-h-[40px] shrink-0 rounded-full border border-warn-600/30 px-3 py-1.5 text-[13px] font-semibold text-warn-700 hover:bg-warn-50 disabled:cursor-not-allowed disabled:opacity-60"
       >
         종료
       </button>

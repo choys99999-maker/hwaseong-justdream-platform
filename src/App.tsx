@@ -2,21 +2,16 @@ import { Navigate, Route, Routes, useParams } from 'react-router-dom';
 import CitizenLayout from './components/layout/CitizenLayout';
 import AdminLayout from './components/layout/AdminLayout';
 
-// 시민용 기존 페이지
+// 시민 화면
 import HomePage from './pages/citizen/HomePage';
-import CitizenHomePage from './pages/citizen/CitizenHomePage';
 import CitizenSiteDetailPage from './pages/citizen/CitizenSiteDetailPage';
+import ItemSearchPage from './pages/citizen/ItemSearchPage';
 import CitizenHelpPage from './pages/citizen/CitizenHelpPage';
-import CitizenEasyModePage from './pages/citizen/CitizenEasyModePage';
+import DeliveryRequestPage from './pages/citizen/DeliveryRequestPage';
+import CitizenDonatePage from './pages/citizen/CitizenDonatePage';
 import CitizenInfoPage from './pages/citizen/CitizenInfoPage';
 import CitizenFeedbackPage from './pages/citizen/CitizenFeedbackPage';
 import CitizenGuidePage from './pages/citizen/CitizenGuidePage';
-import CitizenDonatePage from './pages/citizen/CitizenDonatePage';
-
-// 시민용 신규 페이지 (지도 + 물품 찾기)
-import MapPage from './pages/citizen/MapPage';
-import ItemSearchPage from './pages/citizen/ItemSearchPage';
-import DeliveryRequestPage from './pages/citizen/DeliveryRequestPage';
 
 // 관리자 페이지
 import DashboardPage from './pages/DashboardPage';
@@ -42,18 +37,24 @@ export default function App() {
       {/* ── 시민 화면 ── */}
       <Route element={<CitizenLayout />}>
         <Route path="/" element={<HomePage />} />
-        <Route path="/discover" element={<CitizenHomePage />} />
-        <Route path="/map" element={<MapPage />} />
-        <Route path="/items" element={<ItemSearchPage />} />
-        <Route path="/delivery" element={<DeliveryRequestPage />} />
         <Route path="/site/:id" element={<CitizenSiteDetailPage />} />
+        <Route path="/items" element={<ItemSearchPage />} />
         <Route path="/help" element={<CitizenHelpPage />} />
-        <Route path="/easy" element={<CitizenEasyModePage />} />
+        <Route path="/delivery" element={<DeliveryRequestPage />} />
         <Route path="/donate" element={<CitizenDonatePage />} />
         <Route path="/info" element={<CitizenInfoPage />} />
         <Route path="/feedback" element={<CitizenFeedbackPage />} />
         <Route path="/guide" element={<CitizenGuidePage />} />
       </Route>
+
+      {/*
+        예전 시민 경로. 지도 화면이 /discover · /map 두 벌, 큰 글씨 전용 화면이 /easy 로
+        따로 있었는데, 이제 지도 홈 하나로 합쳤고 큰 글씨는 기본 UI 자체가 되었다.
+        (고령 사용자를 별도 모드로 분리하지 않는다 — 기본 화면이 이미 그 기준이다)
+      */}
+      <Route path="/discover" element={<Navigate to="/" replace />} />
+      <Route path="/map" element={<Navigate to="/" replace />} />
+      <Route path="/easy" element={<Navigate to="/" replace />} />
 
       {/* ── 관리자 화면 ── */}
       <Route element={<AdminLayout />}>
@@ -70,7 +71,7 @@ export default function App() {
         <Route path="/admin/files/:submissionId" element={<SubmissionDetailPage />} />
       </Route>
 
-      {/* 예전 경로 호환 */}
+      {/* 예전 관리자 경로 호환 */}
       <Route path="/regions" element={<Navigate to="/admin/regions" replace />} />
       <Route path="/regions/:regionId" element={<ParamRedirect to={(p) => `/admin/regions/${p.regionId}`} />} />
       <Route path="/inventory" element={<Navigate to="/admin/inventory" replace />} />

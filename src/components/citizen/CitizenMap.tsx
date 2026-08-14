@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { LocateFixed, RotateCcw, MapPin } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MapPin, RotateCcw } from 'lucide-react';
 import type {
   KakaoCustomOverlay,
   KakaoMap,
@@ -9,171 +9,59 @@ import type {
 } from '../../types/kakao';
 import { MissingKakaoKeyError, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
 import { HWASEONG_FOCUS_BBOX, districtBoundaries } from '../../data/districtBoundaries';
-import {
-  type CitizenSite,
-  SITE_OVERALL_STATUS_COLORS,
-  SITE_OVERALL_STATUS_LABELS,
-} from '../../data/citizenData';
+import type { CitizenPlace } from '../../data/citizenDirectory';
+import Button from './ui/Button';
 
 type MapPhase = 'loading' | 'ready' | 'missing-key' | 'error';
 
 interface CitizenMapProps {
-  sites: CitizenSite[];
-  selectedSiteId: string | null;
-  onSelectSite: (siteId: string | null) => void;
-  /** 이 값이 바뀌면 해당 지점으로 지도를 이동하고 선택 상태로 만든다 */
-  focusSiteId?: string | null;
+  places: CitizenPlace[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
   /**
-   * 값이 바뀔 때마다 focusSiteId/fitPoints 를 다시 적용한다.
-   * 같은 거점을 다시 눌러도 지도가 움직이게 하려면 이 토큰을 올린다.
+   * 추천 순서대로의 거점 id. 1순위 하나가 지도에서 가장 강하게 보이고 나머지는 뒤로 물러난다.
+   * 빈 배열이면 전부 같은 크기의 조용한 점으로 깔린다(첫 화면).
    */
-  focusToken?: number;
-  /** 파란 현재 위치 점. 홈처럼 위치를 바깥에서 관리하는 화면이 쓴다. */
+  rankedIds?: string[];
   userLocation?: { lat: number; lng: number } | null;
-  /** 이 좌표들이 한 화면에 다 보이게 맞춘다(내 위치 + 가까운 거점). focusToken 과 함께 쓴다. */
+  /** 이 좌표들이 한 화면에 다 보이게 맞춘다. `focusToken` 이 바뀔 때 적용된다. */
   fitPoints?: Array<{ lat: number; lng: number }> | null;
-  /** 바텀시트에 가리지 않도록 확보할 아래 여백(px). */
+  /** 값이 바뀌면 지도 프레이밍을 다시 적용한다. 같은 대상을 다시 눌러도 움직이게 한다. */
+  focusToken?: number;
+  /** 하단 시트·액션 영역에 가리지 않도록 확보할 여백(px). */
   bottomInset?: number;
-  /** true 이면 내부 컨트롤 버튼·범례를 숨긴다 (홈 화면 등 외부에서 제어할 때 사용) */
-  hideControls?: boolean;
   className?: string;
 }
 
 interface MarkerEntry {
-  site: CitizenSite;
+  id: string;
   overlay: KakaoCustomOverlay;
   element: HTMLButtonElement;
+  dispose: () => void;
 }
 
 const RELAYOUT_DEBOUNCE_MS = 160;
 
-/**
- * 이 레벨 이하(= 더 확대)로 들어가야 거점 이름표를 띄운다.
- * 카카오맵은 숫자가 작을수록 확대다. 화성시 전체는 레벨 9 정도라
- * 그 상태에서 이름 11개가 다 뜨면 서로 겹쳐 읽히지 않는다.
- */
+/** 이 레벨 이하(=더 확대)에서만 모든 핀의 이름표를 띄운다. 넓게 보면 이름끼리 겹쳐 못 읽는다. */
 const LABEL_ZOOM_LEVEL = 6;
 
-function createPinElement(site: CitizenSite): HTMLButtonElement {
+function createPinElement(place: CitizenPlace): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'cj-pin';
-  btn.dataset.status = site.overallStatus;
   btn.dataset.selected = 'false';
   btn.dataset.zoomed = 'false';
-  btn.setAttribute(
-    'aria-label',
-    `${site.name} · ${SITE_OVERALL_STATUS_LABELS[site.overallStatus]}`,
-  );
+  btn.setAttribute('aria-label', place.displayName);
 
   const dot = document.createElement('span');
   dot.className = 'cj-pin-dot';
 
   const name = document.createElement('span');
   name.className = 'cj-pin-name';
-  name.textContent = site.name;
+  name.textContent = place.displayName;
 
-  btn.appendChild(dot);
-  btn.appendChild(name);
+  btn.append(dot, name);
   return btn;
-}
-
-/**
- * 경계 색은 Primary 파랑 하나만 쓴다.
- *
- * 읍·면·동마다 다른 색을 칠어 보니 지도가 알록달록해져서, 정작 봐야 할 거점 핀이 묻혔다.
- * 구역 구분은 "면 색"이 아니라 "경계선"이 하는 일이다 — 면은 화성시 전체를 아주 옅게
- * 한 톤으로만 깔고, 선을 또렷하게 둬서 조용하면서도 구분은 되게 한다.
- */
-const BOUNDARY_COLOR = '#2563eb';
-
-/** 링의 부호 있는 면적. 양수면 반시계(CCW), 음수면 시계(CW). */
-function ringSignedArea(ring: [number, number][]): number {
-  let sum = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    sum += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
-  }
-  return sum / 2;
-}
-
-/** 링을 원하는 방향으로 정규화한다. 구멍은 외곽선과 반대 방향이어야 nonzero 규칙에서 뚫린다. */
-function orientRing(ring: [number, number][], wantCCW: boolean): [number, number][] {
-  const isCCW = ringSignedArea(ring) > 0;
-  return isCCW === wantCCW ? ring : [...ring].reverse();
-}
-
-/**
- * 화성시 경계를 그린다.
- *
- * ① 화성시 바깥을 덮는 마스크 — 세계 사각형에서 화성시 외곽선을 구멍으로 뚫은 폴리곤 하나.
- *    우리가 맡은 건 화성시뿐이라 이웃 도시(수원·오산·평택)는 눌러 둔다.
- * ② 읍·면·동 29개를 실제 GIS 폴리곤 그대로, 전부 같은 옅은 파랑 한 톤으로.
- * ③ 읍·면·동 경계선 — 구역 구분은 색이 아니라 이 선이 한다.
- *
- * 폴리곤은 좌표 기반이라 확대·축소해도 경계가 그대로 따라간다.
- */
-function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPolygon | KakaoPolyline> {
-  const shapes: Array<KakaoPolygon | KakaoPolyline> = [];
-  const toPath = (ring: [number, number][]) => ring.map(([lng, lat]) => new maps.LatLng(lat, lng));
-
-  // ① 바깥 마스크 — 외곽은 CCW, 구멍은 CW 로 맞춰야 확실히 뚫린다.
-  const world: [number, number][] = [
-    [124.0, 34.5],
-    [130.0, 34.5],
-    [130.0, 39.5],
-    [124.0, 39.5],
-  ];
-  const holes = districtBoundaries.flatMap((d) => d.outline).map((ring) => orientRing(ring, false));
-  const mask = new maps.Polygon({
-    path: [toPath(orientRing(world, true)), ...holes.map(toPath)],
-    strokeWeight: 0,
-    strokeOpacity: 0,
-    fillColor: '#0f172a',
-    fillOpacity: 0.34,
-    zIndex: 1,
-  });
-  mask.setMap(map);
-  shapes.push(mask);
-
-  // ② + ③ 읍·면·동 면과 경계선 — 색은 전부 같고, 구분은 선이 한다.
-  districtBoundaries.forEach((district) => {
-    district.areas.forEach((area) => {
-      area.polygons.forEach((polygon) => {
-        const [outer, ...innerHoles] = polygon;
-        if (!outer) return;
-
-        const fill = new maps.Polygon({
-          path: [
-            toPath(orientRing(outer, true)),
-            ...innerHoles.map((h) => toPath(orientRing(h, false))),
-          ],
-          strokeWeight: 0,
-          strokeOpacity: 0,
-          fillColor: BOUNDARY_COLOR,
-          fillOpacity: 0.06,
-          zIndex: 2,
-        });
-        fill.setMap(map);
-        shapes.push(fill);
-
-        // 경계선은 링마다 따로 그린다 — 구멍 경계도 보여야 구역이 정확히 읽힌다.
-        polygon.forEach((ring) => {
-          const line = new maps.Polyline({
-            path: toPath(ring),
-            strokeWeight: 1.5,
-            strokeColor: BOUNDARY_COLOR,
-            strokeOpacity: 0.4,
-            strokeStyle: 'solid',
-            zIndex: 3,
-          });
-          line.setMap(map);
-          shapes.push(line);
-        });
-      });
-    });
-  });
-
-  return shapes;
 }
 
 function createMyLocElement(): HTMLDivElement {
@@ -185,34 +73,114 @@ function createMyLocElement(): HTMLDivElement {
   return wrap;
 }
 
+/** 링의 부호 있는 면적. 양수면 반시계(CCW). */
+function ringSignedArea(ring: [number, number][]): number {
+  let sum = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    sum += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  }
+  return sum / 2;
+}
+
+function orientRing(ring: [number, number][], wantCCW: boolean): [number, number][] {
+  return ringSignedArea(ring) > 0 === wantCCW ? ring : [...ring].reverse();
+}
+
+/**
+ * 화성시 경계.
+ *
+ * 지도는 장식 배경이 아니라 제품 자체라서 최대한 덜 덮는다 —
+ * 바깥 마스크는 "여기까지가 화성시" 만 알 정도로 아주 옅게(0.10) 깔고,
+ * 읍·면·동 구분은 면 색이 아니라 얇은 경계선이 한다. 색을 여러 개 쓰지 않는다.
+ */
+function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPolygon | KakaoPolyline> {
+  const shapes: Array<KakaoPolygon | KakaoPolyline> = [];
+  const toPath = (ring: [number, number][]) => ring.map(([lng, lat]) => new maps.LatLng(lat, lng));
+
+  const world: [number, number][] = [
+    [124.0, 34.5],
+    [130.0, 34.5],
+    [130.0, 39.5],
+    [124.0, 39.5],
+  ];
+  const holes = districtBoundaries.flatMap((d) => d.outline).map((ring) => orientRing(ring, false));
+  const mask = new maps.Polygon({
+    path: [toPath(orientRing(world, true)), ...holes.map(toPath)],
+    strokeWeight: 0,
+    strokeOpacity: 0,
+    fillColor: '#131c2e',
+    fillOpacity: 0.1,
+    zIndex: 1,
+  });
+  mask.setMap(map);
+  shapes.push(mask);
+
+  districtBoundaries.forEach((district) => {
+    district.areas.forEach((area) => {
+      area.polygons.forEach((polygon) => {
+        const [outer, ...inner] = polygon;
+        if (!outer) return;
+        polygon.forEach((ring) => {
+          const line = new maps.Polyline({
+            path: toPath(ring),
+            strokeWeight: 1,
+            strokeColor: '#0054a6',
+            strokeOpacity: 0.22,
+            strokeStyle: 'solid',
+            zIndex: 3,
+          });
+          line.setMap(map);
+          shapes.push(line);
+        });
+        void inner;
+      });
+    });
+  });
+
+  return shapes;
+}
+
+/**
+ * 시민용 지도.
+ *
+ * 처음부터 대한민국 전체가 보이지 않게 화성시 범위로 맞춰서 시작하고, 위치를 얻으면
+ * 내 위치와 추천 거점이 함께 보이는 화면으로 자연스럽게 옮겨간다. 핀은 한 색으로 조용히
+ * 깔리고, 추천이 정해진 뒤에만 1순위 하나가 크게 올라온다.
+ */
 export default function CitizenMap({
-  sites,
-  selectedSiteId,
-  onSelectSite,
-  focusSiteId,
-  focusToken = 0,
+  places,
+  selectedId,
+  onSelect,
+  rankedIds,
   userLocation = null,
   fitPoints = null,
+  focusToken = 0,
   bottomInset = 0,
-  hideControls = false,
   className = '',
 }: CitizenMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapsRef = useRef<KakaoMapsNamespace | null>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const markersRef = useRef<MarkerEntry[]>([]);
-  const myLocOverlayRef = useRef<KakaoCustomOverlay | null>(null);
-  const boundaryRef = useRef<Array<KakaoPolygon | KakaoPolyline>>([]);
-  const cleanupRef = useRef<(() => void)[]>([]);
+  const myLocRef = useRef<KakaoCustomOverlay | null>(null);
+  const shapesRef = useRef<Array<KakaoPolygon | KakaoPolyline>>([]);
+  const teardownRef = useRef<(() => void)[]>([]);
 
   const [phase, setPhase] = useState<MapPhase>('loading');
   const [retryToken, setRetryToken] = useState(0);
-  const [locStatus, setLocStatus] = useState<'idle' | 'loading' | 'ok' | 'denied'>('idle');
 
-  const handlersRef = useRef({ onSelectSite });
-  handlersRef.current = { onSelectSite };
+  // 콜백은 ref 로 읽는다 — 부모가 매 렌더 새 함수를 줘도 마커를 다시 만들지 않기 위해서다.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const bottomInsetRef = useRef(bottomInset);
+  bottomInsetRef.current = bottomInset;
+  const fitPointsRef = useRef(fitPoints);
+  fitPointsRef.current = fitPoints;
 
-  /** 화성시 전체 범위로 맞추기. 서해 도서까지 넣으면 화면 대부분이 바다라 본토 범위를 쓴다. */
+  const placesKey = useMemo(() => places.map((p) => p.id).join('|'), [places]);
+  const rankKey = (rankedIds ?? []).join('|');
+
+  /** 화성시 본토 범위로 맞춘다. 서해 도서까지 넣으면 화면 대부분이 바다가 된다. */
   const fitHwaseong = useCallback(() => {
     const maps = mapsRef.current;
     const map = mapRef.current;
@@ -222,28 +190,16 @@ export default function CitizenMap({
       new maps.LatLng(minLat, minLng),
       new maps.LatLng(maxLat, maxLng),
     );
-    map.setBounds(bounds, 40, 40, 40, 40);
+    map.setBounds(bounds, 32, 32, bottomInsetRef.current + 24, 32);
   }, []);
 
-  /** 지금 확대 레벨에 맞춰 핀 이름표를 켜고 끈다. */
-  const syncPinLabels = useCallback(() => {
+  const syncZoomLabels = useCallback(() => {
     const map = mapRef.current;
     if (!map) return;
     const zoomed = map.getLevel() <= LABEL_ZOOM_LEVEL;
     markersRef.current.forEach(({ element }) => {
       element.dataset.zoomed = String(zoomed);
     });
-  }, []);
-
-  /** 특정 지점으로 지도 이동 */
-  const panToSite = useCallback((siteId: string) => {
-    const maps = mapsRef.current;
-    const map = mapRef.current;
-    if (!maps || !map) return;
-    const marker = markersRef.current.find((m) => m.site.id === siteId);
-    if (!marker) return;
-    map.panTo(new maps.LatLng(marker.site.lat, marker.site.lng));
-    map.setLevel(5, { animate: true });
   }, []);
 
   // 1) SDK 로드 + 지도 생성
@@ -261,53 +217,23 @@ export default function CitizenMap({
           center: new maps.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2),
           level: 9,
         });
-        map.addControl(new maps.ZoomControl(), maps.ControlPosition.RIGHT);
         mapRef.current = map;
 
-        boundaryRef.current = drawBoundaries(maps, map);
-        cleanupRef.current.push(() => {
-          boundaryRef.current.forEach((s) => s.setMap(null));
-          boundaryRef.current = [];
+        shapesRef.current = drawBoundaries(maps, map);
+        teardownRef.current.push(() => {
+          shapesRef.current.forEach((s) => s.setMap(null));
+          shapesRef.current = [];
         });
 
-        // 배경 클릭 → 선택 해제
-        const onBgClick = () => handlersRef.current.onSelectSite(null);
+        const onBgClick = () => onSelectRef.current(null);
         maps.event.addListener(map, 'click', onBgClick);
-        cleanupRef.current.push(() => maps.event.removeListener(map, 'click', onBgClick));
+        teardownRef.current.push(() => maps.event.removeListener(map, 'click', onBgClick));
 
-        // 확대 레벨이 바뀌면 핀 이름표를 켜고 끈다
-        const onZoom = () => syncPinLabels();
+        const onZoom = () => syncZoomLabels();
         maps.event.addListener(map, 'zoom_changed', onZoom);
-        cleanupRef.current.push(() => maps.event.removeListener(map, 'zoom_changed', onZoom));
-
-        // 거점 마커 생성
-        sites.forEach((site) => {
-          const element = createPinElement(site);
-          const onClick = (e: MouseEvent) => {
-            e.stopPropagation();
-            handlersRef.current.onSelectSite(site.id);
-          };
-          element.addEventListener('click', onClick);
-
-          const overlay = new maps.CustomOverlay({
-            position: new maps.LatLng(site.lat, site.lng),
-            content: element,
-            yAnchor: 1.3,
-            xAnchor: 0.5,
-            zIndex: 5,
-            clickable: true,
-          });
-          overlay.setMap(map);
-
-          cleanupRef.current.push(() => {
-            element.removeEventListener('click', onClick);
-            overlay.setMap(null);
-          });
-          markersRef.current.push({ site, overlay, element });
-        });
+        teardownRef.current.push(() => maps.event.removeListener(map, 'zoom_changed', onZoom));
 
         fitHwaseong();
-        syncPinLabels();
         setPhase('ready');
       })
       .catch((error: unknown) => {
@@ -322,35 +248,90 @@ export default function CitizenMap({
 
     return () => {
       mounted = false;
-      cleanupRef.current.forEach((d) => d());
-      cleanupRef.current = [];
+      teardownRef.current.forEach((fn) => fn());
+      teardownRef.current = [];
       markersRef.current = [];
-      myLocOverlayRef.current = null;
+      myLocRef.current = null;
       mapRef.current = null;
       mapsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryToken]);
 
-  // 2) 선택 상태 동기화
-  useEffect(() => {
-    if (phase !== 'ready') return;
-    markersRef.current.forEach(({ site, element, overlay }) => {
-      const isSelected = site.id === selectedSiteId;
-      element.dataset.selected = String(isSelected);
-      overlay.setZIndex(isSelected ? 9 : 5);
-    });
-  }, [phase, selectedSiteId]);
+  // 2) 거점 마커 — 거점 목록이 실제로 바뀔 때만 다시 만든다.
+  const placesRef = useRef(places);
+  placesRef.current = places;
 
-  // 3) 현재 위치 파란 점 — 위치를 바깥에서 관리하는 화면(홈)이 좌표를 내려준다.
   useEffect(() => {
     if (phase !== 'ready') return;
     const maps = mapsRef.current;
     const map = mapRef.current;
     if (!maps || !map) return;
 
-    myLocOverlayRef.current?.setMap(null);
-    myLocOverlayRef.current = null;
+    markersRef.current = placesRef.current.map((place) => {
+      const element = createPinElement(place);
+      const onClick = (e: MouseEvent) => {
+        e.stopPropagation();
+        onSelectRef.current(place.id);
+      };
+      element.addEventListener('click', onClick);
+
+      const overlay = new maps.CustomOverlay({
+        position: new maps.LatLng(place.lat, place.lng),
+        content: element,
+        yAnchor: 0.5,
+        xAnchor: 0.5,
+        zIndex: 5,
+        clickable: true,
+      });
+      overlay.setMap(map);
+
+      return {
+        id: place.id,
+        overlay,
+        element,
+        dispose: () => {
+          element.removeEventListener('click', onClick);
+          overlay.setMap(null);
+        },
+      };
+    });
+    syncZoomLabels();
+
+    const created = markersRef.current;
+    return () => {
+      created.forEach((m) => m.dispose());
+      markersRef.current = [];
+    };
+  }, [phase, placesKey, syncZoomLabels]);
+
+  // 3) 선택·추천 표시. 마커를 다시 만들지 않고 data 속성만 바꾼다.
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    const ranked = rankKey ? rankKey.split('|') : [];
+    markersRef.current.forEach(({ id, element, overlay }) => {
+      const rank = ranked.indexOf(id);
+      const selected = id === selectedId;
+
+      if (rank >= 0 && rank < 3) element.dataset.rank = String(rank + 1);
+      else delete element.dataset.rank;
+
+      // 추천이 정해진 뒤에는 뽑히지 않은 거점을 지우지 않고 뒤로 물린다.
+      element.dataset.dim = String(ranked.length > 0 && rank < 0 && !selected);
+      element.dataset.selected = String(selected);
+      overlay.setZIndex(selected ? 12 : rank === 0 ? 10 : rank > 0 ? 8 : 5);
+    });
+  }, [phase, selectedId, rankKey, placesKey]);
+
+  // 4) 현재 위치
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+
+    myLocRef.current?.setMap(null);
+    myLocRef.current = null;
     if (!userLocation) return;
 
     const overlay = new maps.CustomOverlay({
@@ -361,21 +342,12 @@ export default function CitizenMap({
       zIndex: 20,
     });
     overlay.setMap(map);
-    myLocOverlayRef.current = overlay;
-    setLocStatus('ok');
+    myLocRef.current = overlay;
+    // 좌표 값만 보면 충분하다 — 객체 참조가 매 렌더 바뀌어도 오버레이를 다시 만들지 않는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, userLocation?.lat, userLocation?.lng]);
 
-  /*
-   * 4) 지도 이동.
-   *
-   * fitPoints 가 오면 그 좌표들이 "시트에 가리지 않는 영역" 안에 모두 들어오게 맞춘다 —
-   * 내 위치와 가장 가까운 거점이 한 화면에 같이 보여야 "여기가 제일 가깝다"가 읽힌다.
-   * fitPoints 는 매 렌더 새 배열이라 의존성에 넣으면 계속 재실행되므로 ref 로 읽고,
-   * 실행 시점은 focusToken 이 정한다(같은 대상을 다시 눌러도 지도가 움직인다).
-   */
-  const fitPointsRef = useRef(fitPoints);
-  fitPointsRef.current = fitPoints;
-
+  // 5) 프레이밍. fitPoints 는 매 렌더 새 배열이라 ref 로 읽고, 실행 시점만 focusToken 이 정한다.
   useEffect(() => {
     if (phase !== 'ready') return;
     const maps = mapsRef.current;
@@ -383,23 +355,21 @@ export default function CitizenMap({
     if (!maps || !map) return;
 
     const points = fitPointsRef.current;
-    if (points && points.length > 0) {
-      if (points.length === 1) {
-        map.panTo(new maps.LatLng(points[0].lat, points[0].lng));
-        map.setLevel(5, { animate: true });
-        return;
-      }
-      const bounds = new maps.LatLngBounds();
-      points.forEach((p) => bounds.extend(new maps.LatLng(p.lat, p.lng)));
-      map.setBounds(bounds, 80, 56, bottomInset + 32, 56);
+    if (!points || points.length === 0) {
+      fitHwaseong();
       return;
     }
+    if (points.length === 1) {
+      map.setLevel(5, { animate: true });
+      map.panTo(new maps.LatLng(points[0].lat, points[0].lng));
+      return;
+    }
+    const bounds = new maps.LatLngBounds();
+    points.forEach((p) => bounds.extend(new maps.LatLng(p.lat, p.lng)));
+    map.setBounds(bounds, 72, 56, bottomInsetRef.current + 28, 56);
+  }, [phase, focusToken, fitHwaseong]);
 
-    if (focusSiteId) panToSite(focusSiteId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, focusToken, focusSiteId, panToSite]);
-
-  // 4) ResizeObserver
+  // 6) 컨테이너 크기 변화 → 지도 재배치
   useEffect(() => {
     const container = containerRef.current;
     if (phase !== 'ready' || !container) return;
@@ -419,148 +389,47 @@ export default function CitizenMap({
     };
   }, [phase]);
 
-  /** 내 위치 버튼 */
-  const handleMyLocation = () => {
-    if (!navigator.geolocation) {
-      setLocStatus('denied');
-      return;
-    }
-    setLocStatus('loading');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const maps = mapsRef.current;
-        const map = mapRef.current;
-        if (!maps || !map) return;
-
-        const { latitude, longitude } = pos.coords;
-        const latLng = new maps.LatLng(latitude, longitude);
-
-        // 기존 위치 오버레이 제거
-        myLocOverlayRef.current?.setMap(null);
-
-        const el = createMyLocElement();
-        const overlay = new maps.CustomOverlay({
-          position: latLng,
-          content: el,
-          yAnchor: 0.5,
-          xAnchor: 0.5,
-          zIndex: 20,
-        });
-        overlay.setMap(map);
-        myLocOverlayRef.current = overlay;
-
-        map.panTo(latLng);
-        map.setLevel(7, { animate: true });
-        setLocStatus('ok');
-      },
-      () => setLocStatus('denied'),
-      { enableHighAccuracy: true, timeout: 8000 },
-    );
-  };
-
   const handleRetry = () => {
     resetKakaoMapsLoader();
     setRetryToken((t) => t + 1);
   };
 
   return (
-    <div className={`relative w-full h-full overflow-hidden bg-slate-100 ${className}`}>
-      <div
-        ref={containerRef}
-        role="region"
-        aria-label="화성시 그냥드림 지점 지도"
-        className="w-full h-full"
-      />
+    <div className={`relative h-full w-full overflow-hidden bg-paper ${className}`}>
+      <div ref={containerRef} role="region" aria-label="화성시 그냥드림 거점 지도" className="h-full w-full" />
 
-      {/* 오른쪽 하단 컨트롤 버튼 */}
-      {phase === 'ready' && !hideControls && (
-        <div className="absolute bottom-5 left-4 flex flex-col gap-2 z-10">
-          {/* 내 위치 */}
-          <button
-            type="button"
-            onClick={handleMyLocation}
-            disabled={locStatus === 'loading'}
-            aria-label="내 위치 찾기"
-            className="flex items-center gap-2 bg-white rounded-full px-4 py-2.5 text-sm font-bold text-slate-700 shadow-lg border border-slate-200 hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-60"
-          >
-            <LocateFixed
-              size={18}
-              className={locStatus === 'loading' ? 'animate-spin text-teal-600' : locStatus === 'ok' ? 'text-teal-600' : 'text-slate-500'}
-            />
-            내 위치
-          </button>
-
-          {/* 전체 보기 */}
-          <button
-            type="button"
-            onClick={fitHwaseong}
-            aria-label="화성시 전체 보기"
-            className="flex items-center gap-2 bg-white rounded-full px-4 py-2.5 text-sm font-bold text-slate-700 shadow-lg border border-slate-200 hover:bg-slate-50 active:bg-slate-100 transition-colors"
-          >
-            <MapPin size={18} className="text-slate-500" />
-            전체 보기
-          </button>
-        </div>
-      )}
-
-      {/* 위치 거부 안내 */}
-      {locStatus === 'denied' && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-slate-800 text-white text-sm font-medium px-4 py-2 rounded-full shadow-lg">
-          위치 권한이 거부되었습니다
-        </div>
-      )}
-
-      {/* 지도 범례 */}
-      {phase === 'ready' && !hideControls && (
-        <div className="absolute top-3 left-3 z-10 bg-white/95 rounded-xl px-3 py-2 shadow border border-slate-100">
-          <p className="text-xs font-bold text-slate-500 mb-1.5">재고 현황</p>
-          {(Object.entries(SITE_OVERALL_STATUS_LABELS) as [string, string][]).map(([status, label]) => (
-            <div key={status} className="flex items-center gap-1.5 mb-1 last:mb-0">
-              <span
-                className="inline-block w-3 h-3 rounded-full border-2 border-white/60"
-                style={{ background: SITE_OVERALL_STATUS_COLORS[status as keyof typeof SITE_OVERALL_STATUS_COLORS] }}
-              />
-              <span className="text-xs text-slate-700">{label}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 로딩 */}
       {phase === 'loading' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-50">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-teal-500" />
-          <p className="text-base font-medium text-slate-500">지도를 불러오는 중이에요…</p>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-paper">
+          <span
+            className="h-9 w-9 animate-spin rounded-full border-[3px] border-line-200 border-t-brand-600 motion-reduce:animate-none"
+            aria-hidden
+          />
+          <p className="text-body text-ink-600">지도를 불러오는 중이에요</p>
         </div>
       )}
 
-      {/* API 키 없음 */}
       {phase === 'missing-key' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50 px-8 text-center">
-          <MapPin size={40} className="text-slate-300" />
-          <p className="text-lg font-bold text-slate-700">지도를 표시할 수 없어요</p>
-          <p className="text-sm text-slate-500">
-            카카오맵 API 키가 필요합니다.
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-paper px-8 text-center">
+          <MapPin size={40} className="text-ink-400" aria-hidden />
+          <p className="text-section text-ink-950">지도를 보여드릴 수 없어요</p>
+          <p className="text-body text-ink-600">
+            아래 버튼으로 가까운 곳을 찾거나,
             <br />
-            관리자에게 문의해 주세요.
+            전화로 물어봐 주세요.
           </p>
         </div>
       )}
 
-      {/* 에러 */}
       {phase === 'error' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-50 px-8 text-center">
-          <MapPin size={40} className="text-red-300" />
-          <p className="text-lg font-bold text-slate-700">지도를 불러오지 못했어요</p>
-          <p className="text-sm text-slate-500">네트워크 상태를 확인하고 다시 시도해 주세요.</p>
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="flex items-center gap-2 bg-teal-600 text-white font-bold px-6 py-3 rounded-2xl text-base shadow hover:bg-teal-700 active:bg-teal-800 transition-colors"
-          >
-            <RotateCcw size={18} />
-            다시 시도
-          </button>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-paper px-8 text-center">
+          <MapPin size={40} className="text-ink-400" aria-hidden />
+          <p className="text-section text-ink-950">지도를 불러오지 못했어요</p>
+          <p className="text-body text-ink-600">인터넷 연결을 확인하고 다시 시도해 주세요.</p>
+          <div className="w-full max-w-[240px]">
+            <Button onClick={handleRetry} icon={RotateCcw} size="md" variant="secondary">
+              다시 시도
+            </Button>
+          </div>
         </div>
       )}
     </div>

@@ -8,8 +8,8 @@ interface DemoRoleSheetProps {
 }
 
 /**
- * 역할 선택 bottom sheet. 시민 홈의 "시연 모드" 진입 버튼과 전환바의 "역할 변경" 버튼이 함께 쓴다.
- * 여기서 역할을 고른 시점에만 demoMode가 켜진다 — 시트를 열기만 해서는 켜지지 않는다.
+ * 역할 선택 시트. Drawer 아래쪽 "시연 모드" 와 전환바의 "역할 변경" 이 함께 쓴다.
+ * 여기서 역할을 고른 시점에만 demoMode 가 켜진다 — 시트를 열기만 해서는 켜지지 않는다.
  */
 export default function DemoRoleSheet({ open, onClose }: DemoRoleSheetProps) {
   const { enterDemo } = useDemoMode();
@@ -32,20 +32,20 @@ export default function DemoRoleSheet({ open, onClose }: DemoRoleSheetProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-end justify-center bg-black/40 sm:items-center"
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-ink-950/45 sm:items-center"
       role="dialog"
       aria-modal="true"
       aria-labelledby="demo-role-sheet-title"
       onClick={onClose}
     >
       <div
-        className="w-full rounded-t-2xl bg-white p-5 pb-8 sm:max-w-sm sm:rounded-2xl sm:pb-5"
+        className="w-full rounded-t-sheet bg-surface p-5 pb-[max(24px,env(safe-area-inset-bottom))] sm:max-w-sm sm:rounded-card sm:pb-5"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id="demo-role-sheet-title" className="text-lg font-bold text-slate-900">
-          모아드림 시연하기
+        <h2 id="demo-role-sheet-title" className="text-section text-ink-950">
+          그냥드림 시연하기
         </h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-note text-ink-600">
           시민부터 현장 담당자, 시청 관리자까지 하나의 흐름을 확인할 수 있어요.
         </p>
 
@@ -56,10 +56,10 @@ export default function DemoRoleSheet({ open, onClose }: DemoRoleSheetProps) {
               type="button"
               onClick={() => handleSelect(role.path)}
               disabled={pending}
-              className="min-h-[48px] rounded-xl border border-slate-200 px-4 py-3 text-left transition-colors hover:border-teal-300 hover:bg-teal-50/40 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+              className="tap-md rounded-control border border-line-200 px-4 py-3 text-left transition-colors hover:border-brand-300 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60 focus-ring"
             >
-              <p className="font-semibold text-slate-900">{role.label}</p>
-              <p className="text-sm text-slate-500">{role.description}</p>
+              <p className="text-body font-bold text-ink-950">{role.label}</p>
+              <p className="text-note text-ink-600">{role.description}</p>
             </button>
           ))}
         </div>
@@ -67,7 +67,7 @@ export default function DemoRoleSheet({ open, onClose }: DemoRoleSheetProps) {
         <button
           type="button"
           onClick={onClose}
-          className="mt-4 min-h-[44px] w-full text-center text-sm font-medium text-slate-400"
+          className="tap-md mt-3 w-full text-center text-note font-medium text-ink-600 focus-ring"
         >
           닫기
         </button>

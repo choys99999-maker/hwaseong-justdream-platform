@@ -152,3 +152,6 @@ public/__geocode.html
 
 # 엑셀 엔진 회귀 테스트 산출물
 .tmp-engine-test/
+
+# 실기기 크기 캡처 결과 (scripts/capture-citizen.mjs)
+screenshots/

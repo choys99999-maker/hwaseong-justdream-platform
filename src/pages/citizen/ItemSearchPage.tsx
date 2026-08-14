@@ -1,256 +1,162 @@
-import { useState, useMemo, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Search, MapPin, ArrowLeft, ArrowRight, X } from 'lucide-react';
-import {
-  searchSitesByItem,
-  searchSitesByCategory,
-  calcDistanceKm,
-  formatDistance,
-  CATEGORY_LABELS,
-  CATEGORY_EMOJIS,
-  STOCK_STATUS_LABELS,
-  STOCK_STATUS_COLORS,
-  SITE_OVERALL_STATUS_COLORS,
-  SITE_OVERALL_STATUS_LABELS,
-  type ItemCategory,
-  type CitizenSite,
-  type CitizenItem,
-} from '../../data/citizenData';
+import { useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronRight, Search, X } from 'lucide-react';
+import AppHeader from '../../components/citizen/ui/AppHeader';
+import { EmptyState } from '../../components/citizen/ui/Feedback';
+import { StatusChip } from '../../components/citizen/ui/StatusLine';
+import { useCitizenPlaces } from '../../hooks/useCitizenPlaces';
+import { useGeolocation } from '../../hooks/useGeolocation';
+import { ITEM_GROUP_LABEL, ITEM_GROUP_ORDER, type ItemGroup } from '../../data/citizenDirectory';
+import { distanceText, findPlacesWithItem, resolvePlaceStatus } from '../../utils/citizenPlace';
 
-const CATEGORIES: ItemCategory[] = ['food', 'household', 'hygiene', 'clothing', 'other'];
-
-interface ResultEntry {
-  site: CitizenSite;
-  matchedItems: CitizenItem[];
-  distanceKm?: number;
-}
-
+/**
+ * 물품 찾기.
+ *
+ * 검색 화면도 결국 "어디로 가면 되는가" 를 답해야 한다. 그래서 결과는 물품 목록이 아니라
+ * **거점 목록**이고, 순서는 홈의 추천과 똑같은 규칙(열려 있는지 → 물품 → 거리)을 쓴다.
+ * 분류는 실제 데이터에 있는 세 가지뿐이다 — 눌러도 0건인 분류는 만들지 않는다.
+ */
 export default function ItemSearchPage() {
   const navigate = useNavigate();
-  const [query, setQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<ItemCategory | null>(null);
-  const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
+  const geo = useGeolocation();
+  const { places } = useCitizenPlaces();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 내 위치 가져오기
-  const handleGetLocation = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => {},
-      { enableHighAccuracy: true, timeout: 6000 },
-    );
-  };
+  const [query, setQuery] = useState('');
+  const [group, setGroup] = useState<ItemGroup | null>(null);
 
-  const results: ResultEntry[] = useMemo(() => {
-    let raw: Array<{ site: CitizenSite; matchedItems: CitizenItem[] }> = [];
+  const origin = geo.status === 'granted' ? geo.coords : null;
+  const results = useMemo(
+    () => findPlacesWithItem(places, origin, { query, group: group ?? undefined }),
+    [places, origin, query, group],
+  );
 
-    if (query.trim()) {
-      raw = searchSitesByItem(query);
-    } else if (selectedCategory) {
-      raw = searchSitesByCategory(selectedCategory);
-    } else {
-      // 아무것도 선택 안 됨 → 빈 결과
-      return [];
+  const searching = query.trim().length > 0 || group !== null;
+
+  /** 검색을 시작할 때 한 번만 위치를 묻는다. 화면에 들어오자마자 권한 창을 띄우지 않는다. */
+  function ensureLocation() {
+    if (geo.status === 'idle') geo.request();
+  }
+
+  function handleQuery(value: string) {
+    setQuery(value);
+    if (value.trim()) {
+      setGroup(null);
+      ensureLocation();
     }
+  }
 
-    return raw
-      .map((r) => ({
-        ...r,
-        distanceKm: userPos
-          ? calcDistanceKm(userPos.lat, userPos.lng, r.site.lat, r.site.lng)
-          : undefined,
-      }))
-      .sort((a, b) =>
-        a.distanceKm !== undefined && b.distanceKm !== undefined
-          ? a.distanceKm - b.distanceKm
-          : 0,
-      );
-  }, [query, selectedCategory, userPos]);
-
-  const handleCategoryClick = (cat: ItemCategory) => {
-    setSelectedCategory(selectedCategory === cat ? null : cat);
+  function handleGroup(next: ItemGroup) {
+    setGroup((prev) => (prev === next ? null : next));
     setQuery('');
-    if (userPos === null) handleGetLocation();
-  };
-
-  const handleSearch = (val: string) => {
-    setQuery(val);
-    setSelectedCategory(null);
-    if (userPos === null && val.trim()) handleGetLocation();
-  };
-
-  const handleShowOnMap = (siteId: string) => {
-    navigate(`/map?site=${siteId}`);
-  };
-
-  const showResults = query.trim().length > 0 || selectedCategory !== null;
+    ensureLocation();
+  }
 
   return (
-    <div className="min-h-full bg-slate-50 pb-10">
-      {/* 상단 — 지도로 돌아가기 */}
-      <div className="bg-white px-5 pt-[max(20px,env(safe-area-inset-top))]">
-        <Link
-          to="/"
-          className="inline-flex min-h-[48px] items-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-[16px] font-semibold text-gray-700 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-        >
-          <ArrowLeft size={18} className="text-blue-600" aria-hidden />
-          지도로 돌아가기
-        </Link>
-        <h1 className="mt-4 text-[24px] font-bold leading-snug text-gray-900">물품 찾기</h1>
-      </div>
+    <>
+      <AppHeader title="물품 찾기" />
 
-      {/* 검색 입력 */}
-      <div className="bg-white px-5 pt-4 pb-5 border-b border-slate-100 shadow-sm">
+      <div className="px-5 pt-5">
         <div className="relative">
-          <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={22} className="absolute left-4 top-1/2 -translate-y-1/2 text-ink-400" aria-hidden />
+          {/*
+            type="search" 를 쓰면 브라우저 기본 지우기 버튼이 따라붙어 X 가 두 개 보인다.
+            지우기는 48px 터치 목표를 갖춘 우리 버튼 하나로만 제공한다.
+          */}
           <input
             ref={inputRef}
-            type="search"
+            type="text"
+            inputMode="search"
             value={query}
-            onChange={(e) => handleSearch(e.target.value)}
-            placeholder="라면, 쌀, 생리대… 물품명을 입력하세요"
-            className="w-full bg-slate-100 rounded-2xl pl-12 pr-10 py-4 text-base font-medium text-slate-900 placeholder-slate-400 border-2 border-transparent focus:border-blue-500 focus:bg-white outline-none transition-colors"
+            onChange={(e) => handleQuery(e.target.value)}
+            aria-label="찾는 물품"
+            placeholder="라면, 쌀, 분유…"
+            className="tap-lg w-full rounded-control border border-line-200 bg-surface py-3 pl-12 pr-12 text-body text-ink-950 outline-none transition-colors placeholder:text-ink-400 focus:border-brand-600 focus:ring-4 focus:ring-brand-600/15"
           />
           {query && (
             <button
               type="button"
-              onClick={() => { setQuery(''); inputRef.current?.focus(); }}
+              onClick={() => {
+                setQuery('');
+                inputRef.current?.focus();
+              }}
               aria-label="검색어 지우기"
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full bg-slate-300 text-slate-600"
+              className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-ink-600 hover:bg-line-100 focus-ring"
             >
-              <X size={14} />
+              <X size={20} aria-hidden />
             </button>
           )}
         </div>
 
-        <p className="text-sm font-bold text-slate-500 mt-4 mb-3">또는 종류를 선택하세요</p>
-        <div className="grid grid-cols-3 gap-2">
-          {CATEGORIES.map((cat) => {
-            const active = selectedCategory === cat;
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {ITEM_GROUP_ORDER.map((key) => {
+            const active = group === key;
             return (
               <button
-                key={cat}
+                key={key}
                 type="button"
-                onClick={() => handleCategoryClick(cat)}
-                className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-colors font-bold text-sm ${
+                onClick={() => handleGroup(key)}
+                aria-pressed={active}
+                className={`tap-md rounded-control border px-2 text-body font-semibold transition-colors focus-ring ${
                   active
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+                    ? 'border-brand-600 bg-brand-50 text-brand-800'
+                    : 'border-line-200 bg-surface text-ink-800 hover:border-brand-300'
                 }`}
               >
-                <span className="text-2xl">{CATEGORY_EMOJIS[cat]}</span>
-                <span>{CATEGORY_LABELS[cat]}</span>
+                {ITEM_GROUP_LABEL[key]}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 결과 */}
-      <div className="px-5 py-5">
-        {!showResults && (
-          <div className="text-center py-12">
-            <Search size={48} className="text-slate-200 mx-auto mb-3" />
-            <p className="text-base font-bold text-slate-400">
-              위에서 물품명을 검색하거나<br />종류를 선택해 보세요
-            </p>
-            <button
-              type="button"
-              onClick={handleGetLocation}
-              className="mt-4 text-sm text-blue-600 font-bold underline"
-            >
-              {userPos ? '📍 내 위치 확인됨' : '내 위치 허용하면 가까운 순서로 보여드려요'}
-            </button>
-          </div>
+      <div className="px-5 pb-[max(32px,env(safe-area-inset-bottom))] pt-5">
+        {!searching && <EmptyState title="찾고 싶은 물품을 입력해 주세요" />}
+
+        {searching && results.length === 0 && (
+          <EmptyState title="지금은 확인된 곳이 없어요">
+            <p className="text-body text-ink-600">다른 물품으로 찾아보시거나 잠시 뒤에 다시 봐 주세요.</p>
+          </EmptyState>
         )}
 
-        {showResults && results.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-lg font-black text-slate-700 mb-2">아직 재고가 없어요</p>
-            <p className="text-sm text-slate-500">
-              다른 물품을 검색하거나<br />나중에 다시 확인해 주세요.
-            </p>
-          </div>
-        )}
-
-        {showResults && results.length > 0 && (
+        {searching && results.length > 0 && (
           <>
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-base font-black text-slate-900">
-                {query.trim()
-                  ? `"${query}" 이(가) 있는 곳`
-                  : `${CATEGORY_EMOJIS[selectedCategory!]} ${CATEGORY_LABELS[selectedCategory!]}이 있는 곳`}
-              </h2>
-              <span className="text-sm text-slate-500">{results.length}곳</span>
-            </div>
-
-            <div className="space-y-3">
-              {results.map(({ site, matchedItems, distanceKm }) => (
-                <div
-                  key={site.id}
-                  className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100"
-                >
-                  {/* 지점 헤더 */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1">
-                      <p className="text-base font-black text-slate-900">{site.name}</p>
-                      {distanceKm !== undefined && (
-                        <p className="text-sm text-blue-600 font-bold mt-0.5">
-                          📍 내 위치에서 {formatDistance(distanceKm)}
-                        </p>
-                      )}
-                    </div>
-                    <span
-                      className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold text-white flex-shrink-0"
-                      style={{ backgroundColor: SITE_OVERALL_STATUS_COLORS[site.overallStatus] }}
-                    >
-                      {SITE_OVERALL_STATUS_LABELS[site.overallStatus]}
-                    </span>
-                  </div>
-
-                  {/* 해당 물품 */}
-                  <div className="mt-3 space-y-2">
-                    {matchedItems.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between">
-                        <span className="text-base text-slate-800">
-                          {item.emoji} {item.name}
-                        </span>
-                        <span
-                          className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold text-white"
-                          style={{ backgroundColor: STOCK_STATUS_COLORS[item.stockStatus] }}
-                        >
-                          {STOCK_STATUS_LABELS[item.stockStatus]}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* 버튼 */}
-                  <div className="flex gap-2 mt-3">
+            <p className="text-note text-ink-600">{results.length}곳에서 확인됐어요</p>
+            <ul className="mt-3 space-y-2">
+              {results.map(({ place, matched }) => {
+                const status = resolvePlaceStatus(place);
+                return (
+                  <li key={place.id}>
                     <button
                       type="button"
-                      onClick={() => handleShowOnMap(site.id)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm py-3 rounded-xl transition-colors"
+                      onClick={() => navigate(`/site/${place.id}`)}
+                      className="flex w-full items-center gap-3 rounded-card border border-line-200 bg-surface px-4 py-3.5 text-left transition-colors hover:border-brand-300 focus-ring"
                     >
-                      <MapPin size={16} />
-                      지도에서 보기
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-lead font-bold text-ink-950">
+                          {place.displayName}
+                        </span>
+                        <span className="mt-1 block text-body text-ink-800">
+                          {matched.map((m) => m.name).join(' · ')}
+                        </span>
+                        <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          {place.distanceKm !== null && (
+                            <span className="text-note font-semibold text-ink-800">
+                              {distanceText(place.distanceKm)}
+                            </span>
+                          )}
+                          <StatusChip status={status} />
+                        </span>
+                      </span>
+                      <ChevronRight size={20} className="shrink-0 text-ink-400" aria-hidden />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/site/${site.id}`)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-bold text-sm py-3 rounded-xl transition-colors"
-                    >
-                      상세 정보
-                      <ArrowRight size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  </li>
+                );
+              })}
+            </ul>
           </>
         )}
       </div>
-    </div>
+    </>
   );
 }

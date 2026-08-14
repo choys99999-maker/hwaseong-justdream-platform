@@ -1,36 +1,39 @@
-import { Link } from 'react-router-dom';
-import { ArrowLeft, PhoneCall } from 'lucide-react';
-import { CITIZEN_HELP_PHONE, CITIZEN_HELP_PHONE_DISPLAY } from '../../data/citizenContact';
+import { Phone } from 'lucide-react';
+import AppHeader from '../../components/citizen/ui/AppHeader';
 import HelpRequestForm from '../../components/citizen/HelpRequestForm';
-import BigButton from '../../components/citizen/BigButton';
+import { CITIZEN_HELP_PHONE } from '../../data/citizenContact';
 
 /**
- * 도움 요청. 정보를 확인해도 직접 거점까지 갈 수 없는 시민을 놓치지 않는 것이 목적이다.
- * 필수 입력만 받는다 — 주민번호·소득 증명·긴 사유서는 요구하지 않는다.
+ * 도움 요청.
+ *
+ * 한 화면에 한 목적 — "어떤 도움이 필요하세요?" 를 묻고 보내는 것까지가 전부다.
+ * 자격 확인·서류 안내·제도 설명은 넣지 않는다. 전화라는 다른 길은 화면 맨 아래
+ * 조용한 한 줄로만 둔다(주 행동과 경쟁하지 않게).
  */
 export default function CitizenHelpPage() {
   return (
-    <div className="px-5 py-6 pb-[max(40px,env(safe-area-inset-bottom))]">
-      <Link
-        to="/"
-        className="inline-flex min-h-[48px] items-center gap-1.5 text-lg font-medium text-slate-500 hover:text-teal-700"
-      >
-        <ArrowLeft size={20} aria-hidden /> 지도로 돌아가기
-      </Link>
+    <>
+      <AppHeader title="도움 요청" />
+      <div className="px-5 py-6 pb-[max(32px,env(safe-area-inset-bottom))]">
+        <h2 className="text-title text-ink-950">어떤 도움이 필요하세요?</h2>
+        <p className="mt-2 text-body text-ink-600">
+          알려주시면 담당자가 확인하고 연락드려요.
+        </p>
 
-      <h1 className="mt-3 text-[24px] font-bold leading-snug text-slate-900">도움이 필요하신가요?</h1>
-      <p className="mt-2 text-lg text-slate-600">연락처와 사는 동네만 알려주시면 담당자가 확인 후 연락드려요.</p>
+        <div className="mt-7">
+          <HelpRequestForm channel="CITIZEN" variant="citizen" doneLinkTo="/" doneLinkLabel="지도로 돌아가기" />
+        </div>
 
-      <div className="mt-5">
-        <BigButton href={`tel:${CITIZEN_HELP_PHONE}`} variant="outline" icon={PhoneCall}>
-          전화로 도와주세요
-        </BigButton>
-        <p className="mt-2 text-center text-base text-slate-400">{CITIZEN_HELP_PHONE_DISPLAY}</p>
+        <div className="mt-8 border-t border-line-100 pt-5">
+          <a
+            href={`tel:${CITIZEN_HELP_PHONE}`}
+            className="tap-md flex items-center justify-center gap-2 text-body text-ink-600 underline underline-offset-4 hover:text-brand-700 focus-ring"
+          >
+            <Phone size={18} aria-hidden />
+            직접 통화를 원하시면 {CITIZEN_HELP_PHONE}
+          </a>
+        </div>
       </div>
-
-      <div className="mt-6 border-t border-slate-100 pt-6">
-        <HelpRequestForm channel="CITIZEN" variant="citizen" doneLinkTo="/" doneLinkLabel="처음으로" />
-      </div>
-    </div>
+    </>
   );
 }
