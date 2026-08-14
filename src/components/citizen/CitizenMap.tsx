@@ -68,19 +68,13 @@ function createPinElement(site: CitizenSite): HTMLButtonElement {
 }
 
 /**
- * 읍·면·동 구분 색. 채도를 낮춘 8색을 순환시켜 이웃 구역이 서로 다른 색이 되게 한다.
- * 원색을 쓰면 지도가 알록달록해져 핀이 묻히므로, 전부 옅은 톤으로만 골랐다.
+ * 경계 색은 Primary 파랑 하나만 쓴다.
+ *
+ * 읍·면·동마다 다른 색을 칠어 보니 지도가 알록달록해져서, 정작 봐야 할 거점 핀이 묻혔다.
+ * 구역 구분은 "면 색"이 아니라 "경계선"이 하는 일이다 — 면은 화성시 전체를 아주 옅게
+ * 한 톤으로만 깔고, 선을 또렷하게 둬서 조용하면서도 구분은 되게 한다.
  */
-const AREA_COLORS = [
-  '#3b82f6', // blue
-  '#14b8a6', // teal
-  '#8b5cf6', // violet
-  '#f59e0b', // amber
-  '#10b981', // emerald
-  '#ec4899', // pink
-  '#6366f1', // indigo
-  '#84cc16', // lime
-];
+const BOUNDARY_COLOR = '#2563eb';
 
 /** 링의 부호 있는 면적. 양수면 반시계(CCW), 음수면 시계(CW). */
 function ringSignedArea(ring: [number, number][]): number {
@@ -102,8 +96,8 @@ function orientRing(ring: [number, number][], wantCCW: boolean): [number, number
  *
  * ① 화성시 바깥을 덮는 마스크 — 세계 사각형에서 화성시 외곽선을 구멍으로 뚫은 폴리곤 하나.
  *    우리가 맡은 건 화성시뿐이라 이웃 도시(수원·오산·평택)는 눌러 둔다.
- * ② 읍·면·동 29개를 실제 GIS 폴리곤 그대로, 각각 다른 옅은 색 면으로.
- * ③ 읍·면·동 경계선 — 면보다 또렷하게, 그러나 거점 핀을 이기지 않게.
+ * ② 읍·면·동 29개를 실제 GIS 폴리곤 그대로, 전부 같은 옅은 파랑 한 톤으로.
+ * ③ 읍·면·동 경계선 — 구역 구분은 색이 아니라 이 선이 한다.
  *
  * 폴리곤은 좌표 기반이라 확대·축소해도 경계가 그대로 따라간다.
  */
@@ -124,18 +118,15 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPol
     strokeWeight: 0,
     strokeOpacity: 0,
     fillColor: '#0f172a',
-    fillOpacity: 0.42,
+    fillOpacity: 0.34,
     zIndex: 1,
   });
   mask.setMap(map);
   shapes.push(mask);
 
-  // ② + ③ 읍·면·동 면과 경계선
-  let colorIndex = 0;
+  // ② + ③ 읍·면·동 면과 경계선 — 색은 전부 같고, 구분은 선이 한다.
   districtBoundaries.forEach((district) => {
     district.areas.forEach((area) => {
-      const color = AREA_COLORS[colorIndex++ % AREA_COLORS.length];
-
       area.polygons.forEach((polygon) => {
         const [outer, ...innerHoles] = polygon;
         if (!outer) return;
@@ -147,8 +138,8 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPol
           ],
           strokeWeight: 0,
           strokeOpacity: 0,
-          fillColor: color,
-          fillOpacity: 0.2,
+          fillColor: BOUNDARY_COLOR,
+          fillOpacity: 0.06,
           zIndex: 2,
         });
         fill.setMap(map);
@@ -158,9 +149,9 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPol
         polygon.forEach((ring) => {
           const line = new maps.Polyline({
             path: toPath(ring),
-            strokeWeight: 2,
-            strokeColor: color,
-            strokeOpacity: 0.85,
+            strokeWeight: 1.5,
+            strokeColor: BOUNDARY_COLOR,
+            strokeOpacity: 0.4,
             strokeStyle: 'solid',
             zIndex: 3,
           });
