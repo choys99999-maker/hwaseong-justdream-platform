@@ -438,41 +438,50 @@ body {
  * 시민용 그냥드림 지도 핀.
  * KakaoMap CustomOverlay 로 생성하는 DOM이라 전역 CSS로 정의한다.
  */
+/*
+ * 핀은 기본적으로 "동그란 마커" 하나다.
+ * 화성시 전체가 보이는 레벨에서 거점 이름 11개가 동시에 떠 있으면 글자끼리 겹쳐
+ * 지도가 읽히지 않는다 — 고령 사용자에게 특히 정신사납다.
+ * 이름은 충분히 확대했을 때(data-zoomed='true')만 마커 아래에 붙는다.
+ */
 .cj-pin {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px 7px 10px;
-  border-radius: 20px;
-  background: #ffffff;
-  border: 2.5px solid #e2e8f0;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.22);
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   white-space: nowrap;
   font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  transition: transform 120ms ease-in-out, box-shadow 120ms ease-in-out;
+  transition: transform 120ms ease-in-out;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.cj-pin:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.30);
+/* 터치 영역은 시각 크기보다 넓게 — 손가락으로 쉽게 눌러야 한다. */
+.cj-pin::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 44px;
+  height: 44px;
 }
 
-.cj-pin[data-selected='true'] {
-  border-color: #0d9488;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.30), 0 0 0 3px rgba(13, 148, 136, 0.28);
-  transform: translateY(-2px);
-  z-index: 10;
-}
+.cj-pin:hover { transform: translateY(-2px); }
 
 .cj-pin-dot {
-  width: 13px;
-  height: 13px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   flex-shrink: 0;
-  border: 2px solid rgba(255,255,255,0.6);
+  border: 3px solid #ffffff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+  transition: width 120ms ease-in-out, height 120ms ease-in-out, box-shadow 120ms ease-in-out;
 }
 
 .cj-pin[data-status='good'] .cj-pin-dot    { background: #16a34a; }
@@ -480,11 +489,51 @@ body {
 .cj-pin[data-status='low'] .cj-pin-dot     { background: #dc2626; }
 .cj-pin[data-status='empty'] .cj-pin-dot   { background: #9ca3af; }
 
+/* 선택된 핀은 확실히 커지고 파란 링이 붙는다 — 색만으로 구분하지 않는다. */
+.cj-pin[data-selected='true'] {
+  transform: translateY(-3px);
+  z-index: 10;
+}
+
+.cj-pin[data-selected='true'] .cj-pin-dot {
+  width: 30px;
+  height: 30px;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.4), 0 0 0 4px rgba(37, 99, 235, 0.55);
+}
+
+/*
+ * 이름표 — 기본은 숨김, 확대했을 때 또는 선택했을 때만 보인다.
+ * absolute 로 띄워야 이름 유무가 핀 높이를 바꾸지 않는다 → 마커가 좌표에서 흔들리지 않는다.
+ */
 .cj-pin-name {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.2);
   font-size: 13px;
   font-weight: 700;
-  color: #1e293b;
-  line-height: 1;
+  color: #111827;
+  line-height: 1.3;
+}
+
+.cj-pin[data-zoomed='true'] .cj-pin-name,
+.cj-pin[data-selected='true'] .cj-pin-name {
+  display: block;
+}
+
+.cj-pin[data-selected='true'] .cj-pin-name {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.45);
 }
 
 /* 현재 내 위치 파란 점 */

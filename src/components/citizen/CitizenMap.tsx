@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { LocateFixed, RotateCcw, MapPin } from 'lucide-react';
-import type { KakaoCustomOverlay, KakaoMap, KakaoMapsNamespace } from '../../types/kakao';
+import type {
+  KakaoCustomOverlay,
+  KakaoMap,
+  KakaoMapsNamespace,
+  KakaoPolygon,
+  KakaoPolyline,
+} from '../../types/kakao';
 import { MissingKakaoKeyError, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
-import { HWASEONG_BBOX } from '../../data/districtBoundaries';
+import { HWASEONG_FOCUS_BBOX, districtBoundaries } from '../../data/districtBoundaries';
 import {
   type CitizenSite,
   SITE_OVERALL_STATUS_COLORS,
@@ -30,12 +36,20 @@ interface MarkerEntry {
 
 const RELAYOUT_DEBOUNCE_MS = 160;
 
+/**
+ * 이 레벨 이하(= 더 확대)로 들어가야 거점 이름표를 띄운다.
+ * 카카오맵은 숫자가 작을수록 확대다. 화성시 전체는 레벨 9 정도라
+ * 그 상태에서 이름 11개가 다 뜨면 서로 겹쳐 읽히지 않는다.
+ */
+const LABEL_ZOOM_LEVEL = 6;
+
 function createPinElement(site: CitizenSite): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'cj-pin';
   btn.dataset.status = site.overallStatus;
   btn.dataset.selected = 'false';
+  btn.dataset.zoomed = 'false';
   btn.setAttribute(
     'aria-label',
     `${site.name} · ${SITE_OVERALL_STATUS_LABELS[site.overallStatus]}`,
@@ -75,6 +89,7 @@ export default function CitizenMap({
   const mapRef = useRef<KakaoMap | null>(null);
   const markersRef = useRef<MarkerEntry[]>([]);
   const myLocOverlayRef = useRef<KakaoCustomOverlay | null>(null);
+  const boundaryRef = useRef<Array<KakaoPolygon | KakaoPolyline>>([]);
   const cleanupRef = useRef<(() => void)[]>([]);
 
   const [phase, setPhase] = useState<MapPhase>('loading');
@@ -84,17 +99,27 @@ export default function CitizenMap({
   const handlersRef = useRef({ onSelectSite });
   handlersRef.current = { onSelectSite };
 
-  /** 화성시 전체 범위로 맞추기 */
+  /** 화성시 전체 범위로 맞추기. 서해 도서까지 넣으면 화면 대부분이 바다라 본토 범위를 쓴다. */
   const fitHwaseong = useCallback(() => {
     const maps = mapsRef.current;
     const map = mapRef.current;
     if (!maps || !map) return;
-    const [minLng, minLat, maxLng, maxLat] = HWASEONG_BBOX;
+    const [minLng, minLat, maxLng, maxLat] = HWASEONG_FOCUS_BBOX;
     const bounds = new maps.LatLngBounds(
       new maps.LatLng(minLat, minLng),
       new maps.LatLng(maxLat, maxLng),
     );
     map.setBounds(bounds, 40, 40, 40, 40);
+  }, []);
+
+  /** 지금 확대 레벨에 맞춰 핀 이름표를 켜고 끈다. */
+  const syncPinLabels = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const zoomed = map.getLevel() <= LABEL_ZOOM_LEVEL;
+    markersRef.current.forEach(({ element }) => {
+      element.dataset.zoomed = String(zoomed);
+    });
   }, []);
 
   /** 특정 지점으로 지도 이동 */
@@ -118,7 +143,7 @@ export default function CitizenMap({
         if (!mounted || !containerRef.current) return;
         mapsRef.current = maps;
 
-        const [minLng, minLat, maxLng, maxLat] = HWASEONG_BBOX;
+        const [minLng, minLat, maxLng, maxLat] = HWASEONG_FOCUS_BBOX;
         const map = new maps.Map(containerRef.current, {
           center: new maps.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2),
           level: 9,
@@ -126,10 +151,56 @@ export default function CitizenMap({
         map.addControl(new maps.ZoomControl(), maps.ControlPosition.RIGHT);
         mapRef.current = map;
 
+        /*
+         * 화성시 영역을 옅은 면 + 구별 외곽선으로 깔아 둔다.
+         * 카카오맵 레벨은 2배 단위라 화성시에 딱 맞출 수 없어 이웃 도시(수원·오산·평택)가
+         * 같이 보일 수밖에 없는데, 이 면이 있으면 "여기가 화성시" 가 설명 없이 읽힌다.
+         */
+        const shapes: Array<KakaoPolygon | KakaoPolyline> = [];
+        districtBoundaries.forEach((district) => {
+          district.outline.forEach((ring) => {
+            const path = ring.map(([lng, lat]) => new maps.LatLng(lat, lng));
+
+            // 면 — 화성시 안쪽임을 알려주는 아주 옅은 파랑
+            const fill = new maps.Polygon({
+              path,
+              strokeWeight: 0,
+              strokeOpacity: 0,
+              fillColor: '#2563eb',
+              fillOpacity: 0.07,
+              zIndex: 1,
+            });
+            fill.setMap(map);
+            shapes.push(fill);
+
+            // 구 경계선 — 면보다 또렷하게, 그러나 핀을 이기지 않게
+            const outline = new maps.Polyline({
+              path,
+              strokeWeight: 2,
+              strokeColor: '#2563eb',
+              strokeOpacity: 0.45,
+              strokeStyle: 'solid',
+              zIndex: 2,
+            });
+            outline.setMap(map);
+            shapes.push(outline);
+          });
+        });
+        boundaryRef.current = shapes;
+        cleanupRef.current.push(() => {
+          shapes.forEach((s) => s.setMap(null));
+          boundaryRef.current = [];
+        });
+
         // 배경 클릭 → 선택 해제
         const onBgClick = () => handlersRef.current.onSelectSite(null);
         maps.event.addListener(map, 'click', onBgClick);
         cleanupRef.current.push(() => maps.event.removeListener(map, 'click', onBgClick));
+
+        // 확대 레벨이 바뀌면 핀 이름표를 켜고 끈다
+        const onZoom = () => syncPinLabels();
+        maps.event.addListener(map, 'zoom_changed', onZoom);
+        cleanupRef.current.push(() => maps.event.removeListener(map, 'zoom_changed', onZoom));
 
         // 거점 마커 생성
         sites.forEach((site) => {
@@ -158,6 +229,7 @@ export default function CitizenMap({
         });
 
         fitHwaseong();
+        syncPinLabels();
         setPhase('ready');
       })
       .catch((error: unknown) => {

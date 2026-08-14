@@ -4,7 +4,7 @@ import {
   BookOpen,
   ChevronRight,
   HeartHandshake,
-  Home,
+  LifeBuoy,
   LocateFixed,
   MapPin,
   Menu,
@@ -334,11 +334,12 @@ function SiteBottomSheet({
 
 type NavigateFn = (path: string) => void;
 
+/** 아이콘은 기능이 서로 구분되게 고른다 — 색은 전부 Primary 하나로 통일한다. */
 const DRAWER_ITEMS = [
-  { icon: Search,        label: '물품 찾기',    path: '/items'    },
-  { icon: Home,          label: '도움 정보',    path: '/info'     },
-  { icon: MessageSquare, label: '말 남기기',    path: '/feedback' },
-  { icon: BookOpen,      label: '이용 안내',    path: '/guide'    },
+  { icon: Search,        label: '물품 찾기',  desc: '필요한 물품이 있는 곳을 찾아요', path: '/items'    },
+  { icon: LifeBuoy,      label: '도움 정보',  desc: '생활·주거·금융·일자리 도움',     path: '/info'     },
+  { icon: MessageSquare, label: '말 남기기',  desc: '익명으로 의견을 남겨요',        path: '/feedback' },
+  { icon: BookOpen,      label: '이용 안내',  desc: '처음이라면 여기부터',           path: '/guide'    },
 ] as const;
 
 function HomeDrawer({
@@ -396,15 +397,18 @@ function HomeDrawer({
 
         {/* 메뉴 항목 */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
-          {DRAWER_ITEMS.map(({ icon: Icon, label, path }) => (
+          {DRAWER_ITEMS.map(({ icon: Icon, label, desc, path }) => (
             <button
               key={path}
               type="button"
               onClick={() => go(path)}
-              className="flex min-h-[60px] w-full items-center gap-4 rounded-xl px-4 py-3 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              className="flex min-h-[64px] w-full items-center gap-4 rounded-xl px-4 py-3 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
             >
-              <Icon size={20} className="shrink-0 text-blue-600" aria-hidden />
-              <span className="text-[17px] font-semibold text-gray-800">{label}</span>
+              <Icon size={21} className="shrink-0 text-blue-600" aria-hidden />
+              <span className="min-w-0">
+                <span className="block text-[17px] font-semibold text-gray-800">{label}</span>
+                <span className="mt-0.5 block text-[13px] text-gray-400">{desc}</span>
+              </span>
             </button>
           ))}
         </nav>

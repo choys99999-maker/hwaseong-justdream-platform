@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search, MapPin, ArrowRight, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Search, MapPin, ArrowLeft, ArrowRight, X } from 'lucide-react';
 import {
   searchSitesByItem,
   searchSitesByCategory,
@@ -88,8 +88,20 @@ export default function ItemSearchPage() {
 
   return (
     <div className="min-h-full bg-slate-50 pb-10">
+      {/* 상단 — 지도로 돌아가기 */}
+      <div className="bg-white px-5 pt-[max(20px,env(safe-area-inset-top))]">
+        <Link
+          to="/"
+          className="inline-flex min-h-[48px] items-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-[16px] font-semibold text-gray-700 shadow-sm transition-colors hover:border-blue-300 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <ArrowLeft size={18} className="text-blue-600" aria-hidden />
+          지도로 돌아가기
+        </Link>
+        <h1 className="mt-4 text-[24px] font-bold leading-snug text-gray-900">물품 찾기</h1>
+      </div>
+
       {/* 검색 입력 */}
-      <div className="bg-white px-5 pt-5 pb-5 border-b border-slate-100 shadow-sm">
+      <div className="bg-white px-5 pt-4 pb-5 border-b border-slate-100 shadow-sm">
         <div className="relative">
           <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -98,7 +110,7 @@ export default function ItemSearchPage() {
             value={query}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="라면, 쌀, 생리대… 물품명을 입력하세요"
-            className="w-full bg-slate-100 rounded-2xl pl-12 pr-10 py-4 text-base font-medium text-slate-900 placeholder-slate-400 border-2 border-transparent focus:border-teal-500 focus:bg-white outline-none transition-colors"
+            className="w-full bg-slate-100 rounded-2xl pl-12 pr-10 py-4 text-base font-medium text-slate-900 placeholder-slate-400 border-2 border-transparent focus:border-blue-500 focus:bg-white outline-none transition-colors"
           />
           {query && (
             <button
@@ -123,7 +135,7 @@ export default function ItemSearchPage() {
                 onClick={() => handleCategoryClick(cat)}
                 className={`flex flex-col items-center gap-1.5 py-3 rounded-2xl border-2 transition-colors font-bold text-sm ${
                   active
-                    ? 'border-teal-500 bg-teal-50 text-teal-700'
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
                     : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                 }`}
               >
@@ -146,7 +158,7 @@ export default function ItemSearchPage() {
             <button
               type="button"
               onClick={handleGetLocation}
-              className="mt-4 text-sm text-teal-600 font-bold underline"
+              className="mt-4 text-sm text-blue-600 font-bold underline"
             >
               {userPos ? '📍 내 위치 확인됨' : '내 위치 허용하면 가까운 순서로 보여드려요'}
             </button>
@@ -184,7 +196,7 @@ export default function ItemSearchPage() {
                     <div className="flex-1">
                       <p className="text-base font-black text-slate-900">{site.name}</p>
                       {distanceKm !== undefined && (
-                        <p className="text-sm text-teal-600 font-bold mt-0.5">
+                        <p className="text-sm text-blue-600 font-bold mt-0.5">
                           📍 내 위치에서 {formatDistance(distanceKm)}
                         </p>
                       )}
@@ -219,7 +231,7 @@ export default function ItemSearchPage() {
                     <button
                       type="button"
                       onClick={() => handleShowOnMap(site.id)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-bold text-sm py-3 rounded-xl transition-colors"
+                      className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-sm py-3 rounded-xl transition-colors"
                     >
                       <MapPin size={16} />
                       지도에서 보기
