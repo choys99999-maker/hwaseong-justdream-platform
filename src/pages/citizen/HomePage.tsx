@@ -27,6 +27,7 @@ import {
   SITE_OVERALL_STATUS_COLORS,
   type CitizenSite,
 } from '../../data/citizenData';
+import { findAreaByPoint } from '../../data/districtBoundaries';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import type { AreaCentroid } from '../../data/mockSites';
 
@@ -226,6 +227,8 @@ function SiteBottomSheet({
   const open = isCurrentlyOpen(site);
   const availableItems = site.items.filter((i) => i.stockStatus !== 'none');
   const statusColor = SITE_OVERALL_STATUS_COLORS[site.overallStatus];
+  // 주소 문자열이 아니라 실제 경계 폴리곤으로 구·읍면동을 판정한다.
+  const area = findAreaByPoint(site.lat, site.lng);
 
   return (
     <div className="absolute inset-x-0 bottom-0 z-20">
@@ -239,9 +242,16 @@ function SiteBottomSheet({
           {/* 헤더 */}
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
+              {area && (
+                <p className="mb-1 flex items-center gap-1 text-[13px] font-semibold text-blue-600">
+                  <MapPin size={13} aria-hidden />
+                  {area.districtName} {area.areaName}
+                </p>
+              )}
               <h2 className="truncate text-[20px] font-bold leading-snug text-gray-900">
                 {site.name}
               </h2>
+              <p className="mt-0.5 text-[13px] text-gray-400">{site.facilityType}</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <span
                   className="text-[13px] font-semibold"

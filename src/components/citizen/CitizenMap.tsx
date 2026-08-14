@@ -67,6 +67,113 @@ function createPinElement(site: CitizenSite): HTMLButtonElement {
   return btn;
 }
 
+/**
+ * 읍·면·동 구분 색. 채도를 낮춘 8색을 순환시켜 이웃 구역이 서로 다른 색이 되게 한다.
+ * 원색을 쓰면 지도가 알록달록해져 핀이 묻히므로, 전부 옅은 톤으로만 골랐다.
+ */
+const AREA_COLORS = [
+  '#3b82f6', // blue
+  '#14b8a6', // teal
+  '#8b5cf6', // violet
+  '#f59e0b', // amber
+  '#10b981', // emerald
+  '#ec4899', // pink
+  '#6366f1', // indigo
+  '#84cc16', // lime
+];
+
+/** 링의 부호 있는 면적. 양수면 반시계(CCW), 음수면 시계(CW). */
+function ringSignedArea(ring: [number, number][]): number {
+  let sum = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    sum += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  }
+  return sum / 2;
+}
+
+/** 링을 원하는 방향으로 정규화한다. 구멍은 외곽선과 반대 방향이어야 nonzero 규칙에서 뚫린다. */
+function orientRing(ring: [number, number][], wantCCW: boolean): [number, number][] {
+  const isCCW = ringSignedArea(ring) > 0;
+  return isCCW === wantCCW ? ring : [...ring].reverse();
+}
+
+/**
+ * 화성시 경계를 그린다.
+ *
+ * ① 화성시 바깥을 덮는 마스크 — 세계 사각형에서 화성시 외곽선을 구멍으로 뚫은 폴리곤 하나.
+ *    우리가 맡은 건 화성시뿐이라 이웃 도시(수원·오산·평택)는 눌러 둔다.
+ * ② 읍·면·동 29개를 실제 GIS 폴리곤 그대로, 각각 다른 옅은 색 면으로.
+ * ③ 읍·면·동 경계선 — 면보다 또렷하게, 그러나 거점 핀을 이기지 않게.
+ *
+ * 폴리곤은 좌표 기반이라 확대·축소해도 경계가 그대로 따라간다.
+ */
+function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPolygon | KakaoPolyline> {
+  const shapes: Array<KakaoPolygon | KakaoPolyline> = [];
+  const toPath = (ring: [number, number][]) => ring.map(([lng, lat]) => new maps.LatLng(lat, lng));
+
+  // ① 바깥 마스크 — 외곽은 CCW, 구멍은 CW 로 맞춰야 확실히 뚫린다.
+  const world: [number, number][] = [
+    [124.0, 34.5],
+    [130.0, 34.5],
+    [130.0, 39.5],
+    [124.0, 39.5],
+  ];
+  const holes = districtBoundaries.flatMap((d) => d.outline).map((ring) => orientRing(ring, false));
+  const mask = new maps.Polygon({
+    path: [toPath(orientRing(world, true)), ...holes.map(toPath)],
+    strokeWeight: 0,
+    strokeOpacity: 0,
+    fillColor: '#0f172a',
+    fillOpacity: 0.42,
+    zIndex: 1,
+  });
+  mask.setMap(map);
+  shapes.push(mask);
+
+  // ② + ③ 읍·면·동 면과 경계선
+  let colorIndex = 0;
+  districtBoundaries.forEach((district) => {
+    district.areas.forEach((area) => {
+      const color = AREA_COLORS[colorIndex++ % AREA_COLORS.length];
+
+      area.polygons.forEach((polygon) => {
+        const [outer, ...innerHoles] = polygon;
+        if (!outer) return;
+
+        const fill = new maps.Polygon({
+          path: [
+            toPath(orientRing(outer, true)),
+            ...innerHoles.map((h) => toPath(orientRing(h, false))),
+          ],
+          strokeWeight: 0,
+          strokeOpacity: 0,
+          fillColor: color,
+          fillOpacity: 0.2,
+          zIndex: 2,
+        });
+        fill.setMap(map);
+        shapes.push(fill);
+
+        // 경계선은 링마다 따로 그린다 — 구멍 경계도 보여야 구역이 정확히 읽힌다.
+        polygon.forEach((ring) => {
+          const line = new maps.Polyline({
+            path: toPath(ring),
+            strokeWeight: 2,
+            strokeColor: color,
+            strokeOpacity: 0.85,
+            strokeStyle: 'solid',
+            zIndex: 3,
+          });
+          line.setMap(map);
+          shapes.push(line);
+        });
+      });
+    });
+  });
+
+  return shapes;
+}
+
 function createMyLocElement(): HTMLDivElement {
   const wrap = document.createElement('div');
   wrap.className = 'cj-my-loc';
@@ -151,44 +258,9 @@ export default function CitizenMap({
         map.addControl(new maps.ZoomControl(), maps.ControlPosition.RIGHT);
         mapRef.current = map;
 
-        /*
-         * 화성시 영역을 옅은 면 + 구별 외곽선으로 깔아 둔다.
-         * 카카오맵 레벨은 2배 단위라 화성시에 딱 맞출 수 없어 이웃 도시(수원·오산·평택)가
-         * 같이 보일 수밖에 없는데, 이 면이 있으면 "여기가 화성시" 가 설명 없이 읽힌다.
-         */
-        const shapes: Array<KakaoPolygon | KakaoPolyline> = [];
-        districtBoundaries.forEach((district) => {
-          district.outline.forEach((ring) => {
-            const path = ring.map(([lng, lat]) => new maps.LatLng(lat, lng));
-
-            // 면 — 화성시 안쪽임을 알려주는 아주 옅은 파랑
-            const fill = new maps.Polygon({
-              path,
-              strokeWeight: 0,
-              strokeOpacity: 0,
-              fillColor: '#2563eb',
-              fillOpacity: 0.07,
-              zIndex: 1,
-            });
-            fill.setMap(map);
-            shapes.push(fill);
-
-            // 구 경계선 — 면보다 또렷하게, 그러나 핀을 이기지 않게
-            const outline = new maps.Polyline({
-              path,
-              strokeWeight: 2,
-              strokeColor: '#2563eb',
-              strokeOpacity: 0.45,
-              strokeStyle: 'solid',
-              zIndex: 2,
-            });
-            outline.setMap(map);
-            shapes.push(outline);
-          });
-        });
-        boundaryRef.current = shapes;
+        boundaryRef.current = drawBoundaries(maps, map);
         cleanupRef.current.push(() => {
-          shapes.forEach((s) => s.setMap(null));
+          boundaryRef.current.forEach((s) => s.setMap(null));
           boundaryRef.current = [];
         });
 
