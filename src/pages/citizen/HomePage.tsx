@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   BookOpen,
   ChevronRight,
+  HandHeart,
   HeartHandshake,
   LifeBuoy,
   LocateFixed,
@@ -10,6 +11,7 @@ import {
   Menu,
   MessageSquare,
   Navigation,
+  PackagePlus,
   Phone,
   Search,
   X,
@@ -337,6 +339,7 @@ type NavigateFn = (path: string) => void;
 /** 아이콘은 기능이 서로 구분되게 고른다 — 색은 전부 Primary 하나로 통일한다. */
 const DRAWER_ITEMS = [
   { icon: Search,        label: '물품 찾기',  desc: '필요한 물품이 있는 곳을 찾아요', path: '/items'    },
+  { icon: PackagePlus,   label: '물품 기부',  desc: '사진 한 장으로 기부해요',       path: '/donate'   },
   { icon: LifeBuoy,      label: '도움 정보',  desc: '생활·주거·금융·일자리 도움',     path: '/info'     },
   { icon: MessageSquare, label: '말 남기기',  desc: '익명으로 의견을 남겨요',        path: '/feedback' },
   { icon: BookOpen,      label: '이용 안내',  desc: '처음이라면 여기부터',           path: '/guide'    },
@@ -397,6 +400,24 @@ function HomeDrawer({
 
         {/* 메뉴 항목 */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
+          {/*
+            찾아가서드림은 "직접 올 수 없는 분" 을 위한 기능이라
+            목록에 섞어두면 정작 필요한 사람이 못 찾는다 — 맨 위에 카드로 띄운다.
+          */}
+          <button
+            type="button"
+            onClick={() => go('/delivery')}
+            className="mb-3 flex w-full items-start gap-3 rounded-2xl bg-blue-600 px-4 py-4 text-left shadow-md transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-blue-500/40"
+          >
+            <HandHeart size={22} className="mt-0.5 shrink-0 text-blue-200" aria-hidden />
+            <span className="min-w-0">
+              <span className="block text-[17px] font-black text-white">찾아가서드림</span>
+              <span className="mt-0.5 block text-[13px] leading-snug text-blue-100">
+                못 오시면, 저희가 갑니다
+              </span>
+            </span>
+          </button>
+
           {DRAWER_ITEMS.map(({ icon: Icon, label, desc, path }) => (
             <button
               key={path}

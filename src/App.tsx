@@ -16,6 +16,7 @@ import CitizenDonatePage from './pages/citizen/CitizenDonatePage';
 // 시민용 신규 페이지 (지도 + 물품 찾기)
 import MapPage from './pages/citizen/MapPage';
 import ItemSearchPage from './pages/citizen/ItemSearchPage';
+import DeliveryRequestPage from './pages/citizen/DeliveryRequestPage';
 
 // 관리자 페이지
 import DashboardPage from './pages/DashboardPage';
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/discover" element={<CitizenHomePage />} />
         <Route path="/map" element={<MapPage />} />
         <Route path="/items" element={<ItemSearchPage />} />
+        <Route path="/delivery" element={<DeliveryRequestPage />} />
         <Route path="/site/:id" element={<CitizenSiteDetailPage />} />
         <Route path="/help" element={<CitizenHelpPage />} />
         <Route path="/easy" element={<CitizenEasyModePage />} />
