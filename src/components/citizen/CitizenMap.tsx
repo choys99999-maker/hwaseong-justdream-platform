@@ -17,6 +17,8 @@ interface CitizenMapProps {
   onSelectSite: (siteId: string | null) => void;
   /** 이 값이 바뀌면 해당 지점으로 지도를 이동하고 선택 상태로 만든다 */
   focusSiteId?: string | null;
+  /** true 이면 내부 컨트롤 버튼·범례를 숨긴다 (홈 화면 등 외부에서 제어할 때 사용) */
+  hideControls?: boolean;
   className?: string;
 }
 
@@ -65,6 +67,7 @@ export default function CitizenMap({
   selectedSiteId,
   onSelectSite,
   focusSiteId,
+  hideControls = false,
   className = '',
 }: CitizenMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -269,7 +272,7 @@ export default function CitizenMap({
       />
 
       {/* 오른쪽 하단 컨트롤 버튼 */}
-      {phase === 'ready' && (
+      {phase === 'ready' && !hideControls && (
         <div className="absolute bottom-5 left-4 flex flex-col gap-2 z-10">
           {/* 내 위치 */}
           <button
@@ -307,7 +310,7 @@ export default function CitizenMap({
       )}
 
       {/* 지도 범례 */}
-      {phase === 'ready' && (
+      {phase === 'ready' && !hideControls && (
         <div className="absolute top-3 left-3 z-10 bg-white/95 rounded-xl px-3 py-2 shadow border border-slate-100">
           <p className="text-xs font-bold text-slate-500 mb-1.5">재고 현황</p>
           {(Object.entries(SITE_OVERALL_STATUS_LABELS) as [string, string][]).map(([status, label]) => (
