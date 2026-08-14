@@ -11,7 +11,7 @@ import { test, expect, type Page, type Route } from '@playwright/test';
 const PROXY = process.env.JUPYTERHUB_SERVICE_PREFIX
   ? `${process.env.JUPYTERHUB_SERVICE_PREFIX}proxy/absolute/5173`
   : '';
-const BASE = `http://localhost:5173${PROXY}`;
+const BASE = process.env.E2E_BASE_URL ?? `http://localhost:5173${PROXY}`;
 const FAKE_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64',
@@ -57,15 +57,14 @@ test.describe('물품 기부 AI flow — 390×844', () => {
     await pickFile(page);
 
     await expect(page.getByText('라면 5개로 보여요')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('사진에서 자동으로 확인했어요')).toBeVisible();
-
+    
     await page.getByRole('button', { name: '맞아요' }).click();
     await expect(page.getByRole('heading', { name: '어떻게 전달할까요?' })).toBeVisible();
 
     await page.getByRole('combobox').selectOption('동탄5동');
     await page.getByRole('button', { name: '직접 가져갈게요' }).click();
-    await page.getByRole('button', { name: '기부 요청 보내기' }).click();
-    await expect(page.getByRole('heading', { name: '기부 요청을 보냈어요.' })).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: '나눔 보내기' }).click();
+    await expect(page.getByRole('heading', { name: '나눔을 보냈어요' })).toBeVisible({ timeout: 10000 });
   });
 
   test('AI 수량 null — 사용자가 수량 스테퍼로 입력', async ({ page }) => {
@@ -84,9 +83,9 @@ test.describe('물품 기부 AI flow — 390×844', () => {
     await expect(page.getByText('라면으로 보여요')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('몇 개인가요?')).toBeVisible();
 
-    await page.getByRole('button', { name: '수량 늘리기' }).click();
-    await page.getByRole('button', { name: '수량 늘리기' }).click();
-    await expect(page.getByText('3')).toBeVisible();
+    await page.getByRole('button', { name: '하나 늘리기' }).click();
+    await page.getByRole('button', { name: '하나 늘리기' }).click();
+    await expect(page.getByLabel('선택한 수량')).toHaveText('3');
 
     await page.getByRole('button', { name: '맞아요' }).click();
     await expect(page.getByRole('heading', { name: '어떻게 전달할까요?' })).toBeVisible();
@@ -113,10 +112,10 @@ test.describe('물품 기부 AI flow — 390×844', () => {
     await page.goto(`${BASE}/donate`);
     await pickFile(page);
 
-    await expect(page.getByText('사진에서 자동으로 확인했어요')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByLabel('1번째 품목명')).toHaveValue('라면');
-    await expect(page.getByLabel('2번째 품목명')).toHaveValue('생수');
-    await expect(page.getByLabel('3번째 품목명')).toHaveValue('휴지');
+    await expect(page.getByText('3가지로 보여요')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByLabel('1번째 물품 이름')).toHaveValue('라면');
+    await expect(page.getByLabel('2번째 물품 이름')).toHaveValue('생수');
+    await expect(page.getByLabel('3번째 물품 이름')).toHaveValue('휴지');
 
     await page.getByRole('button', { name: '맞아요' }).click();
     await expect(page.getByRole('heading', { name: '어떻게 전달할까요?' })).toBeVisible();
@@ -136,9 +135,9 @@ test.describe('물품 기부 AI flow — 390×844', () => {
     await pickFile(page);
 
     await expect(page.getByText('물품을 정확히 확인하기 어려워요.')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByLabel('품목명')).toBeVisible();
+    await expect(page.getByLabel('무엇인가요?')).toBeVisible();
 
-    await page.getByLabel('품목명').fill('쌀');
+    await page.getByLabel('무엇인가요?').fill('쌀');
     await page.getByRole('button', { name: '다음' }).click();
     await expect(page.getByRole('heading', { name: '어떻게 전달할까요?' })).toBeVisible();
   });
@@ -152,16 +151,16 @@ test.describe('물품 기부 AI flow — 390×844', () => {
     await page.goto(`${BASE}/donate`);
     await pickFile(page);
 
-    await expect(page.getByText('자동으로 확인하지 못했어요. 품목만 직접 알려주세요.')).toBeVisible({ timeout: 15000 });
-    await page.getByLabel('품목명').fill('기저귀');
+    await expect(page.getByText('사진만으로는 확인이 어려워요. 무엇인지 알려주세요.')).toBeVisible({ timeout: 15000 });
+    await page.getByLabel('무엇인가요?').fill('기저귀');
     await page.getByRole('button', { name: '다음' }).click();
     await expect(page.getByRole('heading', { name: '어떻게 전달할까요?' })).toBeVisible();
 
     await page.getByRole('combobox').selectOption('동탄5동');
-    await page.getByRole('button', { name: '수거가 필요해요' }).click();
+    await page.getByRole('button', { name: '가지러 와주세요' }).click();
     await page.getByLabel('연락받을 번호').fill('010-0000-0000');
-    await page.getByRole('button', { name: '기부 요청 보내기' }).click();
-    await expect(page.getByRole('heading', { name: '기부 요청을 보냈어요.' })).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: '나눔 보내기' }).click();
+    await expect(page.getByRole('heading', { name: '나눔을 보냈어요' })).toBeVisible({ timeout: 10000 });
   });
 
   test('사용자 수정 — AI 라면 → 컵라면으로 수정 후 저장', async ({ page }) => {
@@ -183,15 +182,15 @@ test.describe('물품 기부 AI flow — 390×844', () => {
     await pickFile(page);
     await expect(page.getByText('라면 3개로 보여요')).toBeVisible({ timeout: 15000 });
 
-    await page.getByRole('button', { name: '수정하기' }).click();
-    await expect(page.getByLabel('품목명')).toHaveValue('라면');
-    await page.getByLabel('품목명').fill('컵라면');
+    await page.getByRole('button', { name: '수정', exact: true }).click();
+    await expect(page.getByLabel('무엇인가요?')).toHaveValue('라면');
+    await page.getByLabel('무엇인가요?').fill('컵라면');
     await page.getByRole('button', { name: '다음' }).click();
 
     await page.getByRole('combobox').selectOption('동탄5동');
     await page.getByRole('button', { name: '직접 가져갈게요' }).click();
-    await page.getByRole('button', { name: '기부 요청 보내기' }).click();
-    await expect(page.getByRole('heading', { name: '기부 요청을 보냈어요.' })).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: '나눔 보내기' }).click();
+    await expect(page.getByRole('heading', { name: '나눔을 보냈어요' })).toBeVisible({ timeout: 10000 });
 
     expect(capturedBody?.p_item_name).toBe('컵라면');
   });

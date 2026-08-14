@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
-import { Camera, CheckCircle2, Images, Minus, Navigation, Plus, RefreshCw, Trash2, X } from 'lucide-react';
-import CitizenPageHeader from '../../components/citizen/CitizenPageHeader';
-import BigButton from '../../components/citizen/BigButton';
-import { useCitizenSites } from '../../hooks/useCitizenSites';
-import { recommendCitizenSites } from '../../utils/citizenSite';
-import { formatDistance, kakaoDirectionsUrl } from '../../lib/geo';
+import { Camera, Images, Minus, Navigation, Plus, RefreshCw, Trash2, X } from 'lucide-react';
+import AppHeader from '../../components/citizen/ui/AppHeader';
+import Button from '../../components/citizen/ui/Button';
+import { ChoiceGroup, Field, Select, TextInput } from '../../components/citizen/ui/Form';
+import { DonePanel, ErrorNote, Loading } from '../../components/citizen/ui/Feedback';
+import { useCitizenPlaces } from '../../hooks/useCitizenPlaces';
+import { distanceText, recommendPlaces } from '../../utils/citizenPlace';
+import { kakaoDirectionsUrl } from '../../lib/geo';
 import { AREA_LIST } from '../../data/mockSites';
 import {
   analyzeImage,
@@ -23,9 +25,19 @@ interface EditableItem {
   quantityWasNull: boolean;
 }
 
+const METHODS = [
+  { value: 'SELF_DELIVER', label: '직접 가져갈게요' },
+  { value: 'PICKUP_NEEDED', label: '가지러 와주세요' },
+] as const;
+
 /**
- * Drawer → 물품 기부. 사진 찍기 → AI 물품 인식 → 사용자 확인 →
- * 전달 방법(직접 가져갈게요 / 수거가 필요해요) → 완료.
+ * 물품 기부.
+ *
+ * AI 를 자랑하지 않는다 — "Gemini Vision" 같은 말은 화면 어디에도 없다. 사용자가 느껴야 할 것은
+ * **"사진 찍었더니 알아서 입력됐다"** 하나뿐이라, 인식 결과도 배지나 신뢰도가 아니라
+ * "라면 5개로 보여요" 라는 한 문장과 [맞아요] / [수정] 두 개의 선택으로만 낸다.
+ *
+ * 업로드·인식·저장 로직은 기존 그대로다(Supabase Storage → Edge Function → donations).
  */
 export default function CitizenDonatePage() {
   const [stage, setStage] = useState<Stage>('photo');
@@ -47,12 +59,12 @@ export default function CitizenDonatePage() {
   const galleryRef = useRef<HTMLInputElement>(null);
   const versionRef = useRef(0);
 
-  const { sites } = useCitizenSites();
+  const { places } = useCitizenPlaces();
   const area = useMemo(() => AREA_LIST.find((a) => a.area === region) ?? null, [region]);
-  const recommendedSite = useMemo(() => {
+  const target = useMemo(() => {
     if (!area || method !== 'SELF_DELIVER') return null;
-    return recommendCitizenSites(sites, { lat: area.lat, lng: area.lng }, 1)[0] ?? null;
-  }, [area, method, sites]);
+    return recommendPlaces(places, { lat: area.lat, lng: area.lng }, 1)[0] ?? null;
+  }, [area, method, places]);
 
   async function handlePick(file: File | undefined) {
     if (!file) return;
@@ -74,7 +86,7 @@ export default function CitizenDonatePage() {
     } catch {
       if (versionRef.current !== v) return;
       setSub('manual');
-      setAiNote('사진을 저장하지 못했어요. 품목을 직접 입력해 주세요.');
+      setAiNote('사진을 저장하지 못했어요. 무엇인지 직접 알려주세요.');
       return;
     }
 
@@ -88,7 +100,7 @@ export default function CitizenDonatePage() {
 
       if (result.needs_review || result.items.length === 0) {
         setSub('manual');
-        setAiNote(result.message ?? '물품을 정확히 확인하기 어려워요.');
+        setAiNote(result.message ?? '사진만으로는 확인이 어려워요. 무엇인지 알려주세요.');
         return;
       }
 
@@ -105,7 +117,8 @@ export default function CitizenDonatePage() {
     } catch {
       if (versionRef.current !== v) return;
       setSub('manual');
-      setAiNote(null);
+      // 원인(네트워크·서버 오류)은 사용자에게 알려 줄 이유가 없다 — 다음에 할 일만 말한다.
+      setAiNote('사진만으로는 확인이 어려워요. 무엇인지 알려주세요.');
     }
   }
 
@@ -132,7 +145,7 @@ export default function CitizenDonatePage() {
     setAiItems((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  function goToManualFromResult() {
+  function goToManual() {
     setManualName(aiItems[0]?.name ?? '');
     setManualQty(aiItems[0]?.quantity ?? 1);
     setSub('manual');
@@ -160,7 +173,7 @@ export default function CitizenDonatePage() {
         region,
         donationMethod: method,
         donorContact: method === 'PICKUP_NEEDED' ? contact.trim() : undefined,
-        targetSiteId: method === 'SELF_DELIVER' ? (recommendedSite?.id ?? undefined) : undefined,
+        targetSiteId: method === 'SELF_DELIVER' ? (target?.id ?? undefined) : undefined,
       };
 
       if (uploadedPath) {
@@ -177,374 +190,302 @@ export default function CitizenDonatePage() {
           ...shared,
         });
       } else {
-        throw new Error('사진이 없습니다. 다시 시도해 주세요.');
+        throw new Error('사진이 없어요. 다시 시도해 주세요.');
       }
 
       setStage('done');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '기부 접수에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+      console.error('[CitizenDonatePage]', err);
+      setError('보내지 못했어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  // ─── Done ───────────────────────────────────────────────────────────────────
+  // ─── 완료 ───────────────────────────────────────────────────────────────────
 
   if (stage === 'done') {
     return (
-      <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-teal-50 text-teal-600">
-          <CheckCircle2 size={36} aria-hidden />
-        </span>
-        <h1 className="text-2xl font-bold text-slate-900">기부 요청을 보냈어요.</h1>
-        <p className="text-lg text-slate-600">담당자가 확인 후 연락드릴게요. 나눠주셔서 감사해요.</p>
-        <div className="mt-4 w-full max-w-xs">
-          <BigButton to="/" variant="secondary">
-            지도로 돌아가기
-          </BigButton>
-        </div>
-      </div>
+      <>
+        <AppHeader title="물품 기부" backTo="/" />
+        <DonePanel title="나눔을 보냈어요" description="담당자가 확인하고 연락드릴게요. 고맙습니다." />
+      </>
     );
   }
 
-  // ─── Method ─────────────────────────────────────────────────────────────────
+  // ─── 전달 방법 ──────────────────────────────────────────────────────────────
 
   if (stage === 'method') {
     return (
-      <div className="px-0 pb-[max(40px,env(safe-area-inset-bottom))]">
-        <div className="px-5 pt-6">
-          <button
-            type="button"
-            onClick={() => setStage('photo')}
-            className="inline-flex min-h-[48px] items-center text-lg font-medium text-slate-500 hover:text-teal-700"
-          >
-            ← 사진 다시 보기
-          </button>
-          <h1 className="mt-3 text-[24px] font-bold leading-snug text-slate-900">어떻게 전달할까요?</h1>
-        </div>
+      <>
+        <AppHeader title="물품 기부" onBack={() => setStage('photo')} />
+        <div className="px-5 py-6 pb-[max(32px,env(safe-area-inset-bottom))]">
+          <h2 className="text-title text-ink-950">어떻게 전달할까요?</h2>
 
-        <div className="mt-5 space-y-5 px-5">
-          <div>
-            <label htmlFor="donate-region" className="mb-2 block text-lg font-bold text-slate-800">
-              사는 동네
-            </label>
-            <select
-              id="donate-region"
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              className="min-h-[56px] w-full rounded-xl border-2 border-slate-300 bg-white px-4 py-3.5 text-lg text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-500/20"
-            >
-              <option value="">선택해 주세요</option>
-              {AREA_LIST.map((a) => (
-                <option key={a.area} value={a.area}>
-                  {a.area}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="mt-6 space-y-6">
+            <Field label="사는 동네" htmlFor="donate-region">
+              <Select id="donate-region" value={region} onChange={(e) => setRegion(e.target.value)}>
+                <option value="">선택해 주세요</option>
+                {AREA_LIST.map((a) => (
+                  <option key={a.area} value={a.area}>
+                    {a.area}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-          <div className="grid grid-cols-1 gap-2.5">
-            {(
-              [
-                { value: 'SELF_DELIVER', label: '직접 가져갈게요' },
-                { value: 'PICKUP_NEEDED', label: '수거가 필요해요' },
-              ] as const
-            ).map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setMethod(opt.value)}
-                aria-pressed={method === opt.value}
-                className={`min-h-[56px] rounded-xl border-2 px-4 py-3 text-left text-lg font-semibold transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40 ${
-                  method === opt.value
-                    ? 'border-teal-600 bg-teal-50 text-teal-800'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-teal-400'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+            <ChoiceGroup label="전달 방법" choices={METHODS} value={method} onChange={setMethod} />
 
-          {method === 'SELF_DELIVER' && area && recommendedSite && (
-            <div className="rounded-2xl border-2 border-teal-600 bg-teal-50/40 p-4">
-              <p className="text-base font-semibold text-teal-800">이 거점으로 가져다주세요</p>
-              <h2 className="mt-1 text-xl font-bold text-slate-900">{recommendedSite.displayName}</h2>
-              <p className="mt-1 text-base text-slate-600">
-                {recommendedSite.distanceKm !== null
-                  ? formatDistance(recommendedSite.distanceKm)
-                  : recommendedSite.address}
-              </p>
-              <div className="mt-3">
-                <BigButton
-                  href={kakaoDirectionsUrl(recommendedSite.name, { lat: recommendedSite.lat, lng: recommendedSite.lng })}
-                  icon={Navigation}
-                  size="md"
-                >
-                  길찾기
-                </BigButton>
+            {method === 'SELF_DELIVER' && target && (
+              <div className="rounded-card border border-brand-200 bg-brand-50 p-4">
+                <p className="text-note font-bold text-brand-700">여기로 가져다주세요</p>
+                <p className="mt-1 text-section text-ink-950">{target.displayName}</p>
+                {target.distanceKm !== null && (
+                  <p className="mt-1 text-body text-ink-600">
+                    {region}에서 {distanceText(target.distanceKm)}
+                  </p>
+                )}
+                <div className="mt-4">
+                  <Button
+                    href={kakaoDirectionsUrl(target.name, { lat: target.lat, lng: target.lng })}
+                    icon={Navigation}
+                    variant="secondary"
+                    size="md"
+                  >
+                    길찾기
+                  </Button>
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {method === 'PICKUP_NEEDED' && (
-            <div>
-              <label htmlFor="donate-contact" className="mb-2 block text-lg font-bold text-slate-800">
-                연락받을 번호
-              </label>
-              <input
-                id="donate-contact"
-                type="tel"
-                inputMode="tel"
-                autoComplete="tel"
-                value={contact}
-                onChange={(e) => setContact(e.target.value)}
-                placeholder="010-0000-0000"
-                className="min-h-[56px] w-full rounded-xl border-2 border-slate-300 px-4 py-3.5 text-lg text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-500/20"
-              />
-            </div>
-          )}
+            {method === 'PICKUP_NEEDED' && (
+              <Field label="연락받을 번호" htmlFor="donate-contact">
+                <TextInput
+                  id="donate-contact"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  value={contact}
+                  onChange={(e) => setContact(e.target.value)}
+                  placeholder="010-0000-0000"
+                />
+              </Field>
+            )}
 
-          {error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-base text-rose-700">{error}</p>}
+            {error && <ErrorNote>{error}</ErrorNote>}
 
-          <BigButton onClick={handleSubmit} disabled={!canSubmit}>
-            {submitting ? '보내는 중...' : '기부 요청 보내기'}
-          </BigButton>
+            <Button onClick={handleSubmit} disabled={!canSubmit}>
+              {submitting ? '보내는 중이에요' : '나눔 보내기'}
+            </Button>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
-  // ─── Photo ──────────────────────────────────────────────────────────────────
+  // ─── 사진 ───────────────────────────────────────────────────────────────────
 
-  const analyzing = sub === 'uploading' || sub === 'analyzing';
+  const working = sub === 'uploading' || sub === 'analyzing';
+  const single = sub === 'result' && aiItems.length === 1;
+  const multiple = sub === 'result' && aiItems.length > 1;
 
   return (
-    <div className="px-0 pb-[max(40px,env(safe-area-inset-bottom))]">
-      <CitizenPageHeader title="무엇을 나눌까요?" />
+    <>
+      <AppHeader title="물품 기부" />
+      <div className="px-5 py-6 pb-[max(32px,env(safe-area-inset-bottom))]">
+        <h2 className="text-title text-ink-950">무엇을 나눌까요?</h2>
 
-      <div className="mt-5 space-y-5 px-5">
-        {/* Photo preview / picker */}
-        {previewUrl ? (
-          <div className="overflow-hidden rounded-2xl border border-slate-200">
-            <img src={previewUrl} alt="기부할 물품 사진" className="aspect-square w-full object-cover" />
-            {!analyzing && (
-              <div className="flex gap-2 border-t border-slate-200 bg-white p-2.5">
-                <button
-                  type="button"
-                  onClick={() => cameraRef.current?.click()}
-                  className="flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-xl text-base font-semibold text-slate-600 hover:bg-slate-50"
-                >
-                  <RefreshCw size={17} aria-hidden /> 교체
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRemovePhoto}
-                  className="flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-xl text-base font-semibold text-rose-600 hover:bg-rose-50"
-                >
-                  <Trash2 size={17} aria-hidden /> 삭제
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-2.5">
-            <BigButton onClick={() => cameraRef.current?.click()} icon={Camera}>
-              사진 찍기
-            </BigButton>
-            <BigButton onClick={() => galleryRef.current?.click()} variant="secondary" icon={Images}>
-              사진에서 선택
-            </BigButton>
-          </div>
-        )}
+        <div className="mt-6 space-y-5">
+          {previewUrl ? (
+            <div className="overflow-hidden rounded-card border border-line-200">
+              <img src={previewUrl} alt="나눌 물품 사진" className="aspect-square w-full object-cover" />
+              {!working && (
+                <div className="flex gap-1 border-t border-line-100 bg-surface p-2">
+                  <button
+                    type="button"
+                    onClick={() => cameraRef.current?.click()}
+                    className="tap-md flex flex-1 items-center justify-center gap-1.5 rounded-control text-body font-semibold text-ink-600 hover:bg-line-100 focus-ring"
+                  >
+                    <RefreshCw size={18} aria-hidden /> 다시 찍기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemovePhoto}
+                    className="tap-md flex flex-1 items-center justify-center gap-1.5 rounded-control text-body font-semibold text-stop-600 hover:bg-stop-50 focus-ring"
+                  >
+                    <Trash2 size={18} aria-hidden /> 지우기
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Button onClick={() => cameraRef.current?.click()} icon={Camera}>
+                사진 찍기
+              </Button>
+              <Button onClick={() => galleryRef.current?.click()} variant="secondary" size="md" icon={Images}>
+                사진에서 선택
+              </Button>
+            </div>
+          )}
 
-        <input
-          ref={cameraRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => handlePick(e.target.files?.[0])}
-        />
-        <input
-          ref={galleryRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => handlePick(e.target.files?.[0])}
-        />
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => handlePick(e.target.files?.[0])}
+          />
+          <input
+            ref={galleryRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => handlePick(e.target.files?.[0])}
+          />
 
-        {/* Uploading / Analyzing */}
-        {analyzing && (
-          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-            <span
-              className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-teal-600"
-              aria-hidden
-            />
-            <p className="text-base font-medium text-slate-700">
-              {sub === 'uploading' ? '사진을 올리는 중...' : '물품을 확인하고 있어요...'}
-            </p>
-          </div>
-        )}
+          {working && <Loading label={sub === 'uploading' ? '사진을 올리고 있어요' : '무엇인지 보고 있어요'} />}
 
-        {/* AI result — single item */}
-        {sub === 'result' && aiItems.length === 1 && (
-          <>
-            <div className="rounded-2xl border-2 border-teal-600 bg-teal-50/40 px-4 py-4">
-              <p className="text-sm font-medium text-teal-700">사진에서 자동으로 확인했어요</p>
-              <p className="mt-1.5 text-2xl font-bold text-slate-900">
+          {/* 인식 결과 — 한 가지 */}
+          {single && (
+            <>
+              <p className="text-title text-ink-950">
                 {aiItems[0].quantityWasNull
                   ? `${aiItems[0].name}으로 보여요`
                   : `${aiItems[0].name} ${aiItems[0].quantity}개로 보여요`}
               </p>
-              {aiNote && <p className="mt-1 text-sm text-slate-500">{aiNote}</p>}
-            </div>
 
-            <div>
-              <p className="mb-2 text-base font-semibold text-slate-700">
-                {aiItems[0].quantityWasNull ? '몇 개인가요?' : '수량 확인'}
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => updateItem(0, { quantity: Math.max(1, aiItems[0].quantity - 1) })}
-                  aria-label="수량 줄이기"
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border-2 border-slate-300 text-slate-700 hover:border-teal-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40"
-                >
-                  <Minus size={20} aria-hidden />
-                </button>
-                <span className="min-w-[3ch] flex-1 text-center text-2xl font-bold text-slate-900">
-                  {aiItems[0].quantity}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => updateItem(0, { quantity: aiItems[0].quantity + 1 })}
-                  aria-label="수량 늘리기"
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border-2 border-slate-300 text-slate-700 hover:border-teal-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40"
-                >
-                  <Plus size={20} aria-hidden />
-                </button>
+              <QuantityStepper
+                label={aiItems[0].quantityWasNull ? '몇 개인가요?' : '수량'}
+                value={aiItems[0].quantity}
+                onChange={(quantity) => updateItem(0, { quantity })}
+              />
+
+              <div className="space-y-2 pt-1">
+                <Button onClick={() => setStage('method')}>맞아요</Button>
+                <Button variant="quiet" onClick={goToManual}>
+                  수정
+                </Button>
               </div>
-            </div>
+            </>
+          )}
 
-            <BigButton onClick={() => setStage('method')}>맞아요</BigButton>
-            <button
-              type="button"
-              onClick={goToManualFromResult}
-              className="w-full py-2 text-center text-base font-medium text-slate-500 underline underline-offset-2"
-            >
-              수정하기
-            </button>
-          </>
-        )}
-
-        {/* AI result — multiple items */}
-        {sub === 'result' && aiItems.length > 1 && (
-          <>
-            <div>
-              <p className="mb-2 text-sm font-medium text-teal-700">사진에서 자동으로 확인했어요</p>
-              <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          {/* 인식 결과 — 여러 가지 */}
+          {multiple && (
+            <>
+              <p className="text-title text-ink-950">{aiItems.length}가지로 보여요</p>
+              <ul className="divide-y divide-line-100 overflow-hidden rounded-card border border-line-200">
                 {aiItems.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-3">
+                  <li key={i} className="flex items-center gap-2 p-2">
                     <input
                       type="text"
                       value={item.name}
                       onChange={(e) => updateItem(i, { name: e.target.value })}
-                      aria-label={`${i + 1}번째 품목명`}
-                      className="min-w-0 flex-1 bg-transparent text-lg font-semibold text-slate-800 outline-none placeholder:text-slate-400"
+                      aria-label={`${i + 1}번째 물품 이름`}
+                      className="min-w-0 flex-1 bg-transparent px-1 text-body font-semibold text-ink-950 outline-none focus-ring"
                     />
                     <button
                       type="button"
                       onClick={() => updateItem(i, { quantity: Math.max(1, item.quantity - 1) })}
-                      aria-label={`${item.name} 수량 줄이기`}
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-slate-300 text-slate-700 hover:border-teal-400"
+                      aria-label={`${item.name} 하나 줄이기`}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-line-200 text-ink-800 hover:border-brand-300 focus-ring"
                     >
-                      <Minus size={16} aria-hidden />
+                      <Minus size={18} aria-hidden />
                     </button>
-                    <span className="w-8 text-center text-lg font-bold text-slate-900">{item.quantity}</span>
+                    <span className="w-7 text-center text-lead font-bold text-ink-950">{item.quantity}</span>
                     <button
                       type="button"
                       onClick={() => updateItem(i, { quantity: item.quantity + 1 })}
-                      aria-label={`${item.name} 수량 늘리기`}
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border-2 border-slate-300 text-slate-700 hover:border-teal-400"
+                      aria-label={`${item.name} 하나 늘리기`}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control border border-line-200 text-ink-800 hover:border-brand-300 focus-ring"
                     >
-                      <Plus size={16} aria-hidden />
+                      <Plus size={18} aria-hidden />
                     </button>
                     <button
                       type="button"
                       onClick={() => removeItem(i)}
-                      aria-label={`${item.name} 제거`}
-                      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                      aria-label={`${item.name} 목록에서 빼기`}
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-ink-400 hover:bg-stop-50 hover:text-stop-600 focus-ring"
                     >
-                      <X size={16} aria-hidden />
+                      <X size={18} aria-hidden />
                     </button>
-                  </div>
+                  </li>
                 ))}
+              </ul>
+
+              <div className="space-y-2 pt-1">
+                <Button onClick={() => setStage('method')} disabled={aiItems.length === 0}>
+                  맞아요
+                </Button>
+                <Button variant="quiet" onClick={goToManual}>
+                  수정
+                </Button>
               </div>
-            </div>
+            </>
+          )}
 
-            <BigButton onClick={() => setStage('method')} disabled={aiItems.length === 0}>
-              맞아요
-            </BigButton>
-            <button
-              type="button"
-              onClick={goToManualFromResult}
-              className="w-full py-2 text-center text-base font-medium text-slate-500 underline underline-offset-2"
-            >
-              수정하기
-            </button>
-          </>
-        )}
+          {/* 사진만으로 확인이 안 될 때 */}
+          {sub === 'manual' && (
+            <>
+              {aiNote && <p className="rounded-card bg-warn-50 px-4 py-3 text-body text-warn-700">{aiNote}</p>}
 
-        {/* Manual fallback */}
-        {sub === 'manual' && (
-          <>
-            <p className="rounded-xl bg-amber-50 px-4 py-3 text-base text-amber-800">
-              {aiNote ?? '자동으로 확인하지 못했어요. 품목만 직접 알려주세요.'}
-            </p>
+              <Field label="무엇인가요?" htmlFor="donate-item-name">
+                <TextInput
+                  id="donate-item-name"
+                  type="text"
+                  value={manualName}
+                  onChange={(e) => setManualName(e.target.value)}
+                  placeholder="예: 라면, 쌀, 기저귀"
+                />
+              </Field>
 
-            <div>
-              <label htmlFor="donate-item-name" className="mb-2 block text-lg font-bold text-slate-800">
-                품목명
-              </label>
-              <input
-                id="donate-item-name"
-                type="text"
-                value={manualName}
-                onChange={(e) => setManualName(e.target.value)}
-                placeholder="예: 라면, 쌀, 기저귀"
-                className="min-h-[56px] w-full rounded-xl border-2 border-slate-300 px-4 py-3.5 text-lg text-slate-900 focus:border-teal-500 focus:outline-none focus:ring-4 focus:ring-teal-500/20"
-              />
-            </div>
+              <QuantityStepper label="수량" value={manualQty} onChange={setManualQty} />
 
-            <div>
-              <p className="mb-2 text-lg font-bold text-slate-800">수량</p>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setManualQty((q) => Math.max(1, q - 1))}
-                  aria-label="수량 줄이기"
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border-2 border-slate-300 text-slate-700 hover:border-teal-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40"
-                >
-                  <Minus size={20} aria-hidden />
-                </button>
-                <span className="min-w-[3ch] flex-1 text-center text-2xl font-bold text-slate-900">{manualQty}</span>
-                <button
-                  type="button"
-                  onClick={() => setManualQty((q) => q + 1)}
-                  aria-label="수량 늘리기"
-                  className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border-2 border-slate-300 text-slate-700 hover:border-teal-400 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40"
-                >
-                  <Plus size={20} aria-hidden />
-                </button>
-              </div>
-            </div>
+              <Button onClick={handleConfirmManual} disabled={!manualName.trim()}>
+                다음
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
 
-            <BigButton onClick={handleConfirmManual} disabled={!manualName.trim()}>
-              다음
-            </BigButton>
-          </>
-        )}
+/** 수량 조절. 숫자를 키보드로 치게 하지 않는다 — 큰 버튼 두 개가 훨씬 빠르고 안 틀린다. */
+function QuantityStepper({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-2 text-lead font-bold text-ink-950">{label}</p>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => onChange(Math.max(1, value - 1))}
+          aria-label="하나 줄이기"
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-control border border-line-200 text-ink-800 hover:border-brand-300 focus-ring"
+        >
+          <Minus size={22} aria-hidden />
+        </button>
+        <output aria-label="선택한 수량" className="flex-1 text-center text-title text-ink-950">
+          {value}
+        </output>
+        <button
+          type="button"
+          onClick={() => onChange(value + 1)}
+          aria-label="하나 늘리기"
+          className="flex h-14 w-14 shrink-0 items-center justify-center rounded-control border border-line-200 text-ink-800 hover:border-brand-300 focus-ring"
+        >
+          <Plus size={22} aria-hidden />
+        </button>
       </div>
     </div>
   );

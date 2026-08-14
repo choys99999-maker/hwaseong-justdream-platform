@@ -1,7 +1,89 @@
 @import "tailwindcss";
 
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 그냥드림 디자인 토큰
+ *
+ * 색의 source of truth 는 저장소 안의 화성특례시 공식 시그니처 파일
+ * (`src/assets/hwaseong-signature.png`) 이다. 그 PNG 에서 실제로 쓰인 두 색만 뽑아
+ * Primary/Accent 로 삼았다 — 추측한 "공식색" 은 넣지 않는다.
+ *   Primary #0054A6 (로고 파랑)   Accent #F36F21 (로고 주황)
+ *
+ * 나머지 단계(50~900)는 그 두 색을 기준으로 만든 파생 톤이다.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 @theme {
   --font-sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+
+  /* Primary — 화성특례시 시그니처 파랑 */
+  --color-brand-50: #eff6fc;
+  --color-brand-100: #d8e8f6;
+  --color-brand-200: #b0d0ec;
+  --color-brand-300: #7cb0dd;
+  --color-brand-400: #3d86c7;
+  --color-brand-500: #1266b0;
+  --color-brand-600: #0054a6;
+  --color-brand-700: #004587;
+  --color-brand-800: #003569;
+  --color-brand-900: #002950;
+
+  /* Accent — 시그니처 주황. 강조가 꼭 필요한 한 곳에서만 쓴다. */
+  --color-accent-50: #fef4ec;
+  --color-accent-100: #fde2cd;
+  --color-accent-500: #f36f21;
+  --color-accent-600: #d95a11;
+  --color-accent-700: #ad470d;
+
+  /* 운영 상태 전용 — 이 세 색은 상태 표시 외에는 쓰지 않는다. */
+  --color-open-50: #e9f7ee;
+  --color-open-600: #157f3d;
+  --color-open-700: #0f6330;
+  --color-warn-50: #fdf3e3;
+  --color-warn-600: #a5620a;
+  --color-warn-700: #834e07;
+  --color-stop-50: #fdeceb;
+  --color-stop-600: #c0271f;
+  --color-stop-700: #9a1f18;
+
+  /* 중립 — 차갑지 않게 아주 살짝 따뜻한 회색 */
+  --color-ink-950: #131c2e; /* 본문 최상위 */
+  --color-ink-800: #26324a;
+  --color-ink-600: #4e5972; /* 보조 텍스트 */
+  --color-ink-400: #8b93a6;
+  --color-line-200: #e4e5e9; /* 기본 경계선 */
+  --color-line-100: #eff0f2;
+  --color-paper: #f7f7f5; /* 배경 */
+  --color-surface: #ffffff; /* 카드·시트 */
+
+  /*
+   * 타이포 스케일. 고령 사용자 기준이라 최솟값을 15px 로 잡는다 —
+   * 13px 짜리 회색 설명문은 이 스케일에 아예 존재하지 않는다.
+   */
+  --text-display: 30px;
+  --text-display--line-height: 1.28;
+  --text-display--font-weight: 700;
+  --text-title: 24px;
+  --text-title--line-height: 1.34;
+  --text-title--font-weight: 700;
+  --text-section: 20px;
+  --text-section--line-height: 1.4;
+  --text-section--font-weight: 700;
+  --text-lead: 18px;
+  --text-lead--line-height: 1.55;
+  --text-body: 17px;
+  --text-body--line-height: 1.6;
+  --text-note: 15px;
+  --text-note--line-height: 1.55;
+  --text-action: 18px;
+  --text-action--line-height: 1.3;
+  --text-action--font-weight: 600;
+
+  --radius-card: 16px;
+  --radius-control: 14px;
+  --radius-sheet: 24px;
+
+  --shadow-raise: 0 1px 2px rgb(19 28 46 / 0.06), 0 4px 14px -6px rgb(19 28 46 / 0.14);
+  --shadow-float: 0 2px 6px rgb(19 28 46 / 0.08), 0 12px 32px -12px rgb(19 28 46 / 0.28);
 }
 
 html,
@@ -11,17 +93,41 @@ body,
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-paper text-ink-950 antialiased;
+}
+
+/* 주요 터치 목표는 48px, 핵심 CTA 는 56px. 유틸리티로 반복하지 않고 여기서 한 번만 정한다. */
+@utility tap-md {
+  min-height: 48px;
+}
+
+@utility tap-lg {
+  min-height: 56px;
 }
 
 /*
- * 카카오맵 CustomOverlay 로 그리는 거점 마커 (상태 원형 + 기관명 라벨).
- * React 트리 밖에서 생성하는 DOM 이라 유틸리티 클래스 대신 여기서 스타일을 정의한다.
- *
- * 루트 <button> 은 원형 마커와 같은 12px 정사각형으로 고정한다.
- * 라벨은 absolute 라 루트 크기에 영향을 주지 않으므로, CustomOverlay 의
- * xAnchor/yAnchor 0.5 가 라벨 길이와 무관하게 항상 원 중심을 좌표에 맞춘다.
- * 원 크기 변화는 ::before 에서만 일어나 선택 시에도 앵커가 흔들리지 않는다.
+ * 포커스 링. 키보드 사용자에게만 보이고, 어떤 배경 위에서도 읽히도록
+ * 브랜드 파랑 + 흰 테두리 두 겹으로 둔다.
+ */
+@utility focus-ring {
+  &:focus-visible {
+    outline: 3px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+}
+
+@utility focus-ring-inverse {
+  &:focus-visible {
+    outline: 3px solid #ffffff;
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 관리자 지도(KakaoDistrictMap) 마커. 시민 화면과 무관하며 이번 개편 대상이 아니다.
+ * React 트리 밖(CustomOverlay)에서 만드는 DOM 이라 여기서 스타일을 정의한다.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 .gj-marker {
   position: relative;
@@ -32,7 +138,6 @@ body {
   border: 0;
   background: none;
   cursor: pointer;
-  /* 거점 선택 시 다른 마커를 소폭 흐리게(opacity) 만 처리한다 — KakaoDistrictMap 이 style.opacity 를 직접 지정한다. */
   transition: opacity 120ms ease-in-out;
 }
 
@@ -54,11 +159,6 @@ body {
     box-shadow 120ms ease-in-out;
 }
 
-/*
- * 좌표가 완전히 같은 거점(같은 건물에 두 기관)의 표시 위치만 좌우로 벌린다.
- * 데이터의 lat/lng 는 그대로 두고 화면에서만 옮기며, 실제 지점과 원 사이를
- * 짧은 stem 으로 이어 위치 관계가 드러나게 한다.
- */
 .gj-marker[data-coincident='true'] {
   transform: translateX(var(--gj-shift, 0));
 }
@@ -85,28 +185,14 @@ body {
   width: 16px;
   height: 16px;
   box-shadow:
-    0 0 0 3px rgb(13 148 136 / 0.35),
+    0 0 0 3px rgb(0 84 166 / 0.35),
     0 1px 2px rgb(15 23 42 / 0.25);
 }
 
-/*
- * 기관명 라벨. 지도 도로명·지명을 덜 가리도록 흰 배경 + 얇은 회색 테두리로 눌러 둔다.
- * 최대 2줄까지 접히고, 그보다 길면 말줄임한다. (이름을 통째로 숨기지는 않는다)
- *
- * 기본은 숨김이다 — hover 시 tooltip, 선택 시에만 계속 보이는 라벨로 노출한다.
- * opacity 로 숨겨(display:none 아님) getBoundingClientRect 가 항상 실제 크기를 반환하므로
- * layoutLabels() 의 겹침 계산은 라벨이 보이지 않는 동안에도 그대로 동작한다.
- */
 .gj-marker-label {
   position: absolute;
-  /*
-   * width:max-content + max-width 조합.
-   * 짧은 이름은 한 줄로 딱 맞고, 길면 max-width 에서 접힌다.
-   * absolute 라 부모(12px) 폭에 끌려가지 않도록 max-content 를 기준으로 잡는다.
-   */
   width: max-content;
   max-width: 116px;
-  /* 2줄(=1.3 × 11.5px × 2)까지만 보이고 그 이상은 잘라 지도를 덮지 않게 한다. */
   max-height: 35px;
   overflow: hidden;
   padding: 1.5px 5px;
@@ -119,9 +205,7 @@ body {
   line-height: 1.3;
   letter-spacing: -0.01em;
   text-align: left;
-  /* 카카오 오버레이 래퍼가 white-space:nowrap 을 내려주므로 여기서 되돌린다. */
   white-space: normal;
-  /* 한글은 어절(공백) 기준 줄바꿈을 우선하고, 붙여 쓴 긴 기관명만 강제로 접는다. */
   word-break: keep-all;
   overflow-wrap: anywhere;
   box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
@@ -134,12 +218,10 @@ body {
     box-shadow 120ms ease-in-out;
 }
 
-/* 검색 결과 선택 중에는 라벨을 숨겨 선택 기관만 강조한다. 검색 해제 시 이 클래스가 제거되어 전체 라벨이 다시 표시된다. */
 .gj-map-search-active .gj-marker-label {
   opacity: 0;
 }
 
-/* 라벨 배치 — layoutLabels() 가 겹침을 피해 data-place 를 정한다. */
 .gj-marker[data-place='right'] .gj-marker-label {
   left: calc(100% + 5px);
   top: 50%;
@@ -164,7 +246,6 @@ body {
   transform: translateX(-50%);
 }
 
-/* 대각선 배치 — 상하좌우로 자리가 없는 밀집 구간에서 쓴다. */
 .gj-marker[data-place='bottom-right'] .gj-marker-label {
   left: calc(100% + 3px);
   top: calc(100% + 3px);
@@ -211,17 +292,13 @@ body {
 .gj-marker[data-selected='true'] .gj-marker-label {
   opacity: 1;
   pointer-events: auto;
-  border-color: #0d9488;
+  border-color: #0054a6;
   color: #0f172a;
   font-weight: 600;
   background: #ffffff;
   box-shadow: 0 2px 6px rgb(15 23 42 / 0.14);
 }
 
-/*
- * 구 단위 요약 오버레이. 광역 축소(level ≥ threshold) 에서 개별 거점 대신 표시한다.
- * 개별 거점 마커와 역할이 헷갈리지 않도록 구 이름을 함께 적는다.
- */
 .gj-cluster {
   display: flex;
   flex-direction: column;
@@ -231,12 +308,12 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 9999px;
-  background: rgba(15, 118, 110, 0.88);
+  background: rgba(0, 84, 166, 0.9);
   border: 2.5px solid #ffffff;
   color: #ffffff;
   line-height: 1;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgb(15 23 42 / 0.32), 0 0 0 6px rgba(15, 118, 110, 0.14);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 0.32), 0 0 0 6px rgba(0, 84, 166, 0.14);
   transition: transform 100ms ease-in-out, box-shadow 100ms ease-in-out;
   user-select: none;
 }
@@ -254,182 +331,186 @@ body {
 
 .gj-cluster:hover {
   transform: scale(1.09);
-  box-shadow: 0 4px 12px rgb(15 23 42 / 0.38), 0 0 0 9px rgba(15, 118, 110, 0.20);
+  box-shadow: 0 4px 12px rgb(15 23 42 / 0.38), 0 0 0 9px rgba(0, 84, 166, 0.2);
 }
 
 /*
- * 시민용 지도 핀 (CitizenDiscoveryMap).
+ * ─────────────────────────────────────────────────────────────────────────────
+ * 시민 지도 핀 (CitizenMap).
  *
- * 첫 화면에서는 "화성 전역에 거점이 있다" 만 느껴지면 되므로 작은 점으로 조용히 깔고,
- * 추천이 정해진 뒤에만 ①②③ 이 커지고 나머지가 흐려진다. 순위는 색이 아니라 숫자로
- * 전달하므로 색각 이상·흑백 화면에서도 읽을 수 있다.
- *
- * 루트 <button> 은 40px 투명 히트 영역이다 — 지도 위 점이라도 터치 목표는 48px 원칙에
- * 최대한 맞춘다. 보이는 원은 ::before 가 아니라 자식 span 이라, 숫자를 그 안에 넣을 수 있다.
+ * 지도가 제품 자체이므로 핀은 조용해야 한다 — 색으로 상태를 알록달록 칠하지 않고
+ * 전부 브랜드 파랑 한 색으로 깔되, "지금 여기가 가장 좋다" 는 한 곳만 크기와 숫자로
+ * 확실히 앞세운다. 순위는 색이 아니라 크기 + 숫자로 전달하므로 색각 이상에서도 읽힌다.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
-.gjc-pin {
+.cj-pin {
+  position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
+  /* 지도 위 점이라도 손가락 목표는 44px 이상 확보한다. 보이는 원은 자식 span 이다. */
+  width: 46px;
+  height: 46px;
   justify-content: center;
-  width: 40px;
-  height: 40px;
   padding: 0;
   border: 0;
-  background: none;
+  background: transparent;
   cursor: pointer;
-  transition: opacity 220ms ease-out;
+  white-space: nowrap;
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  transition: opacity 200ms ease-out;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.gjc-pin-dot {
+.cj-pin-dot {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
-  border: 2px solid #ffffff;
-  border-radius: 9999px;
-  background: var(--gjc-color, #64748b);
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2.5px solid #ffffff;
+  background: #0054a6;
   color: #ffffff;
   font-size: 0;
   font-weight: 700;
   line-height: 1;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 0.3);
+  box-shadow: 0 1px 4px rgba(19, 28, 46, 0.32);
   transition:
-    width 260ms ease-out,
-    height 260ms ease-out,
-    font-size 260ms ease-out,
-    box-shadow 200ms ease-out;
+    width 220ms ease-out,
+    height 220ms ease-out,
+    font-size 220ms ease-out,
+    box-shadow 180ms ease-out;
 }
 
-/* 추천에서 빠진 거점 — 지우지는 않되 배경으로 물러난다. */
-.gjc-pin[data-dim='true'] {
-  opacity: 0.28;
+/* 추천 밖으로 밀린 거점 — 지우지 않고 배경으로 물러난다. */
+.cj-pin[data-dim='true'] {
+  opacity: 0.3;
 }
 
-/*
- * 첫 화면 — 핀은 "화성 전역에 거점이 있다" 는 배경 정보일 뿐이다.
- * 상태 색(초록/주황/회색)까지 읽히면 시선이 흩어지므로 한 가지 색 작은 점으로 낮추고,
- * 탭·클릭도 막는다(첫 화면의 행동은 중앙 CTA 하나뿐이어야 한다).
- */
-.gjc-pin[data-quiet='true'] {
-  pointer-events: none;
-}
-
-.gjc-pin[data-quiet='true'] .gjc-pin-dot {
-  width: 10px;
-  height: 10px;
-  border-width: 2px;
-  background: #0f766e;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 0.28);
-}
-
-/* 추천 ①②③ */
-.gjc-pin[data-rank='1'] .gjc-pin-dot,
-.gjc-pin[data-rank='2'] .gjc-pin-dot,
-.gjc-pin[data-rank='3'] .gjc-pin-dot {
-  width: 30px;
-  height: 30px;
+/* 추천 2·3순위 */
+.cj-pin[data-rank='2'] .cj-pin-dot,
+.cj-pin[data-rank='3'] .cj-pin-dot {
+  width: 28px;
+  height: 28px;
   border-width: 3px;
   font-size: 15px;
-  box-shadow: 0 2px 8px rgb(15 23 42 / 0.35);
+  box-shadow: 0 2px 8px rgba(19, 28, 46, 0.34);
 }
 
-/* 1순위는 나머지 둘보다 확실히 크고, 옅은 링 하나로 시선을 잡는다. */
-.gjc-pin[data-rank='1'] .gjc-pin-dot {
+/* 1순위 하나만 확실히 크게 + 옅은 링. 화면에서 가장 강한 지도 요소. */
+.cj-pin[data-rank='1'] .cj-pin-dot {
   width: 38px;
   height: 38px;
-  font-size: 18px;
+  border-width: 3px;
+  font-size: 19px;
   box-shadow:
-    0 0 0 6px rgb(13 148 136 / 0.22),
-    0 3px 10px rgb(15 23 42 / 0.4);
+    0 0 0 6px rgba(0, 84, 166, 0.18),
+    0 3px 10px rgba(19, 28, 46, 0.36);
 }
 
-.gjc-pin[data-selected='true'] .gjc-pin-dot {
+.cj-pin[data-selected='true'] .cj-pin-dot {
+  width: 30px;
+  height: 30px;
   box-shadow:
-    0 0 0 5px rgb(13 148 136 / 0.35),
-    0 3px 10px rgb(15 23 42 / 0.4);
+    0 0 0 5px rgba(0, 84, 166, 0.34),
+    0 3px 10px rgba(19, 28, 46, 0.38);
 }
 
-.gjc-pin:focus-visible .gjc-pin-dot {
-  outline: 3px solid #0f766e;
+.cj-pin[data-rank='1'][data-selected='true'] .cj-pin-dot {
+  width: 38px;
+  height: 38px;
+}
+
+.cj-pin:focus-visible {
+  outline: none;
+}
+
+.cj-pin:focus-visible .cj-pin-dot {
+  outline: 3px solid #0054a6;
   outline-offset: 3px;
 }
 
-/* ①②③ 가 순서대로 올라오며 등장 — 이 순서 자체가 추천 순위 설명이다. */
-.gjc-pin-enter .gjc-pin-dot {
-  animation: gjc-pin-pop 320ms ease-out both;
-  animation-delay: var(--gjc-delay, 0ms);
-}
-
-@keyframes gjc-pin-pop {
-  from {
-    opacity: 0;
-    transform: translateY(9px) scale(0.7);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gjc-pin,
-  .gjc-pin-dot {
-    transition: none;
-  }
-  .gjc-pin-enter .gjc-pin-dot {
-    animation: none;
-  }
-}
-
 /*
- * 첫 화면 딤. 배경은 지도이되 주인공은 중앙 CTA 라는 관계를 이 한 겹으로 만든다.
- * 세로로 세기를 다르게 준다 —
- *   위(화성시가 있는 띠) 는 아주 옅게: 지도와 거점 점이 그대로 읽혀야 한다
- *   가운데(CTA 대) 는 밝게: 큰 버튼과 문구의 대비를 확보한다
- *   아래·가장자리 는 살짝 눌러: 빈 지도가 시선을 끌지 않게 뒤로 물린다
- * 전체를 어둡게 덮지 않는다 — 어두운 인트로가 아니라 "딤 처리된 지도" 여야 한다.
+ * 이름표 — 기본은 숨김. 충분히 확대했거나(data-zoomed) 추천·선택된 핀에서만 뜬다.
+ * absolute 라 이름 유무가 핀 높이를 바꾸지 않는다 → 마커가 좌표에서 흔들리지 않는다.
  */
-.gjc-intro-scrim {
-  background:
-    radial-gradient(72% 30% at 50% 52%, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0) 100%),
-    linear-gradient(
-      to bottom,
-      rgba(255, 255, 255, 0.14) 0%,
-      rgba(255, 255, 255, 0.2) 32%,
-      rgba(255, 255, 255, 0.46) 62%,
-      rgba(226, 232, 240, 0.66) 100%
-    ),
-    radial-gradient(122% 74% at 50% 44%, rgba(15, 23, 42, 0) 56%, rgba(15, 23, 42, 0.17) 100%);
-  backdrop-filter: blur(1.5px);
+.cj-pin-name {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 2px;
+  max-width: 124px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 1px 4px rgba(19, 28, 46, 0.2);
+  font-size: 13px;
+  font-weight: 700;
+  color: #131c2e;
+  line-height: 1.3;
+  pointer-events: none;
 }
 
-.gjc-intro-in {
-  animation: gjc-intro-in 380ms ease-out both;
+.cj-pin[data-zoomed='true'] .cj-pin-name,
+.cj-pin[data-rank] .cj-pin-name,
+.cj-pin[data-selected='true'] .cj-pin-name {
+  display: block;
 }
 
-@keyframes gjc-intro-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.cj-pin[data-dim='true'] .cj-pin-name {
+  display: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .gjc-intro-in {
-    animation: none;
-  }
+.cj-pin[data-selected='true'] .cj-pin-name,
+.cj-pin[data-rank='1'] .cj-pin-name {
+  background: #0054a6;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 84, 166, 0.4);
 }
 
-.gjc-user-dot {
+/* 현재 내 위치. 거점 핀(파랑)과 헷갈리지 않게 흰 테두리 + 맥동 링으로 구분한다. */
+.cj-my-loc {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.cj-my-loc-dot {
   width: 18px;
   height: 18px;
-  border-radius: 9999px;
-  background: #2563eb;
-  border: 3px solid #ffffff;
-  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.22), 0 2px 4px rgb(15 23 42 / 0.3);
+  border-radius: 50%;
+  background: #f36f21;
+  border: 4px solid #ffffff;
+  box-shadow: 0 0 0 6px rgba(243, 111, 33, 0.24), 0 2px 6px rgba(19, 28, 46, 0.3);
+  animation: cj-pulse 2.4s infinite;
+}
+
+@keyframes cj-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 6px rgba(243, 111, 33, 0.24), 0 2px 6px rgba(19, 28, 46, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(243, 111, 33, 0.04), 0 2px 6px rgba(19, 28, 46, 0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cj-pin,
+  .cj-pin-dot {
+    transition: none;
+  }
+  .cj-my-loc-dot {
+    animation: none;
+  }
 }

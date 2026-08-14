@@ -14,7 +14,7 @@
     "test:unit": "node scripts/run-engine-test.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.2",
+    "@supabase/supabase-js": "^2.112.3",
     "lucide-react": "^1.28.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

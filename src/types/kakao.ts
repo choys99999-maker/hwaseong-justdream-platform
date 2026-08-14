@@ -25,9 +25,9 @@ export interface KakaoMap {
   setBounds(bounds: KakaoLatLngBounds, paddingTop?: number, paddingRight?: number, paddingBottom?: number, paddingLeft?: number): void;
   setCenter(latlng: KakaoLatLng): void;
   getCenter(): KakaoLatLng;
-  /** 지금 화면에 보이는 영역. 시민 지도가 "한 단계 더 당겨도 되는지" 판단할 때 쓴다. */
+  /** 지금 화면에 보이는 영역. */
   getBounds(): KakaoLatLngBounds;
-  /** 중심을 부드럽게 이동한다. 이동 거리가 화면보다 크면 카카오가 알아서 즉시 이동으로 대체한다. */
+  /** 중심을 부드럽게 이동한다. */
   panTo(latlng: KakaoLatLng): void;
   setLevel(level: number, options?: KakaoSetLevelOptions): void;
   getLevel(): number;

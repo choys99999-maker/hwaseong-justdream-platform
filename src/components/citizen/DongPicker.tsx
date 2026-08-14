@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { AREA_LIST, type AreaCentroid } from '../../data/mockSites';
 import { REGION_NAMES, REGION_ORDER } from '../../data/regionMeta';
@@ -7,36 +8,52 @@ interface DongPickerProps {
   onClose: () => void;
 }
 
-/** "사는 동네 선택하기" — 자유 입력 대신 큰 선택 버튼 목록으로만 고른다. */
+/**
+ * "동네로 찾기" — 위치 권한 없이도 시작할 수 있는 유일한 길이라 자유 입력 대신
+ * 큰 버튼 목록으로만 고르게 한다. 오타·검색어 고민 없이 자기 동네를 눈으로 찾으면 된다.
+ */
 export default function DongPicker({ onSelect, onClose }: DongPickerProps) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <h2 className="text-lg font-bold text-slate-900">사는 동네를 선택해 주세요</h2>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="사는 동네 선택"
+      className="fixed inset-0 z-50 flex flex-col bg-surface"
+    >
+      <div className="flex items-center gap-1 border-b border-line-100 px-2 py-2 pt-[max(8px,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={onClose}
           aria-label="닫기"
-          className="flex h-12 w-12 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-ink-800 transition-colors hover:bg-line-100 focus-ring"
         >
-          <X size={24} />
+          <X size={24} aria-hidden />
         </button>
+        <h1 className="min-w-0 flex-1 truncate text-section text-ink-950">어느 동네에 계세요?</h1>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 py-4 pb-[max(24px,env(safe-area-inset-bottom))]">
         {REGION_ORDER.map((district) => {
           const areas = AREA_LIST.filter((a) => a.district === district);
           if (areas.length === 0) return null;
           return (
             <section key={district}>
-              <h3 className="mb-2 text-base font-semibold text-slate-500">{REGION_NAMES[district]}</h3>
-              <div className="grid grid-cols-2 gap-2.5">
+              <h2 className="mb-2 text-note font-bold text-ink-600">{REGION_NAMES[district]}</h2>
+              <div className="grid grid-cols-2 gap-2">
                 {areas.map((area) => (
                   <button
                     key={area.area}
                     type="button"
                     onClick={() => onSelect(area)}
-                    className="min-h-[52px] rounded-xl border-2 border-slate-200 bg-white px-3 py-3 text-lg font-semibold text-slate-800 hover:border-teal-500 hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/40"
+                    className="tap-lg rounded-control border border-line-200 bg-surface px-3 text-body font-semibold text-ink-950 transition-colors hover:border-brand-300 hover:bg-brand-50 focus-ring"
                   >
                     {area.area}
                   </button>

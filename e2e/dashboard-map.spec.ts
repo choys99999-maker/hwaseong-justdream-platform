@@ -18,7 +18,7 @@ import { test, expect } from '@playwright/test';
  * 7. /regions/:districtId 라우팅 실제 동작
  */
 
-const BASE = 'http://localhost:5173';
+const BASE = process.env.E2E_BASE_URL ?? 'http://localhost:5173';
 
 /**
  * 개별 거점 마커는 지도 레벨이 CLUSTER_ZOOM_THRESHOLD(10) 미만일 때만 그려진다.

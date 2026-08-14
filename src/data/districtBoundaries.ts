@@ -22,3 +22,49 @@ export function getDistrictBBox(id: string | null): BoundaryBBox {
   if (!id) return HWASEONG_FOCUS_BBOX;
   return districtBoundaries.find((district) => district.id === id)?.focusBBox ?? HWASEONG_FOCUS_BBOX;
 }
+
+// ── 좌표 → 행정구역 조회 ────────────────────────────────────────────
+
+export interface AreaLookup {
+  districtId: string;
+  districtName: string;
+  areaName: string;
+  areaCode: string;
+}
+
+/** 링 하나에 대한 ray-casting 내부 판정. 링은 `[lng, lat]` 순서다. */
+function pointInRing(lng: number, lat: number, ring: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * 좌표가 어느 읍·면·동에 속하는지 실제 경계 폴리곤으로 판정한다.
+ * 주소 문자열 파싱이 아니라 GIS 경계를 쓰므로, 주소 표기가 달라져도 결과가 흔들리지 않는다.
+ * 폴리곤의 첫 링은 외곽선, 나머지는 구멍이다 — 구멍 안이면 그 구역이 아니다.
+ */
+export function findAreaByPoint(lat: number, lng: number): AreaLookup | null {
+  for (const district of districtBoundaries) {
+    for (const area of district.areas) {
+      for (const polygon of area.polygons) {
+        const [outer, ...holes] = polygon;
+        if (!outer || !pointInRing(lng, lat, outer)) continue;
+        if (holes.some((hole) => pointInRing(lng, lat, hole))) continue;
+        return {
+          districtId: district.id,
+          districtName: district.name,
+          areaName: area.name,
+          areaCode: area.code,
+        };
+      }
+    }
+  }
+  return null;
+}
