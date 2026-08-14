@@ -536,10 +536,13 @@ body {
   box-shadow: 0 2px 8px rgba(37, 99, 235, 0.45);
 }
 
-/* 현재 내 위치 파란 점 */
+/*
+ * 현재 내 위치 파란 점.
+ * 고령 사용자가 "이게 내 위치구나" 를 한눈에 알아야 해서 일반적인 점보다 크게 뒀다.
+ */
 .cj-my-loc {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -547,16 +550,16 @@ body {
 }
 
 .cj-my-loc-dot {
-  width: 14px;
-  height: 14px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #2563eb;
-  border: 3px solid #ffffff;
-  box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.28);
+  border: 4px solid #ffffff;
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.3), 0 2px 6px rgba(15, 23, 42, 0.35);
   animation: cj-pulse 2s infinite;
 }
 
 @keyframes cj-pulse {
-  0%, 100% { box-shadow: 0 0 0 5px rgba(37, 99, 235, 0.28); }
-  50%       { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0.08); }
+  0%, 100% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.3), 0 2px 6px rgba(15, 23, 42, 0.35); }
+  50%      { box-shadow: 0 0 0 14px rgba(37, 99, 235, 0.06), 0 2px 6px rgba(15, 23, 42, 0.35); }
 }

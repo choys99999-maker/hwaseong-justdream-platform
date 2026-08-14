@@ -23,6 +23,7 @@ import {
   getSiteById,
   isCurrentlyOpen,
   calcDistanceKm,
+  formatDistance,
   SITE_OVERALL_STATUS_LABELS,
   SITE_OVERALL_STATUS_COLORS,
   type CitizenSite,
@@ -53,20 +54,30 @@ export default function HomePage() {
   const pendingNearby = useRef(false);
 
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
-  const [focusSiteId, setFocusSiteId] = useState<string | null>(null);
+  const [fitPoints, setFitPoints] = useState<Array<{ lat: number; lng: number }> | null>(null);
+  const [focusToken, setFocusToken] = useState(0);
   const [showDongPicker, setShowDongPicker] = useState(false);
   const [showDrawer, setShowDrawer] = useState(false);
 
   const selectedSite = selectedSiteId ? getSiteById(selectedSiteId) : null;
 
+  /**
+   * 기준 좌표에서 가장 가까운 거점을 찾아, 기준점과 그 거점이 한 화면에 같이 보이게 한다.
+   * 거점만 가운데 두면 "내 위치에서 가까운 곳" 이라는 게 화면에서 안 읽힌다.
+   * 토큰을 매번 올려야 같은 거점을 다시 눌러도 지도가 움직인다.
+   */
+  const focusNearest = useCallback((from: { lat: number; lng: number }) => {
+    const nearest = findNearestSite(from.lat, from.lng);
+    if (!nearest) return;
+    setSelectedSiteId(nearest.id);
+    setFitPoints([from, { lat: nearest.lat, lng: nearest.lng }]);
+    setFocusToken((t) => t + 1);
+  }, []);
+
   // "내 주변 그냥드림 찾기" 버튼
   function handleFindNearby() {
     if (geo.status === 'granted' && geo.coords) {
-      const nearest = findNearestSite(geo.coords.lat, geo.coords.lng);
-      if (nearest) {
-        setFocusSiteId(nearest.id);
-        setSelectedSiteId(nearest.id);
-      }
+      focusNearest(geo.coords);
     } else {
       pendingNearby.current = true;
       geo.request();
@@ -78,24 +89,20 @@ export default function HomePage() {
     if (!pendingNearby.current) return;
     if (geo.status !== 'granted' || !geo.coords) return;
     pendingNearby.current = false;
-    const nearest = findNearestSite(geo.coords.lat, geo.coords.lng);
-    if (nearest) {
-      setFocusSiteId(nearest.id);
-      setSelectedSiteId(nearest.id);
-    }
-  }, [geo.status, geo.coords]);
+    focusNearest(geo.coords);
+  }, [geo.status, geo.coords, focusNearest]);
 
-  // 동네 선택 → 가장 가까운 거점으로 지도 이동
-  const handleDongSelect = useCallback((area: AreaCentroid) => {
-    setShowDongPicker(false);
-    const nearest = findNearestSite(area.lat, area.lng);
-    if (nearest) {
-      setFocusSiteId(nearest.id);
-      setSelectedSiteId(nearest.id);
-    }
-  }, []);
+  // 동네 선택 → 그 동네와 가장 가까운 거점을 함께 보여준다
+  const handleDongSelect = useCallback(
+    (area: AreaCentroid) => {
+      setShowDongPicker(false);
+      focusNearest({ lat: area.lat, lng: area.lng });
+    },
+    [focusNearest],
+  );
 
   const isLocating = geo.status === 'locating';
+  const myLocation = geo.status === 'granted' ? geo.coords : null;
 
   return (
     <div className="relative h-full overflow-hidden bg-slate-100">
@@ -105,7 +112,10 @@ export default function HomePage() {
         sites={citizenSites}
         selectedSiteId={selectedSiteId}
         onSelectSite={setSelectedSiteId}
-        focusSiteId={focusSiteId}
+        focusToken={focusToken}
+        fitPoints={fitPoints}
+        userLocation={myLocation}
+        bottomInset={selectedSite ? 300 : 170}
         hideControls
         className="absolute inset-0"
       />
@@ -133,6 +143,11 @@ export default function HomePage() {
       {selectedSite && (
         <SiteBottomSheet
           site={selectedSite}
+          distanceKm={
+            myLocation
+              ? calcDistanceKm(myLocation.lat, myLocation.lng, selectedSite.lat, selectedSite.lng)
+              : null
+          }
           onClose={() => setSelectedSiteId(null)}
           onDetail={() => navigate(`/site/${selectedSite.id}`)}
         />
@@ -217,10 +232,12 @@ export default function HomePage() {
 
 function SiteBottomSheet({
   site,
+  distanceKm,
   onClose,
   onDetail,
 }: {
   site: CitizenSite;
+  distanceKm: number | null;
   onClose: () => void;
   onDetail: () => void;
 }) {
@@ -253,6 +270,11 @@ function SiteBottomSheet({
               </h2>
               <p className="mt-0.5 text-[13px] text-gray-400">{site.facilityType}</p>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                {distanceKm !== null && (
+                  <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[13px] font-bold text-blue-700">
+                    내 위치에서 {formatDistance(distanceKm)}
+                  </span>
+                )}
                 <span
                   className="text-[13px] font-semibold"
                   style={{ color: open ? '#16a34a' : '#9ca3af' }}

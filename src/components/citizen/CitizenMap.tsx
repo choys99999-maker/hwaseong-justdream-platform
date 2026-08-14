@@ -23,6 +23,17 @@ interface CitizenMapProps {
   onSelectSite: (siteId: string | null) => void;
   /** 이 값이 바뀌면 해당 지점으로 지도를 이동하고 선택 상태로 만든다 */
   focusSiteId?: string | null;
+  /**
+   * 값이 바뀔 때마다 focusSiteId/fitPoints 를 다시 적용한다.
+   * 같은 거점을 다시 눌러도 지도가 움직이게 하려면 이 토큰을 올린다.
+   */
+  focusToken?: number;
+  /** 파란 현재 위치 점. 홈처럼 위치를 바깥에서 관리하는 화면이 쓴다. */
+  userLocation?: { lat: number; lng: number } | null;
+  /** 이 좌표들이 한 화면에 다 보이게 맞춘다(내 위치 + 가까운 거점). focusToken 과 함께 쓴다. */
+  fitPoints?: Array<{ lat: number; lng: number }> | null;
+  /** 바텀시트에 가리지 않도록 확보할 아래 여백(px). */
+  bottomInset?: number;
   /** true 이면 내부 컨트롤 버튼·범례를 숨긴다 (홈 화면 등 외부에서 제어할 때 사용) */
   hideControls?: boolean;
   className?: string;
@@ -179,6 +190,10 @@ export default function CitizenMap({
   selectedSiteId,
   onSelectSite,
   focusSiteId,
+  focusToken = 0,
+  userLocation = null,
+  fitPoints = null,
+  bottomInset = 0,
   hideControls = false,
   className = '',
 }: CitizenMapProps) {
@@ -327,11 +342,62 @@ export default function CitizenMap({
     });
   }, [phase, selectedSiteId]);
 
-  // 3) focusSiteId 변경 → 지도 이동
+  // 3) 현재 위치 파란 점 — 위치를 바깥에서 관리하는 화면(홈)이 좌표를 내려준다.
   useEffect(() => {
-    if (phase !== 'ready' || !focusSiteId) return;
-    panToSite(focusSiteId);
-  }, [phase, focusSiteId, panToSite]);
+    if (phase !== 'ready') return;
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+
+    myLocOverlayRef.current?.setMap(null);
+    myLocOverlayRef.current = null;
+    if (!userLocation) return;
+
+    const overlay = new maps.CustomOverlay({
+      position: new maps.LatLng(userLocation.lat, userLocation.lng),
+      content: createMyLocElement(),
+      yAnchor: 0.5,
+      xAnchor: 0.5,
+      zIndex: 20,
+    });
+    overlay.setMap(map);
+    myLocOverlayRef.current = overlay;
+    setLocStatus('ok');
+  }, [phase, userLocation?.lat, userLocation?.lng]);
+
+  /*
+   * 4) 지도 이동.
+   *
+   * fitPoints 가 오면 그 좌표들이 "시트에 가리지 않는 영역" 안에 모두 들어오게 맞춘다 —
+   * 내 위치와 가장 가까운 거점이 한 화면에 같이 보여야 "여기가 제일 가깝다"가 읽힌다.
+   * fitPoints 는 매 렌더 새 배열이라 의존성에 넣으면 계속 재실행되므로 ref 로 읽고,
+   * 실행 시점은 focusToken 이 정한다(같은 대상을 다시 눌러도 지도가 움직인다).
+   */
+  const fitPointsRef = useRef(fitPoints);
+  fitPointsRef.current = fitPoints;
+
+  useEffect(() => {
+    if (phase !== 'ready') return;
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+
+    const points = fitPointsRef.current;
+    if (points && points.length > 0) {
+      if (points.length === 1) {
+        map.panTo(new maps.LatLng(points[0].lat, points[0].lng));
+        map.setLevel(5, { animate: true });
+        return;
+      }
+      const bounds = new maps.LatLngBounds();
+      points.forEach((p) => bounds.extend(new maps.LatLng(p.lat, p.lng)));
+      map.setBounds(bounds, 80, 56, bottomInset + 32, 56);
+      return;
+    }
+
+    if (focusSiteId) panToSite(focusSiteId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, focusToken, focusSiteId, panToSite]);
 
   // 4) ResizeObserver
   useEffect(() => {
