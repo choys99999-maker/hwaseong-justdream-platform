@@ -390,6 +390,11 @@ body {
   opacity: 0.3;
 }
 
+/* 클러스터로 묶인 핀은 숨긴다 — 대신 같은 자리에 숫자 배지가 뜬다. */
+.cj-pin[data-clustered='true'] {
+  display: none;
+}
+
 /* 추천 2·3순위 */
 .cj-pin[data-rank='2'] .cj-pin-dot,
 .cj-pin[data-rank='3'] .cj-pin-dot {
@@ -473,6 +478,43 @@ body {
   background: #0054a6;
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(0, 84, 166, 0.4);
+}
+
+/*
+ * 클러스터 배지. 넓게 볼 때 겹치는 핀을 대신해 숫자 하나로 보여준다.
+ * 핀과 같은 브랜드 파랑을 쓰되 더 큰 원 + 흰 숫자로 "여러 곳이 있다" 는 게 한눈에 읽히게 한다.
+ */
+.cj-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px solid #ffffff;
+  background: #0054a6;
+  color: #ffffff;
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  box-shadow:
+    0 0 0 4px rgba(0, 84, 166, 0.16),
+    0 3px 10px rgba(19, 28, 46, 0.36);
+  transition: transform 150ms ease-out;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cj-cluster:active {
+  transform: scale(0.94);
+}
+
+.cj-cluster:focus-visible {
+  outline: 3px solid #0054a6;
+  outline-offset: 3px;
 }
 
 /* 현재 내 위치. 거점 핀(파랑)과 헷갈리지 않게 흰 테두리 + 맥동 링으로 구분한다. */

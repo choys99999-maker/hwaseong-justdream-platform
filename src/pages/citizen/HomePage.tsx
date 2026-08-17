@@ -155,7 +155,7 @@ export default function HomePage() {
           <Menu size={24} aria-hidden />
         </button>
         <div className="flex flex-1 justify-center pr-12">
-          <span className="rounded-full bg-surface/95 px-3.5 py-2 shadow-raise ring-1 ring-ink-950/5 backdrop-blur-sm">
+          <span className="rounded-full bg-surface/95 px-3 py-1.5 shadow-raise ring-1 ring-ink-950/5 backdrop-blur-sm">
             <Brand />
           </span>
         </div>
@@ -169,7 +169,7 @@ export default function HomePage() {
           maxHeightRatio={0.78}
           labelledBy="place-sheet-title"
         >
-          <PlaceDetail place={selected} originLabel={originLabel} titleId="place-sheet-title" />
+          <PlaceDetail place={selected} originLabel={originLabel} titleId="place-sheet-title" showHelpRow />
           {origin && recommended.length > 1 && (
             <button
               type="button"
@@ -206,10 +206,10 @@ export default function HomePage() {
       ) : (
         <div ref={panelRef} className="absolute inset-x-0 bottom-0 z-20">
           <div className="pointer-events-none h-8 bg-gradient-to-t from-ink-950/10 to-transparent" aria-hidden />
-          <div className="rounded-t-sheet bg-surface px-5 pb-[max(18px,env(safe-area-inset-bottom))] pt-5 shadow-float">
+          <div className="rounded-t-sheet bg-surface px-5 pb-[max(18px,env(safe-area-inset-bottom))] pt-4 shadow-float">
             <h2 className="text-section text-ink-950">가까운 그냥드림을 찾아드릴게요</h2>
 
-            <div className="mt-4 space-y-2">
+            <div className="mt-3 space-y-2">
               <Button onClick={handleFindNearby} icon={LocateFixed} disabled={locating}>
                 {locating ? '위치를 확인하고 있어요' : '내 주변 그냥드림 찾기'}
               </Button>
@@ -227,9 +227,10 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => navigate('/help')}
-              className="tap-md mt-1 w-full text-note text-ink-600 underline underline-offset-4 hover:text-brand-700 focus-ring"
+              className="tap-md mt-1 flex w-full items-center justify-center gap-1 text-note font-semibold text-ink-600 hover:text-brand-700 focus-ring"
             >
-              직접 가기 어려우세요? 도움 요청
+              직접 가기 어려우세요? 도움 요청하기
+              <ChevronRight size={15} aria-hidden />
             </button>
           </div>
         </div>
@@ -273,10 +274,10 @@ function PlaceRow({
           {place.displayName}
         </span>
         <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <StatusChip status={status} />
           {place.distanceKm !== null && (
             <span className="text-note font-semibold text-ink-800">{distanceText(place.distanceKm)}</span>
           )}
-          <StatusChip status={status} />
         </span>
       </span>
       <ChevronRight size={20} className="shrink-0 text-ink-400" aria-hidden />

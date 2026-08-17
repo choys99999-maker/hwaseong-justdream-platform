@@ -45,12 +45,24 @@ const RELAYOUT_DEBOUNCE_MS = 160;
 /** 이 레벨 이하(=더 확대)에서만 모든 핀의 이름표를 띄운다. 넓게 보면 이름끼리 겹쳐 못 읽는다. */
 const LABEL_ZOOM_LEVEL = 6;
 
+/** 첫 화면·초기화 시 화성시 중심을 보여줄 고정 줌 레벨. */
+const HWASEONG_OVERVIEW_LEVEL = 10;
+
+/**
+ * 클러스터링 격자 한 칸의 크기(위경도 도 단위). 화성시 전역에 흩어진 약 30개 거점을
+ * 몇 개의 무리로 묶기 위한 값이다 — 거점이 크게 늘면 다시 조정해야 한다.
+ */
+const CLUSTER_CELL_DEG = 0.03;
+/** 이 개수 미만이면 클러스터링을 하지 않는다. 적은 핀을 굳이 묶을 이유가 없다. */
+const CLUSTER_MIN_PLACES = 8;
+
 function createPinElement(place: CitizenPlace): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'cj-pin';
   btn.dataset.selected = 'false';
   btn.dataset.zoomed = 'false';
+  btn.dataset.clustered = 'false';
   btn.setAttribute('aria-label', place.displayName);
 
   const dot = document.createElement('span');
@@ -61,6 +73,16 @@ function createPinElement(place: CitizenPlace): HTMLButtonElement {
   name.textContent = place.displayName;
 
   btn.append(dot, name);
+  return btn;
+}
+
+/** 격자 칸 하나에 묶인 거점 수를 보여주는 배지. 눌러 확대하면 개별 핀으로 풀린다. */
+function createClusterElement(count: number): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cj-cluster';
+  btn.setAttribute('aria-label', `이 근처 거점 ${count}곳 — 눌러서 확대해 보기`);
+  btn.textContent = String(count);
   return btn;
 }
 
@@ -162,6 +184,7 @@ export default function CitizenMap({
   const mapsRef = useRef<KakaoMapsNamespace | null>(null);
   const mapRef = useRef<KakaoMap | null>(null);
   const markersRef = useRef<MarkerEntry[]>([]);
+  const clusterOverlaysRef = useRef<KakaoCustomOverlay[]>([]);
   const myLocRef = useRef<KakaoCustomOverlay | null>(null);
   const shapesRef = useRef<Array<KakaoPolygon | KakaoPolyline>>([]);
   const teardownRef = useRef<(() => void)[]>([]);
@@ -176,21 +199,27 @@ export default function CitizenMap({
   bottomInsetRef.current = bottomInset;
   const fitPointsRef = useRef(fitPoints);
   fitPointsRef.current = fitPoints;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const rankedIdsRef = useRef(rankedIds ?? []);
+  rankedIdsRef.current = rankedIds ?? [];
 
   const placesKey = useMemo(() => places.map((p) => p.id).join('|'), [places]);
   const rankKey = (rankedIds ?? []).join('|');
 
-  /** 화성시 본토 범위로 맞춘다. 서해 도서까지 넣으면 화면 대부분이 바다가 된다. */
+  /**
+   * 화성시 중심으로 맞춘다. 세로로 좁은 휴대폰 화면에 가로로 넓은 시 경계 전체를
+   * 억지로 다 넣으면(=bounds fit) 서울·인천까지 보일 만큼 과하게 멀어진다 —
+   * 그러면 지도가 "화성시" 가 아니라 "수도권" 으로 읽힌다. 그래서 경계를 다 채우기보다
+   * 시 중심에서 적당히 확대된 고정 레벨을 쓴다.
+   */
   const fitHwaseong = useCallback(() => {
     const maps = mapsRef.current;
     const map = mapRef.current;
     if (!maps || !map) return;
     const [minLng, minLat, maxLng, maxLat] = HWASEONG_FOCUS_BBOX;
-    const bounds = new maps.LatLngBounds(
-      new maps.LatLng(minLat, minLng),
-      new maps.LatLng(maxLat, maxLng),
-    );
-    map.setBounds(bounds, 32, 32, bottomInsetRef.current + 24, 32);
+    map.setCenter(new maps.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2));
+    map.setLevel(HWASEONG_OVERVIEW_LEVEL);
   }, []);
 
   const syncZoomLabels = useCallback(() => {
@@ -199,6 +228,82 @@ export default function CitizenMap({
     const zoomed = map.getLevel() <= LABEL_ZOOM_LEVEL;
     markersRef.current.forEach(({ element }) => {
       element.dataset.zoomed = String(zoomed);
+    });
+  }, []);
+
+  const placesRef = useRef(places);
+  placesRef.current = places;
+
+  /**
+   * 넓게 볼 때 겹치는 핀을 격자로 묶어 숫자 배지 하나로 보여준다.
+   * 선택되었거나 추천에 든 거점은 격자에 넣지 않는다 — "지금 이 결과" 는 항상 개별로 보여야 한다.
+   * 충분히 확대하면(zoomed) 클러스터를 전부 풀고 원래 핀으로 되돌린다.
+   */
+  const updateClusters = useCallback(() => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+
+    clusterOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+    clusterOverlaysRef.current = [];
+
+    const zoomed = map.getLevel() <= LABEL_ZOOM_LEVEL;
+    const pinned = new Set<string>([...rankedIdsRef.current, ...(selectedIdRef.current ? [selectedIdRef.current] : [])]);
+
+    if (zoomed || markersRef.current.length < CLUSTER_MIN_PLACES) {
+      markersRef.current.forEach(({ element }) => {
+        element.dataset.clustered = 'false';
+      });
+      return;
+    }
+
+    const groups = new Map<string, MarkerEntry[]>();
+    markersRef.current.forEach((entry) => {
+      if (pinned.has(entry.id)) {
+        entry.element.dataset.clustered = 'false';
+        return;
+      }
+      const place = placesRef.current.find((p) => p.id === entry.id);
+      if (!place) return;
+      const key = `${Math.round(place.lat / CLUSTER_CELL_DEG)}:${Math.round(place.lng / CLUSTER_CELL_DEG)}`;
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(entry);
+      else groups.set(key, [entry]);
+    });
+
+    groups.forEach((entries) => {
+      if (entries.length < 2) {
+        entries[0].element.dataset.clustered = 'false';
+        return;
+      }
+      entries.forEach((entry) => {
+        entry.element.dataset.clustered = 'true';
+      });
+
+      const coords = entries
+        .map((entry) => placesRef.current.find((p) => p.id === entry.id))
+        .filter((p): p is CitizenPlace => Boolean(p));
+      const lat = coords.reduce((sum, p) => sum + p.lat, 0) / coords.length;
+      const lng = coords.reduce((sum, p) => sum + p.lng, 0) / coords.length;
+      const position = new maps.LatLng(lat, lng);
+
+      const element = createClusterElement(entries.length);
+      const onClick = (e: MouseEvent) => {
+        e.stopPropagation();
+        map.setLevel(LABEL_ZOOM_LEVEL, { anchor: position, animate: true });
+      };
+      element.addEventListener('click', onClick);
+
+      const overlay = new maps.CustomOverlay({
+        position,
+        content: element,
+        yAnchor: 0.5,
+        xAnchor: 0.5,
+        zIndex: 6,
+        clickable: true,
+      });
+      overlay.setMap(map);
+      clusterOverlaysRef.current.push(overlay);
     });
   }, []);
 
@@ -229,7 +334,10 @@ export default function CitizenMap({
         maps.event.addListener(map, 'click', onBgClick);
         teardownRef.current.push(() => maps.event.removeListener(map, 'click', onBgClick));
 
-        const onZoom = () => syncZoomLabels();
+        const onZoom = () => {
+          syncZoomLabels();
+          updateClusters();
+        };
         maps.event.addListener(map, 'zoom_changed', onZoom);
         teardownRef.current.push(() => maps.event.removeListener(map, 'zoom_changed', onZoom));
 
@@ -251,6 +359,8 @@ export default function CitizenMap({
       teardownRef.current.forEach((fn) => fn());
       teardownRef.current = [];
       markersRef.current = [];
+      clusterOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+      clusterOverlaysRef.current = [];
       myLocRef.current = null;
       mapRef.current = null;
       mapsRef.current = null;
@@ -259,9 +369,6 @@ export default function CitizenMap({
   }, [retryToken]);
 
   // 2) 거점 마커 — 거점 목록이 실제로 바뀔 때만 다시 만든다.
-  const placesRef = useRef(places);
-  placesRef.current = places;
-
   useEffect(() => {
     if (phase !== 'ready') return;
     const maps = mapsRef.current;
@@ -297,13 +404,16 @@ export default function CitizenMap({
       };
     });
     syncZoomLabels();
+    updateClusters();
 
     const created = markersRef.current;
     return () => {
       created.forEach((m) => m.dispose());
       markersRef.current = [];
+      clusterOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
+      clusterOverlaysRef.current = [];
     };
-  }, [phase, placesKey, syncZoomLabels]);
+  }, [phase, placesKey, syncZoomLabels, updateClusters]);
 
   // 3) 선택·추천 표시. 마커를 다시 만들지 않고 data 속성만 바꾼다.
   useEffect(() => {
@@ -321,7 +431,9 @@ export default function CitizenMap({
       element.dataset.selected = String(selected);
       overlay.setZIndex(selected ? 12 : rank === 0 ? 10 : rank > 0 ? 8 : 5);
     });
-  }, [phase, selectedId, rankKey, placesKey]);
+    // 선택·추천이 바뀌면 격자 구성 대상도 바뀐다 — pinned 목록을 새로 반영해 다시 묶는다.
+    updateClusters();
+  }, [phase, selectedId, rankKey, placesKey, updateClusters]);
 
   // 4) 현재 위치
   useEffect(() => {

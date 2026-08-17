@@ -1,4 +1,5 @@
-import { Navigation, Phone } from 'lucide-react';
+import { ChevronRight, Navigation, Phone } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { kakaoDirectionsUrl } from '../../lib/geo';
 import { formatCheckedAt } from '../../utils/citizenFormat';
 import { distanceText, itemSummary, resolvePlaceStatus, type RankedPlace } from '../../utils/citizenPlace';
@@ -16,6 +17,11 @@ interface PlaceDetailProps {
    * 끄고 쓴다 — 같은 이름을 두 번 읽게 하지 않는다.
    */
   showTitle?: boolean;
+  /**
+   * "직접 방문이 어려우신가요?" 줄을 여기서 낼지. `/site/:id` 페이지는 이미 자기 자리에
+   * 같은 안내를 더 크게 두고 있어서 끄고 쓴다 — 지도 시트에서만 켠다.
+   */
+  showHelpRow?: boolean;
 }
 
 /**
@@ -27,7 +33,14 @@ interface PlaceDetailProps {
  * 그 아래에만 주소·기관 유형을 둔다. 상태 문장은 `resolvePlaceStatus` 한 곳에서만 만들어서
  * "운영 종료" 와 "지금 받을 수 있어요" 가 함께 뜨는 모순이 생기지 않는다.
  */
-export default function PlaceDetail({ place, originLabel, titleId, showTitle = true }: PlaceDetailProps) {
+export default function PlaceDetail({
+  place,
+  originLabel,
+  titleId,
+  showTitle = true,
+  showHelpRow = false,
+}: PlaceDetailProps) {
+  const navigate = useNavigate();
   const status = resolvePlaceStatus(place);
   const items = itemSummary(place);
 
@@ -78,6 +91,20 @@ export default function PlaceDetail({ place, originLabel, titleId, showTitle = t
           <p className="pt-1 text-center text-note text-ink-600">전화번호는 아직 확인 중이에요</p>
         )}
       </div>
+
+      {showHelpRow && (
+        <button
+          type="button"
+          onClick={() => navigate('/help')}
+          className="tap-md mt-2 flex w-full items-center justify-between rounded-control px-3 text-left transition-colors hover:bg-line-100 focus-ring"
+        >
+          <span className="text-note text-ink-600">직접 방문이 어려우신가요?</span>
+          <span className="flex shrink-0 items-center gap-0.5 text-note font-bold text-brand-700">
+            도움 요청하기
+            <ChevronRight size={16} aria-hidden />
+          </span>
+        </button>
+      )}
 
       {/* 덜 중요한 사실은 전부 아래로. */}
       <dl className="mt-6 space-y-2 border-t border-line-100 pt-4 text-note">

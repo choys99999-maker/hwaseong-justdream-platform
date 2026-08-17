@@ -140,12 +140,12 @@ export default function ItemSearchPage() {
                           {matched.map((m) => m.name).join(' · ')}
                         </span>
                         <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <StatusChip status={status} />
                           {place.distanceKm !== null && (
                             <span className="text-note font-semibold text-ink-800">
                               {distanceText(place.distanceKm)}
                             </span>
                           )}
-                          <StatusChip status={status} />
                         </span>
                       </span>
                       <ChevronRight size={20} className="shrink-0 text-ink-400" aria-hidden />
