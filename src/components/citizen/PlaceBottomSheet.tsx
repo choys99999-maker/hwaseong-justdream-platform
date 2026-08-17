@@ -56,6 +56,7 @@ export default function PlaceBottomSheet({
   const status = resolvePlaceStatus(place);
   const isStale = place.updatedAt.split('T')[0] < todayLocal();
   const checkedText = formatCheckedAt(place.updatedAt);
+  const closeTime = place.openHours?.split('~')[1]?.trim() ?? null;
   const directionUrl = kakaoDirectionsUrl(place.name, { lat: place.lat, lng: place.lng });
 
   const itemsByCategory = ITEM_GROUP_ORDER.reduce<Record<string, typeof place.items>>(
@@ -188,8 +189,13 @@ export default function PlaceBottomSheet({
             <StatusLine status={status} size="lg" />
           </div>
 
+          {/* 운영시간 — 데이터 있고 지금 열려 있을 때만 */}
+          {!status.closed && closeTime && (
+            <p className="mt-0.5 text-note text-ink-500">오늘 {closeTime}까지</p>
+          )}
+
           {/* 물품 요약 카드 */}
-          <div className="mt-3 rounded-card border border-line-200 bg-paper px-4 py-3">
+          <div className="mt-3 rounded-card border border-line-200 bg-paper px-4 py-2.5">
             <p className="text-note font-bold text-ink-600">
               {status.closed ? '최근 확인된 물품' : '현재 확인된 물품'}
             </p>
@@ -202,21 +208,20 @@ export default function PlaceBottomSheet({
               <p className="mt-0.5 text-body text-ink-600">물품 정보를 확인 중이에요</p>
             )}
 
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <p className={`text-note ${isStale ? 'font-semibold text-warn-700' : 'text-ink-500'}`}>
-                {isStale ? '최근 확인된 정보가 아니에요' : checkedText}
-              </p>
-              {totalItems > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setState('expanded')}
-                  className="tap-md flex shrink-0 items-center gap-0.5 text-note font-bold text-brand-700 focus-ring"
-                >
-                  물품 목록 보기
-                  <ChevronRight size={15} aria-hidden />
-                </button>
-              )}
-            </div>
+            {totalItems > 0 && (
+              <button
+                type="button"
+                onClick={() => setState('expanded')}
+                className="tap-md mt-1.5 flex items-center gap-0.5 text-note font-bold text-brand-700 focus-ring"
+              >
+                물품 목록 보기
+                <ChevronRight size={15} aria-hidden />
+              </button>
+            )}
+
+            <p className={`mt-1.5 text-note ${isStale ? 'text-warn-600' : 'text-ink-400'}`}>
+              {isStale ? `${checkedText} · 최신 정보가 아닐 수 있어요` : checkedText}
+            </p>
           </div>
 
           {/* 길찾기 — Primary CTA */}
