@@ -6,6 +6,7 @@ import { distanceKm, type LatLng } from '../../lib/geo';
 import { districtBoundaries } from '../../data/districtBoundaries';
 import { AVAILABILITY_LABEL, type RankedCitizenSite } from '../../utils/citizenSite';
 import { usePrefersReducedMotion } from '../../hooks/usePrefersReducedMotion';
+import StaticCitizenMap from './StaticCitizenMap';
 
 type Phase = 'loading' | 'ready' | 'unavailable';
 
@@ -499,7 +500,8 @@ export default function CitizenDiscoveryMap({
   }, []);
 
   return (
-    <div className="absolute inset-0 bg-slate-200" aria-hidden={phase !== 'ready'}>
+    // 대체 지도도 실제로 조작 가능한 지도다 — 'loading' 일 때만 보조기술에서 감춘다.
+    <div className="absolute inset-0 bg-slate-200" aria-hidden={phase === 'loading'}>
       <div ref={containerRef} className="h-full w-full" data-testid="citizen-map" />
 
       {phase === 'loading' && (
@@ -509,11 +511,20 @@ export default function CitizenDiscoveryMap({
         </div>
       )}
 
+      {/*
+        카카오맵을 못 쓰는 환경에서도 "화성시 어디에 있는지" 는 보여 준다.
+        예전에는 회색 안내판만 남아 첫 화면의 지도가 통째로 사라졌다.
+      */}
       {phase === 'unavailable' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-100 px-8 text-center text-slate-500">
-          <p className="text-lg font-semibold text-slate-700">지도를 불러올 수 없어요</p>
-          <p className="text-base">지도 없이도 아래에서 갈 곳을 찾아드릴게요.</p>
-        </div>
+        <StaticCitizenMap
+          sites={sites}
+          highlightIds={highlightIds}
+          userLocation={userLocation}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          bottomInset={bottomInset}
+          quiet={quiet}
+        />
       )}
     </div>
   );

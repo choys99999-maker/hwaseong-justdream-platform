@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, KeyRound, RotateCw } from 'lucide-react';
 import type { DistrictId, OperationSite, SiteStatus } from '../../types';
 import type { KakaoCustomOverlay, KakaoMap, KakaoMapsNamespace, KakaoPolygon, KakaoPolyline } from '../../types/kakao';
-import { KAKAO_KEY_ENV_NAME, MissingKakaoKeyError, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
+import { MissingKakaoKeyError, hasKakaoAppKey, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
 import { HWASEONG_FOCUS_BBOX, districtBoundaries } from '../../data/districtBoundaries';
 import { SITE_STATUS_COLORS, SITE_STATUS_LABELS } from '../../data/regionMeta';
+import StaticDistrictMap from './StaticDistrictMap';
+import { computeCoincidentShifts, layoutLabels } from './labelLayout';
+import type { MapFocusRequest } from './mapTypes';
+
+export type { MapFocusRequest } from './mapTypes';
 
 /** 폴리곤 표현 기준. 지명과 도로가 읽히도록 기본 채도를 낮게 유지한다. */
 const POLYGON_STYLE = {
@@ -46,140 +50,7 @@ const FOCUS_SITE_LEVEL = 4;
  */
 const CLUSTER_ZOOM_THRESHOLD = 10;
 
-/**
- * 라벨 배치 후보. 오른쪽을 기본으로 하고, 이미 놓인 라벨·마커와 겹치면 순서대로 옮긴다.
- * 후보를 다 써도 자리가 없으면 이름을 숨기지 않고 겹침 면적이 가장 작은 자리를 쓴다.
- */
-const LABEL_PLACES = [
-  'right',
-  'left',
-  'bottom',
-  'top',
-  'bottom-right',
-  'top-right',
-  'bottom-left',
-  'top-left',
-] as const;
-type LabelPlace = (typeof LABEL_PLACES)[number];
-
-/** 다른 거점의 원형 마커를 덮는 것이 라벨끼리 겹치는 것보다 나쁘므로 가중치를 준다. */
-const DOT_OVERLAP_WEIGHT = 3;
-
-/** 원형 마커 중심에서 라벨 변까지의 거리(px). CSS 의 calc(100% + 5px) 와 맞춘다. */
-const LABEL_OFFSET = 11;
-/** 대각선 배치의 중심-변 거리(px). CSS 의 calc(100% + 3px) 와 맞춘다. */
-const DIAGONAL_OFFSET = 9;
-/** 원형 마커가 차지하는 반경(px). 라벨이 다른 거점의 점을 덮지 않도록 장애물로 넣는다. */
-const DOT_RADIUS = 8;
-/** 겹침 판정 여유(px) */
-const COLLISION_SLACK = 2;
-
-interface LabelBox {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-  /** true 면 다른 거점의 원형 마커 자리 */
-  isDot?: boolean;
-}
-
-interface MeasuredMarker {
-  entry: MarkerEntry;
-  cx: number;
-  cy: number;
-  w: number;
-  h: number;
-}
-
-function labelBox(place: LabelPlace, m: MeasuredMarker): LabelBox {
-  switch (place) {
-    case 'right':
-      return { left: m.cx + LABEL_OFFSET, top: m.cy - m.h / 2, right: m.cx + LABEL_OFFSET + m.w, bottom: m.cy + m.h / 2 };
-    case 'left':
-      return { left: m.cx - LABEL_OFFSET - m.w, top: m.cy - m.h / 2, right: m.cx - LABEL_OFFSET, bottom: m.cy + m.h / 2 };
-    case 'bottom':
-      return { left: m.cx - m.w / 2, top: m.cy + LABEL_OFFSET, right: m.cx + m.w / 2, bottom: m.cy + LABEL_OFFSET + m.h };
-    case 'top':
-      return { left: m.cx - m.w / 2, top: m.cy - LABEL_OFFSET - m.h, right: m.cx + m.w / 2, bottom: m.cy - LABEL_OFFSET };
-    case 'bottom-right':
-      return { left: m.cx + DIAGONAL_OFFSET, top: m.cy + DIAGONAL_OFFSET, right: m.cx + DIAGONAL_OFFSET + m.w, bottom: m.cy + DIAGONAL_OFFSET + m.h };
-    case 'top-right':
-      return { left: m.cx + DIAGONAL_OFFSET, top: m.cy - DIAGONAL_OFFSET - m.h, right: m.cx + DIAGONAL_OFFSET + m.w, bottom: m.cy - DIAGONAL_OFFSET };
-    case 'bottom-left':
-      return { left: m.cx - DIAGONAL_OFFSET - m.w, top: m.cy + DIAGONAL_OFFSET, right: m.cx - DIAGONAL_OFFSET, bottom: m.cy + DIAGONAL_OFFSET + m.h };
-    case 'top-left':
-      return { left: m.cx - DIAGONAL_OFFSET - m.w, top: m.cy - DIAGONAL_OFFSET - m.h, right: m.cx - DIAGONAL_OFFSET, bottom: m.cy - DIAGONAL_OFFSET };
-  }
-}
-
-/** 두 사각형이 겹치는 넓이(px²). 여유(COLLISION_SLACK) 안쪽 스침은 0 으로 본다. */
-function overlapArea(a: LabelBox, b: LabelBox): number {
-  const x = Math.min(a.right, b.right) - Math.max(a.left, b.left) - COLLISION_SLACK;
-  const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) - COLLISION_SLACK;
-  if (x <= 0 || y <= 0) return 0;
-  return x * y * (b.isDot ? DOT_OVERLAP_WEIGHT : 1);
-}
-
-/**
- * 화면에 보이는 거점 라벨의 겹침을 배치 방향만 바꿔 줄인다.
- * 이름은 절대 숨기지 않는다. 8방향 어디에도 빈자리가 없으면 겹침 면적이 가장 작은 쪽을 쓴다.
- * (거점이 지나치게 몰린 구간은 확대하면 풀린다 — 확대 시 개별 거점이 우선이다)
- */
-function layoutLabels(entries: MarkerEntry[]): void {
-  const measured: MeasuredMarker[] = [];
-  entries.forEach((entry) => {
-    if (!entry.visible) return;
-    const dot = entry.element.getBoundingClientRect();
-    const label = entry.label.getBoundingClientRect();
-    if (label.width === 0 || label.height === 0) return;
-    measured.push({
-      entry,
-      cx: dot.left + dot.width / 2,
-      cy: dot.top + dot.height / 2,
-      w: label.width,
-      h: label.height,
-    });
-  });
-  if (measured.length === 0) return;
-
-  // 위 → 아래, 왼쪽 → 오른쪽 순으로 자리를 잡아 배치 결과가 재계산마다 흔들리지 않게 한다.
-  measured.sort((a, b) => a.cy - b.cy || a.cx - b.cx);
-
-  // 모든 거점의 원형 마커 자리를 먼저 장애물로 깔아 둔다.
-  const occupied: LabelBox[] = measured.map((m) => ({
-    left: m.cx - DOT_RADIUS,
-    top: m.cy - DOT_RADIUS,
-    right: m.cx + DOT_RADIUS,
-    bottom: m.cy + DOT_RADIUS,
-    isDot: true,
-  }));
-
-  measured.forEach((m) => {
-    let best: LabelPlace = LABEL_PLACES[0];
-    let bestCost = Number.POSITIVE_INFINITY;
-    for (const candidate of LABEL_PLACES) {
-      const box = labelBox(candidate, m);
-      const cost = occupied.reduce((sum, other) => sum + overlapArea(box, other), 0);
-      if (cost < bestCost) {
-        best = candidate;
-        bestCost = cost;
-      }
-      if (bestCost === 0) break; // 앞선 후보에서 자리를 찾으면 더 볼 필요가 없다
-    }
-    occupied.push(labelBox(best, m));
-    m.entry.element.dataset.place = best;
-  });
-}
-
 type MapPhase = 'loading' | 'ready' | 'missing-key' | 'error';
-
-/** 검색 결과 선택 등 외부에서 특정 거점으로 지도를 이동시키고 싶을 때 쓴다. token 을 매번 올려 같은 거점을 다시 선택해도 이동이 재실행되게 한다. */
-export interface MapFocusRequest {
-  siteId: string;
-  token: number;
-  /** true 면 center 이동만 하고 zoom 레벨은 바꾸지 않는다. 마커 직접 클릭 시 사용. */
-  panOnly?: boolean;
-}
 
 interface KakaoDistrictMapProps {
   sites: OperationSite[];
@@ -220,38 +91,6 @@ interface ClusterEntry {
   overlay: KakaoCustomOverlay;
   countElement: HTMLSpanElement;
   element: HTMLDivElement;
-}
-
-/**
- * 좌표가 완전히 같은 거점들의 **표시 위치**만 좌우로 벌리는 오프셋(px)을 계산한다.
- *
- * 같은 건물에 두 기관이 들어 있는 경우(예: 동탄대로8길 36 — 동탄노인복지관 / 동탄7동 협의체)
- * 카카오가 두 기관에 같은 좌표를 주기 때문에 원형 마커가 정확히 포개진다.
- * 실제 lat/lng 는 손대지 않고, 화면에서만 좌우로 밀어 각각 클릭할 수 있게 한다.
- * 밀어낸 원과 실제 지점 사이는 짧은 stem 으로 이어 붙여 위치 관계가 어색해 보이지 않게 한다.
- *
- * id 정렬 기준으로 자리를 배분하므로 렌더링할 때마다 같은 결과가 나온다.
- */
-const COINCIDENT_STEP = 14;
-
-function computeCoincidentShifts(sites: OperationSite[]): Map<string, number> {
-  const groups = new Map<string, OperationSite[]>();
-  sites.forEach((site) => {
-    const key = `${site.latitude.toFixed(6)},${site.longitude.toFixed(6)}`;
-    groups.set(key, [...(groups.get(key) ?? []), site]);
-  });
-
-  const shifts = new Map<string, number>();
-  groups.forEach((group) => {
-    if (group.length < 2) return;
-    [...group]
-      .sort((a, b) => a.id.localeCompare(b.id))
-      .forEach((site, index) => {
-        // 그룹 중앙을 기준으로 좌우 대칭 배치한다. 2개면 -14px / +14px.
-        shifts.set(site.id, (index - (group.length - 1) / 2) * (COINCIDENT_STEP * 2));
-      });
-  });
-  return shifts;
 }
 
 /**
@@ -326,8 +165,11 @@ export default function KakaoDistrictMap({
   const cleanupRef = useRef<(() => void)[]>([]);
   const layoutFrameRef = useRef(0);
 
-  const [phase, setPhase] = useState<MapPhase>('loading');
+  // 키가 아예 없으면 카카오를 부르지 않는다 — 뜨지도 않을 스피너를 8초 보여줄 이유가 없다.
+  const [phase, setPhase] = useState<MapPhase>(() => (hasKakaoAppKey() ? 'loading' : 'missing-key'));
   const [retryToken, setRetryToken] = useState(0);
+  /** 대체 지도 안내에 쓸 실패 사유. */
+  const [failureReason, setFailureReason] = useState<string | null>(null);
   /** true = 광역 줌(level ≥ CLUSTER_ZOOM_THRESHOLD). 구 단위 요약 원을 표시한다. */
   const [clusterMode, setClusterMode] = useState(INITIAL_LEVEL >= CLUSTER_ZOOM_THRESHOLD);
 
@@ -455,12 +297,23 @@ export default function KakaoDistrictMap({
 
   // 1) SDK 로드 + 지도 생성. 재시도할 때만 다시 실행한다.
   useEffect(() => {
+    if (!hasKakaoAppKey()) {
+      setPhase('missing-key');
+      return;
+    }
+
     let mounted = true;
     setPhase('loading');
 
     loadKakaoMaps()
       .then((maps) => {
-        if (!mounted || !containerRef.current) return;
+        if (!mounted) return;
+        if (!containerRef.current) {
+          // 컨테이너가 사라졌는데 그대로 두면 'loading' 에 갇힌다.
+          setFailureReason('지도를 그릴 영역을 찾지 못했습니다.');
+          setPhase('error');
+          return;
+        }
         mapsRef.current = maps;
 
         const [minLng, minLat, maxLng, maxLat] = HWASEONG_FOCUS_BBOX;
@@ -610,6 +463,7 @@ export default function KakaoDistrictMap({
           return;
         }
         console.error('[KakaoDistrictMap] 지도를 초기화하지 못했습니다.', error);
+        setFailureReason(error instanceof Error ? error.message : '지도를 불러오지 못했습니다.');
         setPhase('error');
       });
 
@@ -723,8 +577,38 @@ export default function KakaoDistrictMap({
 
   const handleRetry = () => {
     resetKakaoMapsLoader();
+    setFailureReason(null);
     setRetryToken((token) => token + 1);
   };
+
+  /*
+   * 카카오맵을 못 쓰는 상황에서도 지도는 나와야 한다.
+   *
+   * 키가 없거나(로컬 클론·시연 PC) 실행 도메인이 카카오에 등록되지 않은 배포본에서는
+   * 예전 화면이 안내문만 띄우고 끝나 "거점이 어디 있는지" 자체를 볼 수 없었다.
+   * 저장소에 이미 들어 있는 경계 GeoJSON 으로 같은 지도를 그려 기능을 잃지 않게 한다.
+   */
+  if (phase === 'missing-key' || phase === 'error') {
+    return (
+      <StaticDistrictMap
+        sites={sites}
+        districtRiskLevels={districtRiskLevels}
+        selectedDistrict={selectedDistrict}
+        selectedSiteId={selectedSiteId}
+        onSelectDistrict={onSelectDistrict}
+        onSelectSite={onSelectSite}
+        onMapClick={onMapClick}
+        filterFn={filterFn}
+        focusRequest={focusRequest}
+        notice={
+          phase === 'missing-key'
+            ? '카카오맵 키가 없어 기본 경계 지도로 표시 중입니다'
+            : `카카오맵을 불러오지 못해 기본 경계 지도로 표시 중입니다 — ${failureReason ?? '원인은 콘솔 참고'}`
+        }
+        onRetryKakao={phase === 'error' ? handleRetry : undefined}
+      />
+    );
+  }
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg bg-slate-100 ring-1 ring-slate-200">
@@ -752,38 +636,6 @@ export default function KakaoDistrictMap({
         </div>
       )}
 
-      {phase === 'missing-key' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-50 px-6 text-center">
-          <KeyRound size={28} className="text-slate-300" />
-          <p className="text-sm font-medium text-slate-600">카카오맵 API 키 설정이 필요합니다</p>
-          <p className="text-sm text-slate-400">
-            프로젝트 루트 <code className="rounded bg-slate-100 px-1 text-xs text-slate-600">.env</code> 파일에
-            아래 환경변수를 설정한 뒤 개발 서버를 다시 시작해 주세요.
-          </p>
-          <code className="mt-1 rounded bg-slate-100 px-2 py-1 text-xs text-slate-700">{KAKAO_KEY_ENV_NAME}</code>
-          <p className="mt-1 text-xs text-slate-400">지도를 제외한 나머지 현황은 그대로 확인할 수 있습니다.</p>
-        </div>
-      )}
-
-      {phase === 'error' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center">
-          <AlertTriangle size={28} className="text-rose-300" />
-          <p className="text-sm font-medium text-slate-600">지도를 불러오지 못했습니다</p>
-          <p className="text-sm text-slate-400">
-            네트워크 상태와 카카오 개발자 사이트의 플랫폼 도메인 등록 여부를 확인해 주세요.
-            <br />
-            자세한 원인은 브라우저 콘솔에 기록됩니다.
-          </p>
-          <button
-            type="button"
-            onClick={handleRetry}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-          >
-            <RotateCw size={14} />
-            다시 시도
-          </button>
-        </div>
-      )}
     </div>
   );
 }
