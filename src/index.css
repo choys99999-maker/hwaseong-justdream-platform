@@ -488,21 +488,21 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  border: 3px solid #ffffff;
+  border: 2.5px solid #ffffff;
   background: #0054a6;
   color: #ffffff;
   font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1;
   padding: 0;
   cursor: pointer;
   box-shadow:
-    0 0 0 4px rgba(0, 84, 166, 0.16),
-    0 3px 10px rgba(19, 28, 46, 0.36);
+    0 0 0 3px rgba(0, 84, 166, 0.10),
+    0 2px 8px rgba(19, 28, 46, 0.26);
   transition: transform 150ms ease-out;
   user-select: none;
   -webkit-tap-highlight-color: transparent;

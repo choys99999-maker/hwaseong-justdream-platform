@@ -205,11 +205,11 @@ export default function HomePage() {
         </Sheet>
       ) : (
         <div ref={panelRef} className="absolute inset-x-0 bottom-0 z-20">
-          <div className="pointer-events-none h-8 bg-gradient-to-t from-ink-950/10 to-transparent" aria-hidden />
-          <div className="rounded-t-sheet bg-surface px-5 pb-[max(18px,env(safe-area-inset-bottom))] pt-4 shadow-float">
-            <h2 className="text-section text-ink-950">가까운 그냥드림을 찾아드릴게요</h2>
+          <div className="pointer-events-none h-6 bg-gradient-to-t from-ink-950/10 to-transparent" aria-hidden />
+          <div className="rounded-t-sheet bg-surface px-5 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 shadow-float">
+            <h2 className="text-lead font-bold text-ink-950">가까운 그냥드림을 찾아드릴게요</h2>
 
-            <div className="mt-3 space-y-2">
+            <div className="mt-2 space-y-1.5">
               <Button onClick={handleFindNearby} icon={LocateFixed} disabled={locating}>
                 {locating ? '위치를 확인하고 있어요' : '내 주변 그냥드림 찾기'}
               </Button>
@@ -219,7 +219,7 @@ export default function HomePage() {
             </div>
 
             {locationBlocked && (
-              <p className="mt-3 text-note text-ink-600">
+              <p className="mt-2 text-note text-ink-600">
                 위치를 쓸 수 없어요. 동네로 찾아드릴게요.
               </p>
             )}
@@ -227,7 +227,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => navigate('/help')}
-              className="tap-md mt-1 flex w-full items-center justify-center gap-1 text-note font-semibold text-ink-600 hover:text-brand-700 focus-ring"
+              className="tap-md flex w-full items-center justify-center gap-1 text-note text-ink-500 hover:text-brand-700 focus-ring"
             >
               직접 가기 어려우세요? 도움 요청하기
               <ChevronRight size={15} aria-hidden />
