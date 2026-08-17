@@ -47,7 +47,9 @@ export default function DemoRoleSwitcher() {
             disabled={pending}
             aria-pressed={role.key === currentRole}
             className={`min-h-[40px] shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-              role.key === currentRole ? 'bg-amber-600 text-white' : 'bg-white text-amber-800 hover:bg-amber-100'
+              role.key === currentRole
+                ? 'bg-amber-600 text-white'
+                : 'border-[1.5px] border-ink-950/75 bg-white text-amber-800 hover:bg-amber-100'
             }`}
           >
             {DEMO_ROLE_LABELS[role.key]}

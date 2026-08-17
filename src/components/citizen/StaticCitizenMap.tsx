@@ -84,10 +84,34 @@ export default function StaticCitizenMap({
       {projector && (
         <>
           <svg width={size.width} height={size.height} className="absolute inset-0" aria-hidden>
-            {/*
-              카카오 버전과 같은 절제를 지킨다 — 구마다 색을 칠하지 않고,
-              "여기까지가 화성시" 만 아주 옅은 면으로 깔고 경계는 얇은 선이 맡는다.
-            */}
+            <defs>
+              {/* 화성시 내부를 검정(=오버레이 숨김)으로 잘라낸 마스크 — 외부에만 dim 덮기 위해 */}
+              <mask id="hwaseong-outside-dim">
+                <rect x="0" y="0" width={size.width} height={size.height} fill="white" />
+                {districtBoundaries.map((district) =>
+                  district.outline.map((ring, index) => (
+                    <path
+                      key={`hmask-${district.id}-${index}`}
+                      d={ringsToPath([ring], projector)}
+                      fill="black"
+                    />
+                  )),
+                )}
+              </mask>
+            </defs>
+
+            {/* 화성시 외부 dim 오버레이 */}
+            <rect
+              x="0"
+              y="0"
+              width={size.width}
+              height={size.height}
+              fill="#0a121c"
+              fillOpacity={0.52}
+              mask="url(#hwaseong-outside-dim)"
+            />
+
+            {/* 화성시 구 경계 내부 면 + 기존 파란 선 */}
             {districtBoundaries.map((district) =>
               district.outline.map((ring, index) => (
                 <path
@@ -95,9 +119,7 @@ export default function StaticCitizenMap({
                   d={ringsToPath([ring], projector)}
                   fill="#131c2e"
                   fillOpacity={0.06}
-                  stroke="#0054a6"
-                  strokeOpacity={0.45}
-                  strokeWidth={1.2}
+                  stroke="none"
                 />
               )),
             )}
@@ -108,12 +130,27 @@ export default function StaticCitizenMap({
                     key={`area-${area.code}-${index}`}
                     d={ringsToPath(polygon, projector)}
                     fill="none"
-                    stroke="#131c2e"
-                    strokeOpacity={0.14}
-                    strokeWidth={0.6}
+                    stroke="#0054a6"
+                    strokeOpacity={0.22}
+                    strokeWidth={0.8}
                   />
                 )),
               ),
+            )}
+
+            {/* 화성시 외곽 경계선 — 진한 차콜로 내/외부를 명확히 구분 */}
+            {districtBoundaries.map((district) =>
+              district.outline.map((ring, index) => (
+                <path
+                  key={`boundary-${district.id}-${index}`}
+                  d={ringsToPath([ring], projector)}
+                  fill="none"
+                  stroke="#111827"
+                  strokeOpacity={0.85}
+                  strokeWidth={2.5}
+                  strokeLinejoin="round"
+                />
+              )),
             )}
           </svg>
 

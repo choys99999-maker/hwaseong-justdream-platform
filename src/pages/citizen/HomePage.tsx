@@ -150,12 +150,12 @@ export default function HomePage() {
           type="button"
           onClick={openDrawer}
           aria-label="전체 메뉴 열기"
-          className="pointer-events-auto flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface/95 text-ink-800 shadow-raise ring-1 ring-ink-950/5 backdrop-blur-sm transition-colors hover:text-brand-700 focus-ring"
+          className="pointer-events-auto flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface/95 text-ink-800 shadow-raise ring-[1.5px] ring-ink-950/85 backdrop-blur-sm transition-colors hover:text-brand-700 focus-ring"
         >
           <Menu size={24} aria-hidden />
         </button>
         <div className="flex flex-1 justify-center pr-12">
-          <span className="rounded-full bg-surface/95 px-3 py-1.5 shadow-raise ring-1 ring-ink-950/5 backdrop-blur-sm">
+          <span className="rounded-full bg-surface/95 px-3 py-1.5 shadow-raise ring-[1.5px] ring-ink-950/85 backdrop-blur-sm">
             <Brand />
           </span>
         </div>
@@ -206,14 +206,14 @@ export default function HomePage() {
       ) : (
         <div ref={panelRef} className="absolute inset-x-0 bottom-0 z-20">
           <div className="pointer-events-none h-6 bg-gradient-to-t from-ink-950/10 to-transparent" aria-hidden />
-          <div className="rounded-t-sheet bg-surface px-5 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 shadow-float">
+          <div className="rounded-t-sheet border border-ink-950/85 bg-surface px-5 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 shadow-float">
             <h2 className="text-lead font-bold text-ink-950">가까운 그냥드림을 찾아드릴게요</h2>
 
             <div className="mt-2 space-y-1.5">
               <Button onClick={handleFindNearby} icon={LocateFixed} disabled={locating}>
                 {locating ? '위치를 확인하고 있어요' : '내 주변 그냥드림 찾기'}
               </Button>
-              <Button variant="secondary" size="md" icon={MapPin} onClick={() => setShowDongPicker(true)}>
+              <Button variant="secondary" size="md" icon={MapPin} onClick={() => setShowDongPicker(true)} className="border-[1.5px] border-ink-950/85">
                 동네로 찾기
               </Button>
             </div>

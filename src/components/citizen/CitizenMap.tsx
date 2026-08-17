@@ -111,9 +111,9 @@ function orientRing(ring: [number, number][], wantCCW: boolean): [number, number
 /**
  * 화성시 경계.
  *
- * 지도는 장식 배경이 아니라 제품 자체라서 최대한 덜 덮는다 —
- * 바깥 마스크는 "여기까지가 화성시" 만 알 정도로 아주 옅게(0.10) 깔고,
- * 읍·면·동 구분은 면 색이 아니라 얇은 경계선이 한다. 색을 여러 개 쓰지 않는다.
+ * 외부 영역은 rgba(10,18,28,0.52)로 확실히 어둡게 깔아 화성시 내/외부를 즉시 구분하고,
+ * 화성시 외곽에 진한 차콜 선을 추가해 경계를 명확히 한다.
+ * 내부 읍·면·동 구분은 얇은 파란 선이 맡는다.
  */
 function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPolygon | KakaoPolyline> {
   const shapes: Array<KakaoPolygon | KakaoPolyline> = [];
@@ -126,17 +126,35 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPol
     [124.0, 39.5],
   ];
   const holes = districtBoundaries.flatMap((d) => d.outline).map((ring) => orientRing(ring, false));
+  // 화성시 외부 전체를 어둡게 — 내부는 기존 지도 밝기 그대로 유지
   const mask = new maps.Polygon({
     path: [toPath(orientRing(world, true)), ...holes.map(toPath)],
     strokeWeight: 0,
     strokeOpacity: 0,
-    fillColor: '#131c2e',
-    fillOpacity: 0.1,
+    fillColor: '#0a121c',
+    fillOpacity: 0.52,
     zIndex: 1,
   });
   mask.setMap(map);
   shapes.push(mask);
 
+  // 화성시 외곽 경계선 — 진한 차콜로 내/외부 경계를 명확히 그린다
+  districtBoundaries.forEach((district) => {
+    district.outline.forEach((ring) => {
+      const outline = new maps.Polyline({
+        path: toPath(ring),
+        strokeWeight: 2.5,
+        strokeColor: '#111827',
+        strokeOpacity: 0.85,
+        strokeStyle: 'solid',
+        zIndex: 4,
+      });
+      outline.setMap(map);
+      shapes.push(outline);
+    });
+  });
+
+  // 내부 읍·면·동 경계 — 조용한 파란 선으로 구역만 알린다
   districtBoundaries.forEach((district) => {
     district.areas.forEach((area) => {
       area.polygons.forEach((polygon) => {
