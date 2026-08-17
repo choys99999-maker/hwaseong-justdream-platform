@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronRight, LocateFixed, MapPin, Menu } from 'lucide-react';
 import CitizenMap from '../../components/citizen/CitizenMap';
 import DongPicker from '../../components/citizen/DongPicker';
-import PlaceDetail from '../../components/citizen/PlaceDetail';
+import PlaceBottomSheet from '../../components/citizen/PlaceBottomSheet';
 import Brand from '../../components/citizen/ui/Brand';
 import Button from '../../components/citizen/ui/Button';
 import Sheet from '../../components/citizen/ui/Sheet';
@@ -41,6 +41,8 @@ export default function HomePage() {
   const [focusToken, setFocusToken] = useState(0);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [panelHeight, setPanelHeight] = useState(200);
+  // 시트 높이가 크게 바뀌면(확장·축소) 카메라를 재프레이밍해 마커가 시트 뒤에 가리지 않게 한다.
+  const prevSheetHeightRef = useRef(0);
 
   // 위치 요청이 "내 주변 찾기" 버튼에서 시작된 것인지 표시한다. 자동으로 위치를 묻지 않는다.
   const awaitingLocation = useRef(false);
@@ -98,6 +100,8 @@ export default function HomePage() {
     (id: string | null) => {
       setShowList(false);
       setSelectedId(id);
+      // 새 장소를 고를 때 높이 ref 를 초기화 — 시트가 열리는 첫 순간의 높이 변화로 이중 re-frame 이 발생하지 않도록.
+      prevSheetHeightRef.current = 0;
       if (!id) return;
       const place = places.find((p) => p.id === id);
       if (!place) return;
@@ -112,6 +116,27 @@ export default function HomePage() {
     setSelectedId(null);
     setShowList(false);
   }, []);
+
+  /**
+   * 시트 높이 변화를 받아 지도 bottomInset 을 갱신하고,
+   * 높이가 크게 달라졌을 때(확장·축소) 카메라를 재프레이밍해 마커를 가리지 않게 한다.
+   */
+  const handlePlaceSheetHeight = useCallback(
+    (h: number) => {
+      const prev = prevSheetHeightRef.current;
+      prevSheetHeightRef.current = h;
+      setSheetHeight(h);
+      // 이전 높이가 0(시트가 처음 열리는 순간)이면 선택 시의 fitPoints 가 이미 담당하므로 건너뛴다.
+      if (selectedId && prev > 0 && Math.abs(h - prev) > 80) {
+        const place = places.find((p) => p.id === selectedId);
+        if (place) {
+          setFitPoints(origin ? [origin, { lat: place.lat, lng: place.lng }] : [{ lat: place.lat, lng: place.lng }]);
+          setFocusToken((t) => t + 1);
+        }
+      }
+    },
+    [selectedId, places, origin],
+  );
 
   // 액션 영역 높이를 재서 지도 하단 여백으로 넘긴다 — 핀이 패널 뒤에 숨지 않게.
   useLayoutEffect(() => {
@@ -163,27 +188,17 @@ export default function HomePage() {
 
       {/* ── 하단 ── 거점을 고르기 전에는 액션 영역 하나, 고른 뒤에는 그 거점 시트 하나. */}
       {selected ? (
-        <Sheet
+        <PlaceBottomSheet
+          place={selected}
+          originLabel={originLabel}
           onDismiss={closeSheet}
-          onHeightChange={setSheetHeight}
-          maxHeightRatio={0.78}
-          labelledBy="place-sheet-title"
-        >
-          <PlaceDetail place={selected} originLabel={originLabel} titleId="place-sheet-title" showHelpRow />
-          {origin && recommended.length > 1 && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedId(null);
-                setShowList(true);
-              }}
-              className="tap-md mt-4 flex w-full items-center justify-center gap-1 text-body font-semibold text-brand-700 underline underline-offset-4 focus-ring"
-            >
-              가까운 다른 곳 보기
-              <ChevronRight size={18} aria-hidden />
-            </button>
-          )}
-        </Sheet>
+          onHeightChange={handlePlaceSheetHeight}
+          showOtherPlaces={Boolean(origin && recommended.length > 1)}
+          onShowOtherPlaces={() => {
+            setSelectedId(null);
+            setShowList(true);
+          }}
+        />
       ) : showList ? (
         <Sheet
           onDismiss={closeSheet}
