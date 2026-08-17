@@ -28,6 +28,20 @@ const PANEL_W = 295;
 const RAIL_W = 44;
 /** 패널 트랜지션 시간 */
 const TRANSITION_MS = 210;
+/** 이 폭 아래에서는 지도와 운영 패널을 위아래로 쌓는다. */
+const NARROW_QUERY = '(max-width: 1100px)';
+
+/** 지도 옆에 패널을 붙일 자리가 없는 폭인지. */
+function useIsNarrowViewport(): boolean {
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
+  useEffect(() => {
+    const media = window.matchMedia(NARROW_QUERY);
+    const onChange = (event: MediaQueryListEvent) => setIsNarrow(event.matches);
+    media.addEventListener('change', onChange);
+    return () => media.removeEventListener('change', onChange);
+  }, []);
+  return isNarrow;
+}
 
 /**
  * 지도 중심 운영 관제 섹션.
@@ -169,13 +183,24 @@ export default function OperationMapSection() {
     [selectedDistrict, filterFn],
   );
 
-  const sectionStyle: React.CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: isPanelCollapsed ? `1fr ${RAIL_W}px` : `1fr ${PANEL_W}px`,
-    transition: `grid-template-columns ${TRANSITION_MS}ms ease`,
-    gap: '12px',
-    alignItems: 'start',
-  };
+  /*
+   * 좁은 화면에서는 지도 옆에 295px 패널을 붙일 자리가 없다.
+   * 고정 2열로 두면 태블릿·좁은 창에서 지도 폭이 200px 대로 눌려 거점이 겹쳐 읽히지 않았다.
+   * (사이드바가 자동으로 접히는 767px 보다 여유 있게 1100px 를 기준으로 잡는다)
+   */
+  const isNarrow = useIsNarrowViewport();
+  /** 좁은 화면에서는 패널이 지도 아래 전체 폭으로 놓이므로 항상 펼친다. */
+  const collapsed = isPanelCollapsed && !isNarrow;
+
+  const sectionStyle: React.CSSProperties = isNarrow
+    ? { display: 'grid', gridTemplateColumns: '1fr', gap: '12px', alignItems: 'start' }
+    : {
+        display: 'grid',
+        gridTemplateColumns: isPanelCollapsed ? `1fr ${RAIL_W}px` : `1fr ${PANEL_W}px`,
+        transition: `grid-template-columns ${TRANSITION_MS}ms ease`,
+        gap: '12px',
+        alignItems: 'start',
+      };
 
   return (
     <section style={sectionStyle}>
@@ -352,26 +377,29 @@ export default function OperationMapSection() {
       {/* ── 우측 패널 (접기/펼치기) ── */}
       {!isFocusMode && (
         <div className="relative flex flex-col rounded-xl border border-slate-200 bg-white">
-          {/* 패널 토글 버튼 — 카드 왼쪽 경계에 걸쳐 떠 있음 */}
-          <button
-            type="button"
-            onClick={() => setIsPanelCollapsed((v) => !v)}
-            aria-label={isPanelCollapsed ? '운영 패널 펼치기' : '운영 패널 접기'}
-            aria-expanded={!isPanelCollapsed}
-            className="absolute left-0 top-5 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:border-teal-300 hover:text-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-          >
-            {isPanelCollapsed ? <ChevronLeft size={13} /> : <ChevronRight size={13} />}
-          </button>
+          {/* 패널 토글 버튼 — 카드 왼쪽 경계에 걸쳐 떠 있음.
+              위아래로 쌓인 좁은 화면에서는 접을 이유가 없으므로 토글도 감춘다. */}
+          {!isNarrow && (
+            <button
+              type="button"
+              onClick={() => setIsPanelCollapsed((v) => !v)}
+              aria-label={isPanelCollapsed ? '운영 패널 펼치기' : '운영 패널 접기'}
+              aria-expanded={!isPanelCollapsed}
+              className="absolute left-0 top-5 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:border-teal-300 hover:text-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            >
+              {isPanelCollapsed ? <ChevronLeft size={13} /> : <ChevronRight size={13} />}
+            </button>
+          )}
 
           {/* 패널 내용 — 접혔을 때 숨김 */}
           <div
             className="flex h-full flex-col p-4 transition-opacity"
             style={{
-              opacity: isPanelCollapsed ? 0 : 1,
-              pointerEvents: isPanelCollapsed ? 'none' : 'auto',
+              opacity: collapsed ? 0 : 1,
+              pointerEvents: collapsed ? 'none' : 'auto',
               transitionDuration: `${TRANSITION_MS}ms`,
             }}
-            aria-hidden={isPanelCollapsed}
+            aria-hidden={collapsed}
           >
             <h3 className="shrink-0 text-sm font-semibold text-slate-900">선택 지역·기관 요약</h3>
             <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
@@ -389,7 +417,7 @@ export default function OperationMapSection() {
           </div>
 
           {/* 접힌 상태 rail — 세로 레이블 */}
-          {isPanelCollapsed && (
+          {collapsed && (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 py-4">
               <ChevronLeft size={14} className="text-slate-300" />
               <span

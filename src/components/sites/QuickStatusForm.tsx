@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, PackageCheck, PackageX, HelpCircle } from 'lucide-react';
 import CentralDataNotice from '../common/CentralDataNotice';
 import { useCentralData } from '../../hooks/useCentralData';
@@ -57,12 +57,26 @@ export default function QuickStatusForm({ fixedSiteId, onSaved }: QuickStatusFor
     [],
   );
 
-  function handleSelectSite(id: string) {
-    setSelectedSiteId(id);
+  /*
+   * 대상 거점이 바뀌면 입력값을 반드시 비운다.
+   *
+   * 목록에서 고를 때(handleSelectSite)뿐 아니라 `fixedSiteId` 가 바뀌는 경우 —
+   * 현장 담당자가 담당 거점을 바꾸거나 거점 상세를 옮겨 다닐 때 — 도 마찬가지다.
+   * 이걸 놓치면 A 거점에서 고른 "지금 가능"·메모가 그대로 남아 B 거점에 저장된다.
+   */
+  const previousSiteIdRef = useRef(siteId);
+  useEffect(() => {
+    if (previousSiteIdRef.current === siteId) return;
+    previousSiteIdRef.current = siteId;
     setAvailability(null);
     setFocusItem('');
     setNote('');
     setSavedAt(null);
+    setSaveError(null);
+  }, [siteId]);
+
+  function handleSelectSite(id: string) {
+    setSelectedSiteId(id);
   }
 
   async function handleSave() {

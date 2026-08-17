@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, MapPin, Phone } from 'lucide-react';
 import PageHeader from '../../components/common/PageHeader';
@@ -48,12 +48,15 @@ export default function SiteDetailPage() {
   const site = getSiteById(siteId ?? null);
   const area = siteId ? siteAreaOf(siteId) : null;
 
+  // 빠른 입력 저장 후 이 화면의 '현황'·'입력 이력' 이 옛 값을 보여주지 않도록 다시 읽는다.
+  const [refreshKey, setRefreshKey] = useState(0);
+
   const { data, error, isLoading } = useCentralData(
     () =>
       Promise.all([listSiteQuickStatus(), listInventoryStatus(), listSubmissions()]).then(
         ([quickStatus, inventory, submissions]) => ({ quickStatus, inventory, submissions }),
       ),
-    [siteId],
+    [siteId, refreshKey],
   );
 
   // 아직 못 읽은 상태를 "입력 없음"으로 부르지 않는다.
@@ -223,7 +226,7 @@ export default function SiteDetailPage() {
           <h3 className="text-base font-semibold text-slate-900">{site.displayName} 현황 입력</h3>
           <p className="mt-1 text-sm text-slate-500">저장하면 시민 화면의 &quot;지금 상태&quot;가 바로 바뀝니다.</p>
           <div className="mt-4">
-            <QuickStatusForm fixedSiteId={site.id} />
+            <QuickStatusForm fixedSiteId={site.id} onSaved={() => setRefreshKey((k) => k + 1)} />
           </div>
         </section>
       )}

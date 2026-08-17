@@ -10,7 +10,7 @@ import type {
 import { MissingKakaoKeyError, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
 import { HWASEONG_FOCUS_BBOX, districtBoundaries } from '../../data/districtBoundaries';
 import type { CitizenPlace } from '../../data/citizenDirectory';
-import Button from './ui/Button';
+import StaticCitizenMap from './StaticCitizenMap';
 
 type MapPhase = 'loading' | 'ready' | 'missing-key' | 'error';
 
@@ -408,29 +408,44 @@ export default function CitizenMap({
         </div>
       )}
 
-      {phase === 'missing-key' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-paper px-8 text-center">
-          <MapPin size={40} className="text-ink-400" aria-hidden />
-          <p className="text-section text-ink-950">지도를 보여드릴 수 없어요</p>
-          <p className="text-body text-ink-600">
-            아래 버튼으로 가까운 곳을 찾거나,
-            <br />
-            전화로 물어봐 주세요.
-          </p>
-        </div>
-      )}
+      {/*
+        카카오맵을 못 쓰는 환경(키 없음·도메인 미등록·네트워크 차단)에서도
+        "내가 어디 있고 갈 곳이 어디인지" 는 보여 준다. 예전에는 회색 안내판만 남아
+        첫 화면의 지도가 통째로 사라졌다. 도로·지명 배경만 없고 조작은 그대로다.
+      */}
+      {(phase === 'missing-key' || phase === 'error') && (
+        <>
+          <StaticCitizenMap
+            places={places}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            rankedIds={rankedIds}
+            userLocation={userLocation}
+            fitPoints={fitPoints}
+            bottomInset={bottomInset}
+          />
 
-      {phase === 'error' && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-paper px-8 text-center">
-          <MapPin size={40} className="text-ink-400" aria-hidden />
-          <p className="text-section text-ink-950">지도를 불러오지 못했어요</p>
-          <p className="text-body text-ink-600">인터넷 연결을 확인하고 다시 시도해 주세요.</p>
-          <div className="w-full max-w-[240px]">
-            <Button onClick={handleRetry} icon={RotateCcw} size="md" variant="secondary">
-              다시 시도
-            </Button>
+          {/* 왜 배경이 다른지 한 줄로 알린다 — 조용히 다른 지도를 내밀지 않는다. */}
+          <div
+            className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4"
+            style={{ bottom: bottomInset + 12 }}
+          >
+            <div className="pointer-events-auto flex max-w-full items-center gap-2 rounded-full bg-surface/95 px-3 py-1.5 shadow-raise ring-1 ring-ink-950/5">
+              <MapPin size={15} className="shrink-0 text-ink-400" aria-hidden />
+              <span className="truncate text-note text-ink-600">간이 지도 · 도로 정보는 없어요</span>
+              {phase === 'error' && (
+                <button
+                  type="button"
+                  onClick={handleRetry}
+                  className="flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-note font-bold text-brand-700 focus-ring"
+                >
+                  <RotateCcw size={14} aria-hidden />
+                  다시 시도
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
