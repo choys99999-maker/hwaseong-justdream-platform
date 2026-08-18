@@ -73,9 +73,8 @@ export default function App() {
         <Route path="/admin/help-requests/new" element={<PhoneHelpRequestPage />} />
 
         {/*
-          자료 보관함. 사이드바에서 내렸고 화면 안에서 링크하지 않는다 —
-          Excel 은 [거점 관리 > 재고 업데이트 > Excel 업로드]가 유일한 입구다.
-          예전에 올린 제출본을 주소로 되짚을 수 있도록 경로만 남긴다.
+          자료 관리. 읍면동·거점이 올리는 기존 Excel 자료를 걷고 검수하는 화면 —
+          거점 관리 > 재고 업데이트(자연어, 소량·즉시)와는 별도의 입구다.
         */}
         <Route path="/admin/files" element={<DataLibraryPage />} />
         <Route path="/admin/files/upload" element={<DataUploadPage />} />
