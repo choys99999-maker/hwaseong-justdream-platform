@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronRight, Search, X } from 'lucide-react';
 import AppHeader from '../../components/citizen/ui/AppHeader';
 import { EmptyState } from '../../components/citizen/ui/Feedback';
@@ -21,8 +21,9 @@ export default function ItemSearchPage() {
   const geo = useGeolocation();
   const { places } = useCitizenPlaces();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [searchParams] = useSearchParams();
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(() => searchParams.get('q') ?? '');
   const [group, setGroup] = useState<ItemGroup | null>(null);
 
   const origin = geo.status === 'granted' ? geo.coords : null;
@@ -37,6 +38,13 @@ export default function ItemSearchPage() {
   function ensureLocation() {
     if (geo.status === 'idle') geo.request();
   }
+
+  // ?q= 로 검색어를 채워 들어온 경우(다른 거점의 "이 물품이 있는 가까운 곳 찾기")에도
+  // 입력했을 때와 같이 위치를 한 번 묻는다.
+  useEffect(() => {
+    if (searchParams.get('q')?.trim()) ensureLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleQuery(value: string) {
     setQuery(value);

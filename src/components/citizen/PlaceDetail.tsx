@@ -1,18 +1,12 @@
 import { useState } from 'react';
 import { ChevronRight, ChevronUp, Navigation, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { ITEM_GROUP_LABEL, ITEM_GROUP_ORDER, type ItemGroup, type PlaceItem } from '../../data/citizenDirectory';
+import { ITEM_GROUP_LABEL, ITEM_GROUP_ORDER, STOCK_LEVEL_LABEL, type ItemGroup, type PlaceItem } from '../../data/citizenDirectory';
 import { kakaoDirectionsUrl } from '../../lib/geo';
 import { formatCheckedAt, todayLocal } from '../../utils/citizenFormat';
 import { distanceText, resolvePlaceStatus, type RankedPlace } from '../../utils/citizenPlace';
 import Button from './ui/Button';
 import StatusLine from './ui/StatusLine';
-
-const STOCK_LABEL: Record<string, string> = {
-  many: '있어요',
-  some: '있어요',
-  few: '얼마 안 남았어요',
-};
 
 interface PlaceDetailProps {
   place: RankedPlace;
@@ -143,7 +137,7 @@ export default function PlaceDetail({
                           item.level === 'few' ? 'text-warn-700' : 'text-open-700'
                         }`}
                       >
-                        {STOCK_LABEL[item.level] ?? '확인 필요'}
+                        {STOCK_LEVEL_LABEL[item.level] ?? '확인 필요'}
                       </span>
                     </li>
                   ))}

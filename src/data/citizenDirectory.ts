@@ -45,6 +45,13 @@ const STANDALONE_DISTRICT: Record<string, DistrictId> = {
 /** 물품 한 줄. 시민에게는 "많다/적다" 두 단계면 충분해서 3단계까지만 쓴다. */
 export type StockLevel = 'many' | 'some' | 'few';
 
+/** 재고 수준별 시민 문구. 화면마다 새로 짓지 않는다. */
+export const STOCK_LEVEL_LABEL: Record<StockLevel, string> = {
+  many: '있어요',
+  some: '있어요',
+  few: '얼마 안 남았어요',
+};
+
 export interface PlaceItem {
   id: string;
   name: string;

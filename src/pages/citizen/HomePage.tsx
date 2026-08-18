@@ -4,6 +4,7 @@ import { ChevronRight, LocateFixed, MapPin, Menu } from 'lucide-react';
 import CitizenMap from '../../components/citizen/CitizenMap';
 import DongPicker from '../../components/citizen/DongPicker';
 import PlaceBottomSheet from '../../components/citizen/PlaceBottomSheet';
+import PlaceItemsPage from '../../components/citizen/PlaceItemsPage';
 import Brand from '../../components/citizen/ui/Brand';
 import Button from '../../components/citizen/ui/Button';
 import Sheet from '../../components/citizen/ui/Sheet';
@@ -35,6 +36,7 @@ export default function HomePage() {
   const [origin, setOrigin] = useState<LatLng | null>(null);
   const [originLabel, setOriginLabel] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showItemsPage, setShowItemsPage] = useState(false);
   const [showList, setShowList] = useState(false);
   const [showDongPicker, setShowDongPicker] = useState(false);
   const [fitPoints, setFitPoints] = useState<LatLng[] | null>(null);
@@ -99,6 +101,7 @@ export default function HomePage() {
   const handleSelectPlace = useCallback(
     (id: string | null) => {
       setShowList(false);
+      setShowItemsPage(false);
       setSelectedId(id);
       // 새 장소를 고를 때 높이 ref 를 초기화 — 시트가 열리는 첫 순간의 높이 변화로 이중 re-frame 이 발생하지 않도록.
       prevSheetHeightRef.current = 0;
@@ -114,6 +117,7 @@ export default function HomePage() {
   /** 시트를 내리면 액션 영역으로 돌아간다. 지도는 보고 있던 자리를 그대로 둔다. */
   const closeSheet = useCallback(() => {
     setSelectedId(null);
+    setShowItemsPage(false);
     setShowList(false);
   }, []);
 
@@ -191,13 +195,8 @@ export default function HomePage() {
         <PlaceBottomSheet
           place={selected}
           originLabel={originLabel}
-          onDismiss={closeSheet}
           onHeightChange={handlePlaceSheetHeight}
-          showOtherPlaces={Boolean(origin && recommended.length > 1)}
-          onShowOtherPlaces={() => {
-            setSelectedId(null);
-            setShowList(true);
-          }}
+          onCheckItems={() => setShowItemsPage(true)}
         />
       ) : showList ? (
         <Sheet
@@ -253,6 +252,10 @@ export default function HomePage() {
 
       {showDongPicker && (
         <DongPicker onSelect={handleSelectDong} onClose={() => setShowDongPicker(false)} />
+      )}
+
+      {selected && showItemsPage && (
+        <PlaceItemsPage place={selected} onClose={() => setShowItemsPage(false)} />
       )}
     </div>
   );
