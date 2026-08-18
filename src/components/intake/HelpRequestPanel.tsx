@@ -111,23 +111,24 @@ export default function HelpRequestPanel() {
 
       {visible.length > 0 && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <div className="relative overflow-hidden rounded-[16px] border border-[#DCE6F0] bg-white">
+            <span className="absolute inset-x-0 top-0 h-[3px] bg-[#15998A]" aria-hidden />
             {/* 연락처는 목록에 두지 않는다 — 처리할 때 보는 값이라 오른쪽 상세에만 있다. */}
-            <div className="grid grid-cols-[1fr_0.8fr_1fr_0.9fr_0.7fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-medium text-slate-400">
+            <div className="grid grid-cols-[1fr_0.8fr_1fr_0.9fr_0.7fr] gap-3 border-b border-slate-100 bg-[#F4FAF8] px-4 py-3 text-xs font-medium text-slate-400">
               <span>접수 시각</span>
               <span>지역</span>
               <span>필요한 품목</span>
               <span>요청 방식</span>
               <span>상태</span>
             </div>
-            <ul className="divide-y divide-slate-50">
+            <ul className="divide-y divide-[#EDF1F5]">
               {visible.map((request) => (
                 <li key={request.id}>
                   <button
                     type="button"
                     onClick={() => select(request.id)}
                     className={`grid w-full grid-cols-[1fr_0.8fr_1fr_0.9fr_0.7fr] items-center gap-3 px-4 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
-                      request.id === selectedId ? 'bg-teal-50' : 'hover:bg-slate-50'
+                      request.id === selectedId ? 'bg-[#ECF8F5]' : 'hover:bg-[#F1FAF7]'
                     }`}
                   >
                     <span className="text-slate-500">{formatDateTime(request.createdAt)}</span>
@@ -182,8 +183,9 @@ function HelpRequestDetail({
   const preferredSite = getSiteById(request.preferredSiteId);
 
   return (
-    <aside className="h-fit rounded-xl border border-slate-200 bg-white p-5">
-      <div className="flex items-start justify-between gap-2">
+    <aside className="relative h-fit overflow-hidden rounded-[16px] border border-[#DCE6F0] bg-white">
+      <span className="absolute inset-x-0 top-0 h-[3px] bg-[#15998A]" aria-hidden />
+      <div className="flex items-start justify-between gap-2 bg-[#EEF9F6] px-5 py-4">
         <div>
           <h3 className="text-base font-semibold text-slate-900">
             {request.dong} · {request.itemCategory}
@@ -194,43 +196,45 @@ function HelpRequestDetail({
           type="button"
           onClick={onClose}
           aria-label="상세 닫기"
-          className="rounded p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+          className="rounded p-1 text-slate-400 hover:bg-white/70 hover:text-slate-600"
         >
           <X size={16} />
         </button>
       </div>
 
-      <dl className="mt-4 space-y-2 text-sm">
-        <DetailRow label="연락처" value={request.phone} />
-        <DetailRow
-          label="요청 방식"
-          value={request.requestType ? REQUEST_TYPE_LABEL[request.requestType] : '선택 안 함'}
-        />
-        <DetailRow label="접수 경로" value={request.channel === 'PHONE' ? '전화 대리 입력' : '시민 직접 입력'} />
-        <DetailRow label="희망 거점" value={preferredSite?.displayName ?? '선택 안 함'} />
-        <DetailRow label="상태" value={request.status === 'NEW' ? '접수' : '완료'} />
-        {request.resolvedAt && <DetailRow label="처리 시각" value={formatDateTime(request.resolvedAt)} />}
-      </dl>
+      <div className="p-5">
+        <dl className="space-y-2 text-sm">
+          <DetailRow label="연락처" value={request.phone} />
+          <DetailRow
+            label="요청 방식"
+            value={request.requestType ? REQUEST_TYPE_LABEL[request.requestType] : '선택 안 함'}
+          />
+          <DetailRow label="접수 경로" value={request.channel === 'PHONE' ? '전화 대리 입력' : '시민 직접 입력'} />
+          <DetailRow label="희망 거점" value={preferredSite?.displayName ?? '선택 안 함'} />
+          <DetailRow label="상태" value={request.status === 'NEW' ? '접수' : '완료'} />
+          {request.resolvedAt && <DetailRow label="처리 시각" value={formatDateTime(request.resolvedAt)} />}
+        </dl>
 
-      {request.message && (
-        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">&quot;{request.message}&quot;</p>
-      )}
+        {request.message && (
+          <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">&quot;{request.message}&quot;</p>
+        )}
 
-      {request.status === 'NEW' ? (
-        <button
-          type="button"
-          onClick={() => onResolve(request.id)}
-          disabled={resolving}
-          className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-        >
-          <Check size={15} />
-          {resolving ? '처리하는 중...' : '처리 완료로 변경'}
-        </button>
-      ) : (
-        <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2.5 text-center text-sm font-medium text-emerald-700">
-          처리 완료된 요청입니다
-        </p>
-      )}
+        {request.status === 'NEW' ? (
+          <button
+            type="button"
+            onClick={() => onResolve(request.id)}
+            disabled={resolving}
+            className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          >
+            <Check size={15} />
+            {resolving ? '처리하는 중...' : '처리 완료로 변경'}
+          </button>
+        ) : (
+          <p className="mt-4 rounded-lg bg-emerald-50 px-3 py-2.5 text-center text-sm font-medium text-emerald-700">
+            처리 완료된 요청입니다
+          </p>
+        )}
+      </div>
     </aside>
   );
 }

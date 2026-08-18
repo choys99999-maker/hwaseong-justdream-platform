@@ -16,14 +16,13 @@ interface OperationKpiBarProps {
   onClearDistrict: () => void;
 }
 
-const KPI_STYLE: Record<Exclude<KpiStatus, 'ALL'>, { dot: string; active: string }> = {
-  normal: { dot: 'bg-emerald-500', active: 'border-emerald-400 bg-emerald-50 text-emerald-800' },
-  shortage: { dot: 'bg-rose-500', active: 'border-rose-400 bg-rose-50 text-rose-800' },
-  needsCheck: { dot: 'bg-amber-500', active: 'border-amber-400 bg-amber-50 text-amber-800' },
+/** 화성 컬러 시스템 — 상태마다 아주 옅은 tint 위에 진한 숫자. 강하지 않게. */
+const KPI_TONE: Record<KpiStatus, { idleBg: string; text: string; activeBg: string; activeBorder: string; dot?: string }> = {
+  ALL: { idleBg: '#EAF3FC', text: '#004696', activeBg: '#DCEAFA', activeBorder: '#9DC1EB' },
+  normal: { idleBg: '#EDF8F3', text: '#159A68', activeBg: '#DBF1E6', activeBorder: '#8FCFAE', dot: '#159A68' },
+  shortage: { idleBg: '#FDEFF0', text: '#E5484D', activeBg: '#FBDEE0', activeBorder: '#EE9FA3', dot: '#E5484D' },
+  needsCheck: { idleBg: '#FFF3E8', text: '#DC6E2D', activeBg: '#FCE3CC', activeBorder: '#EBAD7C', dot: '#DC6E2D' },
 };
-
-const INACTIVE_CLASS = 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50';
-const ALL_ACTIVE_CLASS = 'border-slate-400 bg-slate-100 text-slate-800';
 
 function KpiButton({
   label,
@@ -38,17 +37,20 @@ function KpiButton({
   active: boolean;
   onClick: () => void;
 }) {
-  const style = status === 'ALL' ? null : KPI_STYLE[status];
+  const tone = KPI_TONE[status];
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-        active ? (style ? style.active : ALL_ACTIVE_CLASS) : INACTIVE_CLASS
-      }`}
+      style={{
+        backgroundColor: active ? tone.activeBg : tone.idleBg,
+        borderColor: active ? tone.activeBorder : 'transparent',
+        color: tone.text,
+      }}
+      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
     >
-      {style && <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${style.dot}`} />}
+      {tone.dot && <span aria-hidden className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: tone.dot }} />}
       {label}
       <span className="tabular-nums">{count}</span>
     </button>

@@ -99,8 +99,9 @@ export default function DonationPanel() {
 
       {visible.length > 0 && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="grid grid-cols-[0.9fr_52px_1.2fr_0.8fr_1fr_1fr_0.7fr] items-center gap-3 border-b border-slate-100 px-4 py-3 text-xs font-medium text-slate-400">
+          <div className="relative overflow-hidden rounded-[16px] border border-[#DCE6F0] bg-white">
+            <span className="absolute inset-x-0 top-0 h-[3px] bg-[#15998A]" aria-hidden />
+            <div className="grid grid-cols-[0.9fr_52px_1.2fr_0.8fr_1fr_1fr_0.7fr] items-center gap-3 border-b border-slate-100 bg-[#F4FAF8] px-4 py-3 text-xs font-medium text-slate-400">
               <span>접수 시각</span>
               <span>사진</span>
               <span>품목 · 수량</span>
@@ -109,14 +110,14 @@ export default function DonationPanel() {
               <span>연락처</span>
               <span>상태</span>
             </div>
-            <ul className="divide-y divide-slate-50">
+            <ul className="divide-y divide-[#EDF1F5]">
               {visible.map((row) => (
                 <li key={row.id}>
                   <button
                     type="button"
                     onClick={() => select(row.id)}
                     className={`grid w-full grid-cols-[0.9fr_52px_1.2fr_0.8fr_1fr_1fr_0.7fr] items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
-                      row.id === selectedId ? 'bg-amber-50' : 'hover:bg-slate-50'
+                      row.id === selectedId ? 'bg-[#ECF8F5]' : 'hover:bg-[#F1FAF7]'
                     }`}
                   >
                     <span className="text-slate-500">{formatDateTime(row.createdAt)}</span>
@@ -214,8 +215,9 @@ function DonationDetail({
   }
 
   return (
-    <aside className="h-fit rounded-xl border border-slate-200 bg-white p-5">
-      <div className="flex items-start justify-between gap-2">
+    <aside className="relative h-fit overflow-hidden rounded-[16px] border border-[#DCE6F0] bg-white">
+      <span className="absolute inset-x-0 top-0 h-[3px] bg-[#15998A]" aria-hidden />
+      <div className="flex items-start justify-between gap-2 bg-[#EEF9F6] px-5 py-4">
         <div>
           <h3 className="text-base font-semibold text-slate-900">
             {donation.itemName} {donation.quantity}개
@@ -226,44 +228,44 @@ function DonationDetail({
           type="button"
           onClick={onClose}
           aria-label="상세 닫기"
-          className="rounded p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
+          className="rounded p-1 text-slate-400 hover:bg-white/70 hover:text-slate-600"
         >
           <X size={16} />
         </button>
       </div>
 
-      <div className="mt-3">
+      <div className="p-5">
         <DonationPhoto path={donation.imagePath} size="large" />
-      </div>
 
-      <dl className="mt-4 space-y-2 text-sm">
-        <DetailRow label="지역" value={donation.region} />
-        <DetailRow label="전달 방식" value={METHOD_LABEL[donation.donationMethod]} />
-        <DetailRow label="대상 거점" value={getSiteById(donation.targetSiteId)?.displayName ?? '미지정'} />
-        <DetailRow label="연락처" value={donation.donorContact ?? '남기지 않음'} />
-        <DetailRow label="상태" value={donation.status === 'NEW' ? '접수' : '수령 완료'} />
-        {donation.resolvedAt && <DetailRow label="처리 시각" value={formatDateTime(donation.resolvedAt)} />}
-      </dl>
+        <dl className="mt-4 space-y-2 text-sm">
+          <DetailRow label="지역" value={donation.region} />
+          <DetailRow label="전달 방식" value={METHOD_LABEL[donation.donationMethod]} />
+          <DetailRow label="대상 거점" value={getSiteById(donation.targetSiteId)?.displayName ?? '미지정'} />
+          <DetailRow label="연락처" value={donation.donorContact ?? '남기지 않음'} />
+          <DetailRow label="상태" value={donation.status === 'NEW' ? '접수' : '수령 완료'} />
+          {donation.resolvedAt && <DetailRow label="처리 시각" value={formatDateTime(donation.resolvedAt)} />}
+        </dl>
 
-      <p className="mt-3 text-[11px] text-slate-400">
-        품목·수량은 기부자가 사진 인식 결과를 확인·수정해 저장한 값입니다.
-      </p>
-
-      {donation.status === 'NEW' ? (
-        <button
-          type="button"
-          onClick={() => onResolve(donation.id)}
-          disabled={resolving}
-          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-        >
-          <Check size={15} />
-          {resolving ? '처리하는 중...' : '수령 완료로 변경'}
-        </button>
-      ) : (
-        <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2.5 text-center text-sm font-medium text-emerald-700">
-          수령 완료된 기부입니다
+        <p className="mt-3 text-[11px] text-slate-400">
+          품목·수량은 기부자가 사진 인식 결과를 확인·수정해 저장한 값입니다.
         </p>
-      )}
+
+        {donation.status === 'NEW' ? (
+          <button
+            type="button"
+            onClick={() => onResolve(donation.id)}
+            disabled={resolving}
+            className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-amber-600 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+          >
+            <Check size={15} />
+            {resolving ? '처리하는 중...' : '수령 완료로 변경'}
+          </button>
+        ) : (
+          <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2.5 text-center text-sm font-medium text-emerald-700">
+            수령 완료된 기부입니다
+          </p>
+        )}
+      </div>
     </aside>
   );
 }
