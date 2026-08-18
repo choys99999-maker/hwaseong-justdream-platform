@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen,
+  ChevronRight,
   HandHeart,
   Info,
   MapPin,
@@ -15,6 +16,8 @@ import type { LucideIcon } from 'lucide-react';
 import Brand from './Brand';
 import DemoRoleSheet from '../../demo/DemoRoleSheet';
 import { CITIZEN_HELP_PHONE } from '../../../data/citizenContact';
+import { useAdminRole } from '../../../hooks/useAdminRole';
+import { DEMO_ROLE_LABELS, getDemoRole } from '../../../hooks/useDemoMode';
 
 interface MenuItem {
   to: string;
@@ -48,6 +51,8 @@ const DISMISS_PX = 80;
 export default function Drawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { role: adminRole } = useAdminRole();
+  const currentDemoRole = getDemoRole(location.pathname, adminRole);
   const dragStart = useRef<number | null>(null);
   const pushedHistory = useRef(false);
   const [dragX, setDragX] = useState(0);
@@ -193,26 +198,22 @@ export default function Drawer({ open, onClose }: { open: boolean; onClose: () =
             </span>
           </a>
           {/*
-            발표자·운영 담당자용 진입로. 시민이 쓸 기능이 아니라서 메뉴 목록에 섞지 않고
-            맨 아래에 가장 약한 글씨로만 둔다.
+            발표자·운영 담당자용 진입로. 시민이 쓸 기능이 아니라서 메뉴 목록과 분리하고
+            가장 낮은 시각적 위계로 둔다.
           */}
-          <div className="mt-1 flex items-center justify-center gap-3">
+          <div className="my-3 h-px bg-line-100" aria-hidden />
+          <div>
+            <p className="px-1 text-[11px] font-medium uppercase tracking-wide text-ink-300">
+              DEMO · 역할 전환
+            </p>
             <button
               type="button"
               onClick={() => setDemoOpen(true)}
-              className="tap-md inline-flex items-center text-note text-ink-400 hover:text-ink-600 focus-ring"
+              className="tap-md mt-1 flex w-full items-center justify-between gap-2 rounded-control px-1 py-2 text-left text-note text-ink-400 transition-colors hover:text-ink-600 focus-ring"
             >
-              시연 모드
+              <span>👤 {DEMO_ROLE_LABELS[currentDemoRole]}</span>
+              <ChevronRight size={14} className="shrink-0 text-ink-300" aria-hidden />
             </button>
-            <span aria-hidden className="h-3 w-px bg-line-200" />
-            <a
-              href="/admin"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="tap-md inline-flex items-center text-note text-ink-400 hover:text-ink-600 focus-ring"
-            >
-              운영자 화면
-            </a>
           </div>
         </div>
 

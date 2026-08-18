@@ -28,7 +28,7 @@ function useIsNarrowViewport(): boolean {
  *
  * 예전에는 "시민·현장 담당자·시청 관리자" pill 버튼이 항상 떠 있어 개발용 데모 화면처럼
  * 보였다. 지금은 프로필 버튼 하나 + 조용한 DEMO 표시만 남기고, 역할 전환은 그 버튼을 눌러야
- * 나오는 팝오버(넓은 화면)·시트(좁은 화면)에서 한다. 시트는 시민 Drawer의 "시연 모드"와
+ * 나오는 팝오버(넓은 화면)·시트(좁은 화면)에서 한다. 시트는 시민 Drawer의 "DEMO · 역할 전환"과
  * 같은 컴포넌트(DemoRoleSheet)를 그대로 쓴다 — 두 벌 만들지 않는다.
  */
 export default function Header({ title }: HeaderProps) {

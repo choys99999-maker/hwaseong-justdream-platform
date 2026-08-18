@@ -6,14 +6,14 @@ const DEMO_MODE_EVENT = 'justdream:demo-mode-change';
 export type DemoRole = 'citizen' | 'field' | 'admin';
 
 export const DEMO_ROLES: { key: DemoRole; label: string; description: string; path: string }[] = [
-  { key: 'citizen', label: '시민으로 보기', description: '지금 받을 수 있는 그냥드림 찾기', path: '/' },
+  { key: 'citizen', label: '시민으로 보기', description: '거점 찾기 · 도움 요청 · 기부', path: '/' },
   {
     key: 'field',
     label: '현장 담당자로 보기',
-    description: '우리 거점 상태 입력과 오늘 처리할 건',
+    description: '거점 현황 · 재고 업데이트',
     path: '/admin',
   },
-  { key: 'admin', label: '시청 관리자로 보기', description: '화성시 전체 운영 현황과 요청 확인', path: '/admin' },
+  { key: 'admin', label: '시청 관리자로 보기', description: '전체 운영 현황 관리', path: '/admin' },
 ];
 
 /** 전환바에 쓰는 짧은 역할명. `admin`/`operator` 같은 개발 용어는 화면에 노출하지 않는다. */
