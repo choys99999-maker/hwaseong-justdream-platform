@@ -88,10 +88,10 @@ serve(async (req) => {
     const out = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!out) throw new Error('Empty Gemini response');
 
-    return json(JSON.parse(out));
+    return json({ engine: 'ai', ...JSON.parse(out) });
   } catch (err) {
     console.error('parse-inventory-text:', err);
-    return json({ error: String(err) }, 500);
+    return json({ engine: 'rule' }, 500);
   }
 });
 
