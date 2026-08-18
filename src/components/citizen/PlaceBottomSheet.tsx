@@ -208,7 +208,7 @@ export default function PlaceBottomSheet({
               <p className="mt-0.5 text-body text-ink-600">물품 정보를 확인 중이에요</p>
             )}
 
-            {totalItems > 0 && (
+            {totalItems > 1 && (
               <button
                 type="button"
                 onClick={() => setState('expanded')}
