@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
 import {
   ChevronDown,
   ChevronUp,
@@ -9,9 +10,23 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import PageHeader from '../components/common/PageHeader';
 import StatusBadge from '../components/common/StatusBadge';
 import CentralDataNotice from '../components/common/CentralDataNotice';
+import {
+  Accent,
+  ActionRow,
+  ActionSection,
+  AllClear,
+  CARD_CLASS,
+  DetailSection,
+  HS,
+  OverviewSection,
+  PageIntro,
+  SourceNote,
+  VizCard,
+  type ActionTone,
+} from '../components/admin/ui';
+import { RankBars, SegmentBar } from '../components/admin/charts';
 import { useCentralData } from '../hooks/useCentralData';
 import { listInventoryStatus, type InventoryStatus as InventoryRow } from '../store/analytics';
 import { districtOfArea } from '../data/districtByArea';
@@ -59,13 +74,6 @@ const DATA_SOURCE_LABEL: Record<DataSource, string> = {
   FMS: 'FMS',
   NO_DATA: '자료 없음',
 };
-
-const ALERT_STYLES = {
-  rose:  { inactive: 'bg-white border-rose-100 hover:bg-rose-50 hover:border-rose-200',   active: 'bg-rose-50 border-rose-400 ring-1 ring-inset ring-rose-400',   count: 'text-rose-700'  },
-  amber: { inactive: 'bg-white border-amber-100 hover:bg-amber-50 hover:border-amber-200', active: 'bg-amber-50 border-amber-400 ring-1 ring-inset ring-amber-400', count: 'text-amber-700' },
-  sky:   { inactive: 'bg-white border-sky-100 hover:bg-sky-50 hover:border-sky-200',       active: 'bg-sky-50 border-sky-400 ring-1 ring-inset ring-sky-400',       count: 'text-sky-700'   },
-  slate: { inactive: 'bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-300', active: 'bg-slate-100 border-slate-400 ring-1 ring-inset ring-slate-400', count: 'text-slate-700' },
-} as const;
 
 /** 화면이 쓰는 한 줄. 상태·소속 구는 중앙 DB 값에서 계산한다. */
 interface Row extends InventoryRow {
@@ -123,7 +131,7 @@ function IndeterminateCheckbox({
       type="checkbox"
       checked={checked}
       onChange={onChange}
-      className="h-4 w-4 cursor-pointer rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+      className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#004696] focus:ring-[#004696]"
     />
   );
 }
@@ -132,8 +140,9 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   return (
     <button
       onClick={onClick}
-      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-        active ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+      aria-pressed={active}
+      className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] ${
+        active ? 'bg-[#004696] text-white' : 'bg-white text-[#667085] ring-1 ring-inset ring-[#DFE7EF] hover:bg-[#F3F6FA]'
       }`}
     >
       {label}
@@ -144,7 +153,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
 function ActionBtn({ icon: Icon, label, danger = false }: { icon: LucideIcon; label: string; danger?: boolean }) {
   return (
     <button
-      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+      className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] ${
         danger ? 'bg-rose-50 text-rose-700 hover:bg-rose-100' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
       }`}
     >
@@ -166,37 +175,13 @@ function SortTh({
   return (
     <th
       onClick={() => onSort(col)}
-      className="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500 hover:text-slate-800"
+      className="cursor-pointer select-none whitespace-nowrap px-4 py-3 text-left text-[11.5px] font-medium text-[#8A96A8] hover:text-[#182230]"
     >
       <span className="flex items-center gap-1">
         {label}
         {active ? (sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />) : <ChevronsUpDown size={11} className="text-slate-300" />}
       </span>
     </th>
-  );
-}
-
-// ─── AlertCard ──────────────────────────────────────────────────────────────
-
-function AlertCard({
-  label, count, sublabel, color, active, onClick,
-}: {
-  label: string; count: number; sublabel: string;
-  color: keyof typeof ALERT_STYLES; active: boolean; onClick: () => void;
-}) {
-  const s = ALERT_STYLES[color];
-  return (
-    <button
-      onClick={count > 0 ? onClick : undefined}
-      disabled={count === 0}
-      className={`w-full rounded-xl border p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-        count === 0 ? 'cursor-default border-slate-100 bg-white opacity-40' : active ? s.active : s.inactive
-      }`}
-    >
-      <p className={`text-[28px] font-bold leading-none ${count === 0 ? 'text-slate-400' : s.count}`}>{count}건</p>
-      <p className="mt-1 text-sm font-medium text-slate-700">{label}</p>
-      <p className="mt-0.5 text-xs text-slate-400">{sublabel}</p>
-    </button>
   );
 }
 
@@ -244,7 +229,7 @@ function ItemDetailDrawer({
   );
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-white shadow-2xl">
+    <aside className="hci-slide-in-right fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col bg-white shadow-2xl">
       {/* 헤더 */}
       <div className="flex items-start justify-between border-b border-slate-100 px-5 py-4">
         <div>
@@ -260,7 +245,7 @@ function ItemDetailDrawer({
         </div>
         <button
           onClick={onClose}
-          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
         >
           <X size={18} />
         </button>
@@ -285,7 +270,7 @@ function ItemDetailDrawer({
                 <span className="text-sm font-bold text-amber-600">확인 필요</span>
               </div>
             ) : (
-              <FlowRow label="현재재고" value={item.displayStock} sign="=" max={maxFlow} barColor="bg-teal-500" textColor="text-teal-700" bold />
+              <FlowRow label="현재재고" value={item.displayStock} sign="=" max={maxFlow} barColor="bg-[#004696]" textColor="text-[#004696]" bold />
             )}
           </div>
           {item.hasAnomaly && (
@@ -318,16 +303,16 @@ function ItemDetailDrawer({
                 <div
                   key={o.id}
                   className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${
-                    o.id === item.id ? 'bg-teal-50 ring-1 ring-inset ring-teal-200' : 'bg-slate-50'
+                    o.id === item.id ? 'bg-[#EAF3FC] ring-1 ring-inset ring-[#BFD6EC]' : 'bg-slate-50'
                   }`}
                 >
                   <div className="flex items-center gap-2">
                     <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[o.status] ?? 'bg-slate-400'}`} />
-                    <span className={o.id === item.id ? 'font-semibold text-teal-800' : 'text-slate-700'}>
+                    <span className={o.id === item.id ? 'font-semibold text-[#004696]' : 'text-slate-700'}>
                       {o.organizationName}
                     </span>
                     {o.id === item.id && (
-                      <span className="rounded bg-teal-100 px-1 py-0.5 text-[10px] font-medium text-teal-700">현재</span>
+                      <span className="rounded bg-[#EAF3FC] px-1 py-0.5 text-[10px] font-medium text-[#004696]">현재</span>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
@@ -343,7 +328,7 @@ function ItemDetailDrawer({
 
       {/* 액션 버튼 */}
       <div className="flex gap-2 border-t border-slate-100 px-5 py-4">
-        <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-teal-600 py-2.5 text-sm font-medium text-white hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500">
+        <button className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#004696] py-2.5 text-sm font-medium text-white hover:bg-[#00356F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]">
           <Truck size={15} />출고 등록
         </button>
         <button className="flex items-center justify-center rounded-lg border border-rose-200 px-3.5 text-rose-600 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
@@ -359,8 +344,9 @@ function ItemDetailDrawer({
 type QuickFilter = 'shortage' | 'expiring' | 'disposal' | null;
 
 interface InventoryPageProps {
-  /** [거점 관리 > 재고] 안에서 쓸 때. 상위 화면이 이미 제목을 갖고 있어 자기 제목을 그리지 않는다. */
-  embedded?: boolean;
+  /** [거점 관리 > 재고] 안에서 쓸 때. 상위 화면이 넘겨주는 [거점]/[재고] 전환 탭. */
+  screenTabs?: ReactNode;
+  headerActions?: ReactNode;
   /** 재고 업데이트가 반영되면 값이 바뀌고, 이 화면이 중앙 DB 를 다시 읽는다. */
   refreshToken?: number;
   /** 거점 상세에서 [전체 재고 보기]로 넘어왔을 때의 초기 검색어(읍면동). */
@@ -370,11 +356,18 @@ interface InventoryPageProps {
 /**
  * 재고 — 화성시 전체 물품을 **확인하는** 화면.
  *
+ * 249개 행을 읽는 화면이 아니라 "지금 문제인 품목이 몇 개인가"에 먼저 답하는 화면이다.
+ *   1) 어떤 품목이 가장 모자란가 (남은 수량 순)
+ *   2) 유통기한이 어떻게 구성돼 있는가
+ *   3) 지금 조치할 품목은 무엇인가
+ * 전체 표는 [전체 재고 N건 보기]를 눌렀을 때만 펼쳐진다.
+ *
  * 여기서는 고치지 않는다. 고치는 길은 [거점 관리 > ⚡ 재고 업데이트] 하나뿐이라
  * 이 화면 안에는 자연어 입력창도 Excel 업로드도 두지 않는다.
  */
 export default function InventoryPage({
-  embedded = false,
+  screenTabs,
+  headerActions,
   refreshToken = 0,
   initialKeyword = '',
 }: InventoryPageProps) {
@@ -387,6 +380,8 @@ export default function InventoryPage({
   const [sortDir,      setSortDir]      = useState<SortDir>('asc');
   const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set());
   const [drawerItem,   setDrawerItem]   = useState<Row | null>(null);
+  // 전체 표는 기본으로 접어 둔다. 거점 상세에서 읍면동을 지정해 넘어온 경우만 펼친 채 시작한다.
+  const [detailOpen,   setDetailOpen]   = useState(initialKeyword !== '');
 
   // 입고/출고는 기간 합계, 현재재고·유통기한은 최신 제출본 기준.
   // 재제출분 제외·누계 시트 제외 규칙은 모두 v_inventory_status 안에 있다.
@@ -427,10 +422,53 @@ export default function InventoryPage({
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // 알림 카드 집계
+  // ── Overview 집계 ───────────────────────────────────────────────────────
   const shortageCount = useMemo(() => items.filter((i) => i.status === '부족').length, [items]);
   const expiringCount = useMemo(() => items.filter((i) => i.status === '임박').length, [items]);
   const disposalCount = useMemo(() => items.filter(isDisposalRisk).length, [items]);
+  const anomalyCount  = useMemo(() => items.filter((i) => i.hasAnomaly).length, [items]);
+
+  /**
+   * 품목별로 화성시 전체에 남은 수량. 같은 품목이 여러 거점에 흩어져 있어도
+   * "이 물품이 시 전체에 얼마나 남았는가"는 하나의 값이어야 한다.
+   */
+  const scarcestItems = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const item of items) {
+      totals.set(item.itemName, (totals.get(item.itemName) ?? 0) + (item.displayStock ?? 0));
+    }
+    return Array.from(totals, ([name, stock]) => ({ name, stock }))
+      .sort((a, b) => a.stock - b.stock)
+      .slice(0, 5);
+  }, [items]);
+
+  /** 유통기한 구성. 판정 기준(잔여일)은 중앙 DB 값을 그대로 쓴다. */
+  const expiryBuckets = useMemo(() => {
+    const bucket = { over: 0, d7: 0, d30: 0, safe: 0, unknown: 0 };
+    for (const item of items) {
+      const d = item.daysToExpiration;
+      if (d === null) bucket.unknown += 1;
+      else if (d < 0) bucket.over += 1;
+      else if (d <= 7) bucket.d7 += 1;
+      else if (d <= 30) bucket.d30 += 1;
+      else bucket.safe += 1;
+    }
+    return bucket;
+  }, [items]);
+
+  /** 지금 조치할 품목. 부족 → 임박 → 근거 확인 순으로, 화면에는 5건까지만 올린다. */
+  const priorityItems = useMemo(() => {
+    const rank = (item: Row) =>
+      item.status === '부족' ? 0 : item.status === '임박' ? 1 : item.hasAnomaly ? 2 : 3;
+    return items
+      .filter((item) => item.status === '부족' || item.status === '임박' || item.hasAnomaly)
+      .sort(
+        (a, b) =>
+          rank(a) - rank(b) ||
+          (a.daysToExpiration ?? 9999) - (b.daysToExpiration ?? 9999) ||
+          (a.displayStock ?? 0) - (b.displayStock ?? 0),
+      );
+  }, [items]);
 
   // 필터 + 정렬
   const filteredItems = useMemo(() => {
@@ -492,220 +530,368 @@ export default function InventoryPage({
     setQuickFilter((prev) => (prev === f ? null : f));
   }
 
+  /**
+   * Overview·조치 목록에서 누르면 실제 필터가 걸리고 상세 표가 열린다.
+   * 그림이 그림으로 끝나지 않게 하는 유일한 통로다(§16).
+   */
+  function drillTo(next: {
+    keyword?: string;
+    status?: string;
+    expiry?: string;
+    quick?: QuickFilter;
+    region?: string;
+  }) {
+    setKeyword(next.keyword ?? '');
+    setStatusFilter(next.status ?? 'all');
+    setExpiryFilter(next.expiry ?? 'all');
+    setQuickFilter(next.quick ?? null);
+    setRegion(next.region ?? '전체');
+    setDetailOpen(true);
+  }
+
   const allSelected  = filteredItems.length > 0 && selectedIds.size === filteredItems.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
 
-  const notice = (
-    <CentralDataNotice
-      isLoading={isLoading}
-      error={error}
-      isEmpty={items.length === 0}
-      emptyMessage="아직 올라온 물품·재고 자료가 없습니다."
-    />
-  );
+  const headline =
+    priorityItems.length > 0 ? (
+      <>
+        현재 우선 확인이 필요한 재고가 <Accent>{priorityItems.length}건</Accent> 있습니다
+      </>
+    ) : items.length > 0 ? (
+      <>전체 {formatNumber(items.length)}개 품목이 모두 정상입니다</>
+    ) : (
+      <>아직 올라온 재고 자료가 없습니다</>
+    );
 
   return (
-    <div className="space-y-5">
-      {!embedded && (
-        <PageHeader
-          title="물품 현황"
-          description="거점별 물품 입출고, 현재 보유량, 유통기한 현황을 확인합니다. 중앙 저장소에 올라온 자료를 기준으로 집계합니다."
-        />
-      )}
+    <div className="mx-auto w-full max-w-[1600px] space-y-6">
+      <PageIntro
+        eyebrow="재고 현황"
+        headline={headline}
+        description="부족하거나 곧 문제가 될 재고를 먼저 보여줍니다. 전체 품목표는 아래에서 펼쳐 볼 수 있습니다."
+        actions={headerActions}
+      />
 
-      {notice}
+      {screenTabs}
+
+      <CentralDataNotice
+        isLoading={isLoading}
+        error={error}
+        isEmpty={items.length === 0}
+        emptyMessage="아직 올라온 물품·재고 자료가 없습니다."
+      />
 
       {items.length > 0 && (
         <>
-          {/* ── 조치 필요 요약 카드 ──────────────────────────────────────────── */}
-          <div>
-            <p className="mb-2 text-xs font-semibold text-slate-400">조치 필요</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <AlertCard label="부족 품목"    count={shortageCount} sublabel="즉시 발주·확보 필요"    color="rose"  active={quickFilter === 'shortage'} onClick={() => handleQuickFilter('shortage')} />
-              <AlertCard label="유통기한 임박" count={expiringCount} sublabel="우선 배부 처리 권장"    color="amber" active={quickFilter === 'expiring'} onClick={() => handleQuickFilter('expiring')} />
-              <AlertCard label="폐기 예정"    count={disposalCount} sublabel="3주 내 유통기한 경과"    color="slate" active={quickFilter === 'disposal'} onClick={() => handleQuickFilter('disposal')} />
-            </div>
-          </div>
-
-          {/* ── 필터 바 ─────────────────────────────────────────────────────── */}
-          <div className="space-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-            <div className="flex flex-wrap gap-2">
-              <label className="flex min-w-52 flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-teal-500">
-                <Search size={15} className="shrink-0 text-slate-400" />
-                <input
-                  type="text"
-                  value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
-                  placeholder="품목명 · 읍면동 검색"
-                  className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+          {/* ── OVERVIEW — 무엇이 모자란가 · 유통기한은 어떤가 ── */}
+          <OverviewSection label="재고 요약">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <VizCard title="재고가 적은 품목" question="어떤 물품이 가장 모자란가?" delay={40}>
+                {/* 막대가 무엇을 뜻하는지 한 줄로 못 박는다 — 짧은 막대가 곧 문제라는 뜻이다. */}
+                <p className="mb-3 text-[11.5px] text-[#98A2B3]">
+                  막대는 화성시 전체에 남은 수량 · 적은 순
+                </p>
+                <RankBars
+                  accent={HS.danger}
+                  items={scarcestItems.map((item) => ({
+                    key: item.name,
+                    label: item.name,
+                    value: item.stock,
+                    valueText: `${formatNumber(item.stock)}개`,
+                    onSelect: () => drillTo({ keyword: item.name }),
+                  }))}
                 />
-                {keyword && (
-                  <button onClick={() => setKeyword('')} className="shrink-0 text-slate-400 hover:text-slate-600">
-                    <X size={13} />
-                  </button>
-                )}
-              </label>
-              <select
-                aria-label="기관 선택"
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
-              >
-                {regions.map((r) => <option key={r}>{r}</option>)}
-              </select>
-            </div>
+              </VizCard>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-xs text-slate-400">상태</span>
-              {STATUS_TABS.map((t) => (
-                <FilterChip key={t.value} label={t.label} active={statusFilter === t.value} onClick={() => setStatusFilter(t.value)} />
-              ))}
-              <span className="mx-1 h-3 w-px bg-slate-200" />
-              <span className="text-xs text-slate-400">유통기한</span>
-              {EXPIRY_TABS.map((t) => (
-                <FilterChip key={t.value} label={t.label} active={expiryFilter === t.value} onClick={() => setExpiryFilter(t.value)} />
-              ))}
-              {quickFilter && (
-                <button
-                  onClick={() => setQuickFilter(null)}
-                  className="ml-1 flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100"
-                >
-                  <X size={10} />빠른필터 해제
-                </button>
-              )}
-            </div>
-          </div>
+              <VizCard title="유통기한 분포" question="언제까지 쓸 수 있는 재고인가?" delay={90}>
+                <div>
+                  {/* 카드가 답하는 결론을 먼저 숫자로 못 박고, 그 아래에 구성을 보여준다. */}
+                  <p className="flex items-baseline gap-2">
+                    <span
+                      className="text-[34px] font-bold leading-none tabular-nums"
+                      style={{
+                        color:
+                          expiryBuckets.over + expiryBuckets.d7 + expiryBuckets.d30 > 0
+                            ? HS.orange
+                            : HS.success,
+                      }}
+                    >
+                      {expiryBuckets.over + expiryBuckets.d7 + expiryBuckets.d30}건
+                    </span>
+                    <span className="text-[12.5px] text-[#667085]">
+                      30일 안에 유통기한이 도래합니다
+                    </span>
+                  </p>
 
-          {/* ── 건수 + 일괄 처리 ──────────────────────────────────────────────── */}
-          {/*
-            합계는 `trustedStock`(이상 품목 제외)만 더한다. 대시보드 '전체 재고 수량' KPI 와
-            같은 기준이라 두 화면의 숫자가 어긋나지 않는다. 제외된 건수는 옆에 함께 밝힌다.
-          */}
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-slate-500">
-              총 <span className="font-semibold text-slate-800">{formatNumber(filteredItems.length)}</span>건 · 현재 재고{' '}
-              {formatNumber(
-                filteredItems.reduce(
-                  (sum, item) => sum + (item.trustedStock === null ? 0 : item.trustedStock - item.fieldOutboundQuantity),
-                  0,
-                ),
-              )}개
-              {unverifiedCount > 0 && (
-                <span className="ml-1 text-amber-600">
-                  · 확인 필요 {formatNumber(unverifiedCount)}건은 합계에서 제외
+                  <div className="mt-5">
+                  <SegmentBar
+                    segments={[
+                      {
+                        key: 'over',
+                        label: '기한 초과',
+                        value: expiryBuckets.over,
+                        color: HS.danger,
+                        onSelect: () => drillTo({ expiry: 'over' }),
+                      },
+                      {
+                        key: 'd7',
+                        label: '7일 이내',
+                        value: expiryBuckets.d7,
+                        color: HS.orange,
+                        onSelect: () => drillTo({ expiry: '7' }),
+                      },
+                      {
+                        key: 'd30',
+                        label: '30일 이내',
+                        value: expiryBuckets.d30,
+                        color: '#F3C177',
+                        onSelect: () => drillTo({ expiry: '30' }),
+                      },
+                      { key: 'safe', label: '30일 이상', value: expiryBuckets.safe, color: HS.blueTint },
+                      { key: 'unknown', label: '기한 미상', value: expiryBuckets.unknown, color: '#CBD5E1' },
+                    ]}
+                  />
+                  </div>
+                  <p className="mt-5 border-t border-[#EFF3F8] pt-4 text-[12px] text-[#667085]">
+                    폐기 예정{' '}
+                    <button
+                      type="button"
+                      onClick={() => disposalCount > 0 && drillTo({ quick: 'disposal' })}
+                      disabled={disposalCount === 0}
+                      className="font-semibold tabular-nums text-[#182230] underline-offset-2 hover:underline disabled:no-underline"
+                    >
+                      {disposalCount}건
+                    </button>{' '}
+                    <span className="text-[#98A2B3]">· 3주 안에 기한이 지나고 10개 이상 남은 품목</span>
+                  </p>
+                </div>
+              </VizCard>
+            </div>
+          </OverviewSection>
+
+          {/* ── ACTION — 지금 조치할 재고 ── */}
+          <PriorityActions
+            items={priorityItems}
+            counts={{ shortage: shortageCount, expiring: expiringCount, anomaly: anomalyCount }}
+            onDrill={drillTo}
+            onOpenItem={setDrawerItem}
+          />
+
+          {/* ── DETAIL — 전체 재고표. 눌렀을 때만 나온다 ── */}
+          <DetailSection label="전체 재고">
+            <button
+              type="button"
+              onClick={() => setDetailOpen((v) => !v)}
+              aria-expanded={detailOpen}
+              className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#DFE7EF] bg-white px-4 py-3 text-left transition-colors hover:bg-[#F7FAFD] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
+            >
+              <span className="text-[14px] font-semibold text-[#182230]">
+                전체 재고 {formatNumber(items.length)}건 보기
+                <span className="ml-2 text-[12.5px] font-normal text-[#667085]">
+                  검색 · 상태·유통기한 필터 · 정렬 · 일괄 처리
                 </span>
-              )}
-              {filteredItems.some((item) => item.fieldOutboundQuantity > 0) && (
-                <span className="ml-1 text-teal-600">
-                  · 현장 출고{' '}
-                  {formatNumber(filteredItems.reduce((sum, item) => sum + item.fieldOutboundQuantity, 0))}개 반영
-                </span>
-              )}
-              {selectedIds.size > 0 && <span className="ml-2 text-teal-600">· {selectedIds.size}건 선택됨</span>}
-            </p>
-            {selectedIds.size > 0 && (
-              <div className="flex items-center gap-2">
-                <ActionBtn icon={Truck}      label="출고 등록" />
-                <ActionBtn icon={Trash2}     label="폐기 처리" danger />
-                <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-400 hover:text-slate-600">
-                  선택 해제
-                </button>
+              </span>
+              <ChevronDown
+                size={18}
+                className={`shrink-0 text-[#667085] transition-transform ${detailOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
+
+            {detailOpen && (
+              <div className="mt-4 space-y-4">
+                {/* ── 필터 바 ─────────────────────────────────────────────── */}
+                <div className={`space-y-3 ${CARD_CLASS} px-4 py-3.5`}>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="flex min-w-52 flex-1 items-center gap-2 rounded-lg border border-[#DFE7EF] px-3 py-2 text-sm focus-within:ring-2 focus-within:ring-[#004696]">
+                      <Search size={15} className="shrink-0 text-slate-400" />
+                      <input
+                        type="text"
+                        value={keyword}
+                        onChange={(e) => setKeyword(e.target.value)}
+                        placeholder="품목명 · 읍면동 검색"
+                        className="w-full bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                      />
+                      {keyword && (
+                        <button onClick={() => setKeyword('')} className="shrink-0 text-slate-400 hover:text-slate-600">
+                          <X size={13} />
+                        </button>
+                      )}
+                    </label>
+                    <select
+                      aria-label="기관 선택"
+                      value={region}
+                      onChange={(e) => setRegion(e.target.value)}
+                      className="rounded-lg border border-[#DFE7EF] px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#004696]"
+                    >
+                      {regions.map((r) => <option key={r}>{r}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11.5px] text-[#8A96A8]">상태</span>
+                    {STATUS_TABS.map((t) => (
+                      <FilterChip key={t.value} label={t.label} active={statusFilter === t.value} onClick={() => setStatusFilter(t.value)} />
+                    ))}
+                    <span className="mx-1 h-3 w-px bg-[#DFE7EF]" />
+                    <span className="text-[11.5px] text-[#8A96A8]">유통기한</span>
+                    {EXPIRY_TABS.map((t) => (
+                      <FilterChip key={t.value} label={t.label} active={expiryFilter === t.value} onClick={() => setExpiryFilter(t.value)} />
+                    ))}
+                    <span className="mx-1 h-3 w-px bg-[#DFE7EF]" />
+                    <FilterChip
+                      label={`폐기 예정 ${disposalCount}`}
+                      active={quickFilter === 'disposal'}
+                      onClick={() => handleQuickFilter('disposal')}
+                    />
+                    {quickFilter && quickFilter !== 'disposal' && (
+                      <button
+                        onClick={() => setQuickFilter(null)}
+                        className="ml-1 flex items-center gap-1 rounded-full bg-[#EAF3FC] px-2.5 py-1 text-[12px] font-medium text-[#004696] hover:bg-[#D9EAF9]"
+                      >
+                        <X size={10} />빠른필터 해제
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── 건수 + 일괄 처리 ──────────────────────────────────────── */}
+                {/*
+                  합계는 `trustedStock`(이상 품목 제외)만 더한다. 대시보드 '전체 재고 수량' KPI 와
+                  같은 기준이라 두 화면의 숫자가 어긋나지 않는다. 제외된 건수는 옆에 함께 밝힌다.
+                */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[13px] text-[#667085]">
+                    총 <span className="font-semibold text-[#182230]">{formatNumber(filteredItems.length)}</span>건 · 현재 재고{' '}
+                    {formatNumber(
+                      filteredItems.reduce(
+                        (sum, item) => sum + (item.trustedStock === null ? 0 : item.trustedStock - item.fieldOutboundQuantity),
+                        0,
+                      ),
+                    )}개
+                    {unverifiedCount > 0 && (
+                      <span className="ml-1 text-[#B4530F]">
+                        · 확인 필요 {formatNumber(unverifiedCount)}건은 합계에서 제외
+                      </span>
+                    )}
+                    {filteredItems.some((item) => item.fieldOutboundQuantity > 0) && (
+                      <span className="ml-1 text-[#004696]">
+                        · 현장 출고{' '}
+                        {formatNumber(filteredItems.reduce((sum, item) => sum + item.fieldOutboundQuantity, 0))}개 반영
+                      </span>
+                    )}
+                    {selectedIds.size > 0 && <span className="ml-2 text-[#004696]">· {selectedIds.size}건 선택됨</span>}
+                  </p>
+                  {selectedIds.size > 0 && (
+                    <div className="flex items-center gap-2">
+                      <ActionBtn icon={Truck}      label="출고 등록" />
+                      <ActionBtn icon={Trash2}     label="폐기 처리" danger />
+                      <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-400 hover:text-slate-600">
+                        선택 해제
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── 재고 테이블 ──────────────────────────────────────────── */}
+                <div className={`overflow-hidden ${CARD_CLASS}`}>
+                  {filteredItems.length === 0 ? (
+                    <div className="py-16 text-center text-sm text-slate-400">조건에 맞는 물품이 없습니다.</div>
+                  ) : (
+                    <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 22rem)' }}>
+                      <table className="min-w-full divide-y divide-slate-100 text-sm">
+                        <thead className="sticky top-0 z-10 bg-[#F7FAFD]">
+                          <tr>
+                            <th className="w-10 px-4 py-3">
+                              <IndeterminateCheckbox checked={allSelected} indeterminate={someSelected} onChange={toggleSelectAll} />
+                            </th>
+                            <SortTh label="상태"    col="status"       sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                            <SortTh label="품목명"  col="name"         sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                            <th className="whitespace-nowrap px-4 py-3 text-left text-[11.5px] font-medium text-[#8A96A8]">기관</th>
+                            <th className="whitespace-nowrap px-4 py-3 text-right text-[11.5px] font-medium text-[#8A96A8]">입고</th>
+                            <th className="whitespace-nowrap px-4 py-3 text-right text-[11.5px] font-medium text-[#8A96A8]">출고</th>
+                            <SortTh label="현재재고" col="currentStock" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                            <SortTh label="유통기한" col="expiryDate"   sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                            <th className="whitespace-nowrap px-4 py-3 text-left text-[11.5px] font-medium text-[#8A96A8]">D-day</th>
+                            <th className="whitespace-nowrap px-4 py-3 text-left text-[11.5px] font-medium text-[#8A96A8]">조치</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {filteredItems.map((item) => {
+                            const days = item.daysToExpiration;
+                            const action = STATUS_ACTIONS[item.status];
+                            const isSelected = selectedIds.has(item.id);
+
+                            return (
+                              <tr
+                                key={item.id}
+                                className={`cursor-pointer transition-colors hover:bg-[#F7FAFD] ${isSelected ? 'bg-[#EAF3FC]/60' : ''}`}
+                              >
+                                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleSelect(item.id)}
+                                    className="h-4 w-4 cursor-pointer rounded border-slate-300 text-[#004696] focus:ring-[#004696]"
+                                  />
+                                </td>
+                                <td className="px-4 py-3" onClick={() => setDrawerItem(item)}>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[item.status] ?? 'bg-slate-400'}`} />
+                                    <StatusBadge status={item.status} />
+                                  </div>
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800" onClick={() => setDrawerItem(item)}>{item.itemName}</td>
+                                <td className="whitespace-nowrap px-4 py-3 text-slate-600" onClick={() => setDrawerItem(item)}>
+                                  {item.organizationName}
+                                  <span className="ml-2 text-xs text-slate-400">{item.districtName}</span>
+                                  <span className="ml-2 rounded bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">
+                                    {DATA_SOURCE_LABEL[item.dataSource]}
+                                  </span>
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-emerald-600" onClick={() => setDrawerItem(item)}>+{formatNumber(item.inboundQuantity)}</td>
+                                <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-sky-600" onClick={() => setDrawerItem(item)}>−{formatNumber(item.outboundQuantity)}</td>
+                                <td className="whitespace-nowrap px-4 py-3 text-right font-semibold" onClick={() => setDrawerItem(item)}>
+                                  <span className={
+                                    item.displayStock === null ? 'text-amber-600' :
+                                    item.displayStock <= 0     ? 'text-rose-700' :
+                                    item.displayStock <= 10    ? 'text-rose-600' :
+                                    item.displayStock <= 20    ? 'text-amber-600' :
+                                                                 'text-slate-800'
+                                  }>
+                                    {formatStock(item.displayStock)}
+                                  </span>
+                                  {item.fieldOutboundQuantity > 0 && (
+                                    <span className="ml-1 text-[10px] font-normal text-[#004696]">현장 −{formatNumber(item.fieldOutboundQuantity)}</span>
+                                  )}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3 text-slate-500" onClick={() => setDrawerItem(item)}>
+                                  {item.expirationDate ? formatDate(item.expirationDate) : '—'}
+                                </td>
+                                <td className={`whitespace-nowrap px-4 py-3 ${days === null ? 'text-slate-300' : dDayClass(days)}`} onClick={() => setDrawerItem(item)}>
+                                  {days === null ? '—' : formatDDay(days)}
+                                </td>
+                                <td className="whitespace-nowrap px-4 py-3 text-xs" onClick={() => setDrawerItem(item)}>
+                                  {action
+                                    ? <span className={action.className}>{action.label}</span>
+                                    : <span className="text-slate-200">—</span>
+                                  }
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-          </div>
+          </DetailSection>
 
-          {/* ── 재고 테이블 ──────────────────────────────────────────────────── */}
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            {filteredItems.length === 0 ? (
-              <div className="py-16 text-center text-sm text-slate-400">조건에 맞는 물품이 없습니다.</div>
-            ) : (
-              <div className="overflow-auto" style={{ maxHeight: 'calc(100vh - 22rem)' }}>
-                <table className="min-w-full divide-y divide-slate-100 text-sm">
-                  <thead className="sticky top-0 z-10 bg-slate-50">
-                    <tr>
-                      <th className="w-10 px-4 py-3">
-                        <IndeterminateCheckbox checked={allSelected} indeterminate={someSelected} onChange={toggleSelectAll} />
-                      </th>
-                      <SortTh label="상태"    col="status"       sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                      <SortTh label="품목명"  col="name"         sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                      <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500">기관</th>
-                      <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium text-slate-500">입고</th>
-                      <th className="whitespace-nowrap px-4 py-3 text-right text-xs font-medium text-slate-500">출고</th>
-                      <SortTh label="현재재고" col="currentStock" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                      <SortTh label="유통기한" col="expiryDate"   sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                      <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500">D-day</th>
-                      <th className="whitespace-nowrap px-4 py-3 text-left text-xs font-medium text-slate-500">조치</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {filteredItems.map((item) => {
-                      const days = item.daysToExpiration;
-                      const action = STATUS_ACTIONS[item.status];
-                      const isSelected = selectedIds.has(item.id);
-
-                      return (
-                        <tr
-                          key={item.id}
-                          className={`cursor-pointer transition-colors hover:bg-slate-50 ${isSelected ? 'bg-teal-50/40' : ''}`}
-                        >
-                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggleSelect(item.id)}
-                              className="h-4 w-4 cursor-pointer rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                            />
-                          </td>
-                          <td className="px-4 py-3" onClick={() => setDrawerItem(item)}>
-                            <div className="flex items-center gap-2">
-                              <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_DOT[item.status] ?? 'bg-slate-400'}`} />
-                              <StatusBadge status={item.status} />
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-800" onClick={() => setDrawerItem(item)}>{item.itemName}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-slate-600" onClick={() => setDrawerItem(item)}>
-                            {item.organizationName}
-                            <span className="ml-2 text-xs text-slate-400">{item.districtName}</span>
-                            <span className="ml-2 rounded bg-slate-100 px-1.5 py-px text-[10px] font-medium text-slate-500">
-                              {DATA_SOURCE_LABEL[item.dataSource]}
-                            </span>
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-emerald-600" onClick={() => setDrawerItem(item)}>+{formatNumber(item.inboundQuantity)}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right font-medium text-sky-600" onClick={() => setDrawerItem(item)}>−{formatNumber(item.outboundQuantity)}</td>
-                          <td className="whitespace-nowrap px-4 py-3 text-right font-semibold" onClick={() => setDrawerItem(item)}>
-                            <span className={
-                              item.displayStock === null ? 'text-amber-600' :
-                              item.displayStock <= 0     ? 'text-rose-700' :
-                              item.displayStock <= 10    ? 'text-rose-600' :
-                              item.displayStock <= 20    ? 'text-amber-600' :
-                                                           'text-slate-800'
-                            }>
-                              {formatStock(item.displayStock)}
-                            </span>
-                            {item.fieldOutboundQuantity > 0 && (
-                              <span className="ml-1 text-[10px] font-normal text-teal-600">현장 −{formatNumber(item.fieldOutboundQuantity)}</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-slate-500" onClick={() => setDrawerItem(item)}>
-                            {item.expirationDate ? formatDate(item.expirationDate) : '—'}
-                          </td>
-                          <td className={`whitespace-nowrap px-4 py-3 ${days === null ? 'text-slate-300' : dDayClass(days)}`} onClick={() => setDrawerItem(item)}>
-                            {days === null ? '—' : formatDDay(days)}
-                          </td>
-                          <td className="whitespace-nowrap px-4 py-3 text-xs" onClick={() => setDrawerItem(item)}>
-                            {action
-                              ? <span className={action.className}>{action.label}</span>
-                              : <span className="text-slate-200">—</span>
-                            }
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          <SourceNote>
+            출처: 읍면동 제출 Excel · 재고 계산·이상 판정은 중앙 DB(v_inventory_status) 기준이며 화면에서 다시
+            계산하지 않습니다.
+          </SourceNote>
 
           {/* ── 품목 상세 드로어 ─────────────────────────────────────────────── */}
           {drawerItem && (
@@ -717,5 +903,112 @@ export default function InventoryPage({
         </>
       )}
     </div>
+  );
+}
+
+// ─── 지금 조치할 재고 ────────────────────────────────────────────────────────
+
+const PRIORITY_TONE: Record<string, ActionTone> = {
+  '부족': 'danger',
+  '임박': 'warning',
+  '확인 필요': 'neutral',
+};
+
+/**
+ * 지금 조치할 재고.
+ *
+ * 표에서 눈으로 찾아야 했던 세 가지(재고가 0인 품목 / 기한이 임박한 품목 /
+ * 재고 근거가 맞지 않는 품목)를 한 줄씩 꺼내 놓는다. 누르면 그 품목 상세가 열리고,
+ * 오른쪽 링크는 같은 조건으로 전체 표를 연다.
+ */
+function PriorityActions({
+  items,
+  counts,
+  onDrill,
+  onOpenItem,
+}: {
+  items: Row[];
+  counts: { shortage: number; expiring: number; anomaly: number };
+  onDrill: (next: { status?: string; quick?: QuickFilter }) => void;
+  onOpenItem: (item: Row) => void;
+}) {
+  const LIMIT = 5;
+  const shown = items.slice(0, LIMIT);
+
+  return (
+    <ActionSection
+      title="지금 조치할 재고"
+      aside={
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
+          <CountLink label="부족" count={counts.shortage} color={HS.danger} onClick={() => onDrill({ status: '부족' })} />
+          <span aria-hidden className="h-3 w-px bg-[#DFE7EF]" />
+          <CountLink label="유통기한 임박" count={counts.expiring} color={HS.orange} onClick={() => onDrill({ status: '임박' })} />
+          <span aria-hidden className="h-3 w-px bg-[#DFE7EF]" />
+          <CountLink label="근거 확인" count={counts.anomaly} color={HS.textSub} onClick={() => onDrill({ status: '확인 필요' })} />
+        </div>
+      }
+    >
+      <div>
+        {shown.length === 0 ? (
+          <AllClear message="지금 조치가 필요한 재고가 없습니다." />
+        ) : (
+          <div className="space-y-2">
+            {shown.map((item, i) => {
+              const days = item.daysToExpiration;
+              const reason =
+                item.status === '부족'
+                  ? `현재 재고 ${formatStock(item.displayStock)}개 · 발주·확보 필요`
+                  : item.status === '임박'
+                    ? `유통기한 ${days === null ? '확인 필요' : formatDDay(days)} · ${formatStock(item.displayStock)}개 보유 · 우선 배부 검토`
+                    : '재고 근거가 맞지 않아 합계에서 제외된 품목';
+              return (
+                <ActionRow
+                  key={item.id}
+                  index={i}
+                  tone={PRIORITY_TONE[item.status] ?? 'neutral'}
+                  tag={item.status}
+                  title={item.itemName}
+                  detail={`${reason} · ${item.organizationName}`}
+                  meta={item.districtName}
+                  cta="재고 보기"
+                  onClick={() => onOpenItem(item)}
+                />
+              );
+            })}
+          </div>
+        )}
+        {items.length > LIMIT && (
+          <p className="mt-3 text-[12px] text-[#8A96A8]">
+            같은 조건의 품목이 {items.length - LIMIT}건 더 있습니다. 아래 전체 재고표에서 상태 필터로 확인하세요.
+          </p>
+        )}
+      </div>
+    </ActionSection>
+  );
+}
+
+function CountLink({
+  label,
+  count,
+  color,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  color: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={count > 0 ? onClick : undefined}
+      disabled={count === 0}
+      className="rounded-md px-1 text-[#667085] transition-colors hover:text-[#182230] disabled:cursor-default disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
+    >
+      {label}{' '}
+      <strong className="text-[15px] font-bold tabular-nums" style={{ color: count > 0 ? color : '#98A2B3' }}>
+        {count}
+      </strong>
+    </button>
   );
 }

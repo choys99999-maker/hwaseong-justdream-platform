@@ -197,6 +197,70 @@ body {
 
 /*
  * ─────────────────────────────────────────────────────────────────────────────
+ * 관리자 서브화면(거점·재고·시민 요청·자료) 진입 모션.
+ *
+ * 규칙은 셋뿐이다 — Overview 카드는 6px 올라오며 나타나고, 막대는 왼쪽에서 자라고,
+ * Action 행은 40ms 씩 늦게 들어온다. 그 외 어떤 움직임도 만들지 않는다.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+@keyframes adRise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes adGrowX {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.ad-rise {
+  animation: adRise 240ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* 막대는 값이 커 보이도록 조금 더 길게 — 장식이 아니라 크기를 읽는 시간이다. */
+.ad-grow {
+  transform-origin: left center;
+  animation: adGrowX 420ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* hover 는 1px 만 뜬다. 카드가 튀어오르면 조용한 화면이 아니게 된다. */
+.ad-lift {
+  transition:
+    transform 180ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 180ms ease-in-out,
+    border-color 180ms ease-in-out,
+    background-color 180ms ease-in-out;
+}
+
+.ad-lift:hover {
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ad-rise,
+  .ad-grow {
+    animation: none !important;
+  }
+  .ad-lift {
+    transition: none;
+  }
+  .ad-lift:hover {
+    transform: none;
+  }
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
  * 관리자 지도(KakaoDistrictMap) 마커. 시민 화면과 무관하며 이번 개편 대상이 아니다.
  * React 트리 밖(CustomOverlay)에서 만드는 DOM 이라 여기서 스타일을 정의한다.
  * ─────────────────────────────────────────────────────────────────────────────
