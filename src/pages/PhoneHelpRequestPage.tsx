@@ -20,11 +20,11 @@ export default function PhoneHelpRequestPage() {
 
       <PageHeader
         title="전화 접수 대신 입력"
-        description="전화로 도움을 요청한 시민의 내용을 대신 입력합니다. 저장하면 시민이 직접 넣은 요청과 같은 목록(시민 접수 > 도움 요청)에 표시됩니다."
+        description="전화로 도움을 요청한 시민의 내용을 대신 입력합니다. 저장하면 시민이 직접 넣은 요청과 같은 목록(시민 요청 > 도움 요청)에 표시됩니다."
       />
 
       <div className="rounded-xl border border-slate-200 bg-white">
-        <HelpRequestForm channel="PHONE" doneLinkTo="/admin/intake" doneLinkLabel="시민 접수로 돌아가기" />
+        <HelpRequestForm channel="PHONE" doneLinkTo="/admin/intake" doneLinkLabel="시민 요청으로 돌아가기" />
       </div>
     </div>
   );

@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom';
-import { AlertTriangle, FileUp, Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 
 /**
  * 중앙 저장소(Supabase)에서 읽어오는 구역의 로딩·오류·빈 상태 안내.
@@ -19,7 +18,7 @@ export default function CentralDataNotice({
   isLoading,
   error,
   isEmpty = false,
-  emptyMessage = '자료·데이터 관리에서 Excel 파일을 올리면 이 영역에 실제 값이 표시됩니다.',
+  emptyMessage = '거점 관리 > 재고 업데이트에서 자료를 반영하면 이 영역에 실제 값이 표시됩니다.',
 }: CentralDataNoticeProps) {
   if (isLoading) {
     return (
@@ -40,15 +39,10 @@ export default function CentralDataNotice({
   }
 
   if (isEmpty) {
+    // 여기에 업로드 버튼을 두지 않는다 — 자료를 넣는 길은 [거점 관리 > 재고 업데이트] 하나뿐이다.
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
-        <span>{emptyMessage}</span>
-        <Link
-          to="/admin/files/upload"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-        >
-          <FileUp size={14} /> 자료 올리기
-        </Link>
+      <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500">
+        {emptyMessage}
       </div>
     );
   }

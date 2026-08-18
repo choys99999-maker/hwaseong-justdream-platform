@@ -16,7 +16,6 @@ import CitizenGuidePage from './pages/citizen/CitizenGuidePage';
 // 관리자 화면
 import TodayPage from './pages/admin/TodayPage';
 import SiteOperationsPage from './pages/admin/SiteOperationsPage';
-import SiteDetailPage from './pages/admin/SiteDetailPage';
 import IntakePage from './pages/admin/IntakePage';
 import RegionDetailPage from './pages/RegionDetailPage';
 import QuickSiteStatusPage from './pages/QuickSiteStatusPage';
@@ -59,18 +58,25 @@ export default function App() {
       <Route element={<AdminLayout />}>
         <Route path="/admin" element={<TodayPage />} />
 
-        {/* 거점 운영 */}
+        {/*
+          거점 관리. 거점 상세는 별도 페이지가 아니라 같은 화면의 오른쪽 패널이다 —
+          주소만 `/admin/sites/:siteId` 로 남겨 링크·뒤로가기가 그대로 동작한다.
+        */}
         <Route path="/admin/sites" element={<SiteOperationsPage />} />
         <Route path="/admin/sites/inventory" element={<SiteOperationsPage />} />
-        <Route path="/admin/sites/:siteId" element={<SiteDetailPage />} />
+        <Route path="/admin/sites/:siteId" element={<SiteOperationsPage />} />
         <Route path="/admin/quick-status" element={<QuickSiteStatusPage />} />
         <Route path="/admin/regions/:regionId" element={<RegionDetailPage />} />
 
-        {/* 시민 접수 */}
+        {/* 시민 요청 */}
         <Route path="/admin/intake" element={<IntakePage />} />
         <Route path="/admin/help-requests/new" element={<PhoneHelpRequestPage />} />
 
-        {/* 자료 관리 */}
+        {/*
+          자료 보관함. 사이드바에서 내렸고 화면 안에서 링크하지 않는다 —
+          Excel 은 [거점 관리 > 재고 업데이트 > Excel 업로드]가 유일한 입구다.
+          예전에 올린 제출본을 주소로 되짚을 수 있도록 경로만 남긴다.
+        */}
         <Route path="/admin/files" element={<DataLibraryPage />} />
         <Route path="/admin/files/upload" element={<DataUploadPage />} />
         <Route path="/admin/files/:submissionId" element={<SubmissionDetailPage />} />

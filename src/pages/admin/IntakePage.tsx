@@ -8,10 +8,10 @@ import SupportRecordsPage from '../SupportRecordsPage';
 type TabKey = 'help' | 'donation' | 'usage';
 type UsageView = 'records' | 'linkage';
 
+/** 사이드바에서 오는 사람이 보는 탭은 둘뿐이다. */
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'help', label: '도움 요청' },
   { key: 'donation', label: '기부' },
-  { key: 'usage', label: '이용·연계' },
 ];
 
 const USAGE_VIEWS: { key: UsageView; label: string }[] = [
@@ -22,11 +22,14 @@ const USAGE_VIEWS: { key: UsageView; label: string }[] = [
 const DESCRIPTIONS: Record<TabKey, string> = {
   help: '시민이 모바일에서 넣은 요청과 전화로 받아 대신 넣은 요청이 함께 들어옵니다.',
   donation: '시민이 사진과 함께 남긴 물품 기부입니다. 품목·수량은 기부자가 최종 확인한 값입니다.',
-  usage: '이용 이력·상담·복지연계·지속지원을 관리합니다. 심사·행정처리는 행복e음에서 진행합니다.',
+  usage: '이용 이력·상담·복지연계 기록입니다. 시청 관리자 기본 흐름에서는 쓰지 않습니다.',
 };
 
 function resolveTab(value: string | null): TabKey {
-  return TABS.some((tab) => tab.key === value) ? (value as TabKey) : 'help';
+  if (value === 'donation') return 'donation';
+  // 이용·연계는 메뉴에서 내렸지만 예전 주소(`/admin/usage`)로 들어온 기록은 계속 열린다.
+  if (value === 'usage') return 'usage';
+  return 'help';
 }
 
 function resolveUsageView(value: string | null): UsageView {
@@ -34,11 +37,10 @@ function resolveUsageView(value: string | null): UsageView {
 }
 
 /**
- * 시민 접수.
+ * 시민 요청.
  *
- * 흩어져 있던 신청·상담 내역 · 이용·지원 현황 · 복지연계 현황을 한 메뉴로 합쳤다.
- * 상단 탭은 셋뿐이고, 매일 처리해야 하는 도움 요청이 첫 탭이다.
- * 이용 이력·복지연계는 지우지 않되 주인공 자리에 두지 않는다.
+ * 시민이 보낸 건은 두 종류뿐이다 — 도움 요청과 기부. 그래서 탭도 둘뿐이다.
+ * 이용 이력·복지연계는 지우지 않되(주소로는 그대로 열린다) 매일 쓰는 화면에서 내렸다.
  */
 export default function IntakePage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -56,9 +58,13 @@ export default function IntakePage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="시민 접수" description={DESCRIPTIONS[activeTab]} />
+      <PageHeader title="시민 요청" description={DESCRIPTIONS[activeTab]} />
 
-      <div className="inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1" role="tablist" aria-label="시민 접수 탭">
+      <div
+        className="inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1"
+        role="tablist"
+        aria-label="시민 요청 탭"
+      >
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -80,9 +86,14 @@ export default function IntakePage() {
       {activeTab === 'help' && <HelpRequestPanel />}
       {activeTab === 'donation' && <DonationPanel />}
 
+      {/* 예전 주소로 들어온 이용·연계 기록. 탭 목록에는 두지 않는다. */}
       {activeTab === 'usage' && (
         <div className="space-y-4">
-          <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-sm" role="group" aria-label="이용·연계 화면 선택">
+          <div
+            className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-sm"
+            role="group"
+            aria-label="이용·연계 화면 선택"
+          >
             {USAGE_VIEWS.map((view) => (
               <button
                 key={view.key}

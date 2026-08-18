@@ -37,12 +37,23 @@ export default function DonationPanel() {
 
   const selectedId = searchParams.get('id');
   const donations = useMemo(() => data ?? [], [data]);
-  const visible = onlyOpen ? donations.filter((row) => row.status === 'NEW') : donations;
+  const visible = useMemo(
+    () => (onlyOpen ? donations.filter((row) => row.status === 'NEW') : donations),
+    [donations, onlyOpen],
+  );
   const selected = donations.find((row) => row.id === selectedId) ?? null;
 
   useEffect(() => {
     if (selectedId && selected && selected.status !== 'NEW') setOnlyOpen(false);
   }, [selectedId, selected]);
+
+  // 빈 상세 패널을 크게 띄우지 않는다 — 목록이 있으면 첫 건을 미리 골라 둔다.
+  useEffect(() => {
+    if (selected || visible.length === 0) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('id', visible[0].id);
+    setSearchParams(next, { replace: true });
+  }, [selected, visible, searchParams, setSearchParams]);
 
   function select(id: string | null) {
     const next = new URLSearchParams(searchParams);
@@ -196,8 +207,8 @@ function DonationDetail({
 }) {
   if (!donation) {
     return (
-      <aside className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-400">
-        목록에서 기부를 선택하면 사진과 처리 버튼이 여기에 표시됩니다.
+      <aside className="h-fit rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-400">
+        목록에서 기부를 선택하세요.
       </aside>
     );
   }

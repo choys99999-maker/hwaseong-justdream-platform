@@ -79,7 +79,7 @@ export default function Sidebar() {
       <nav className="flex-1 space-y-1 px-2 py-4">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
-          // 흡수된 화면(구 상세·재고·빠른 입력 등)에서도 상위 메뉴가 켜져 있어야
+          // 흡수된 화면(구 상세·재고·거점 상세 등)에서도 상위 메뉴가 켜져 있어야
           // "내가 지금 어느 메뉴 안에 있는지"를 잃지 않는다.
           const isActive = isNavItemActive(item, location.pathname);
           return (

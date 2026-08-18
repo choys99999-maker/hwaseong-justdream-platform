@@ -87,7 +87,7 @@ function toLines(
  *
  * 파싱·열 자동 인식·검증은 전부 기존 업로드 엔진(`workers/excelWorker` + `utils/excel/*`)을
  * 그대로 쓴다. 여기서 하는 일은 그 결과를 **재고 반영 줄**로 옮기고, 인식·검증 결과를
- * 담당자에게 보여주는 것뿐이다. (기존 [자료 올리기] 화면은 그대로 남아 있다)
+ * 담당자에게 보여주는 것뿐이다. (Excel 을 올리는 길은 이 화면 하나뿐이다)
  */
 export default function InventoryExcelApply({
   disabled,
@@ -280,7 +280,7 @@ export default function InventoryExcelApply({
           onClick={onCancel}
           className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
-          빠른 입력으로 돌아가기
+          빠른 수정으로 돌아가기
         </button>
       </div>
     );
@@ -325,8 +325,7 @@ export default function InventoryExcelApply({
             )}
             {usesFlowColumns && (
               <p className="mt-1.5 text-xs text-slate-500">
-                입고·출고 열은 이번 반영에 쓰지 않습니다. 현재재고만 반영합니다. 입출고 이력까지
-                저장하려면 [자료 관리 &gt; 자료 올리기]를 쓰세요.
+                입고·출고 열은 이번 반영에 쓰지 않습니다. 현재재고만 반영합니다.
               </p>
             )}
           </div>

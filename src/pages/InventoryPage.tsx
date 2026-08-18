@@ -12,7 +12,6 @@ import type { LucideIcon } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import StatusBadge from '../components/common/StatusBadge';
 import CentralDataNotice from '../components/common/CentralDataNotice';
-import InventoryUpdatePanel from '../components/inventory/InventoryUpdatePanel';
 import { useCentralData } from '../hooks/useCentralData';
 import { listInventoryStatus, type InventoryStatus as InventoryRow } from '../store/analytics';
 import { districtOfArea } from '../data/districtByArea';
@@ -359,14 +358,27 @@ function ItemDetailDrawer({
 
 type QuickFilter = 'shortage' | 'expiring' | 'disposal' | null;
 
+interface InventoryPageProps {
+  /** [거점 관리 > 재고] 안에서 쓸 때. 상위 화면이 이미 제목을 갖고 있어 자기 제목을 그리지 않는다. */
+  embedded?: boolean;
+  /** 재고 업데이트가 반영되면 값이 바뀌고, 이 화면이 중앙 DB 를 다시 읽는다. */
+  refreshToken?: number;
+  /** 거점 상세에서 [전체 재고 보기]로 넘어왔을 때의 초기 검색어(읍면동). */
+  initialKeyword?: string;
+}
+
 /**
- * 물품 현황(재고).
+ * 재고 — 화성시 전체 물품을 **확인하는** 화면.
  *
- * 독립 메뉴가 아니라 [거점 운영 > 재고] 안에서 쓴다. 그 화면이 이미 제목을 갖고 있어
- * `embedded` 로 들어오면 자기 제목을 그리지 않는다.
+ * 여기서는 고치지 않는다. 고치는 길은 [거점 관리 > ⚡ 재고 업데이트] 하나뿐이라
+ * 이 화면 안에는 자연어 입력창도 Excel 업로드도 두지 않는다.
  */
-export default function InventoryPage({ embedded = false }: { embedded?: boolean }) {
-  const [keyword,      setKeyword]      = useState('');
+export default function InventoryPage({
+  embedded = false,
+  refreshToken = 0,
+  initialKeyword = '',
+}: InventoryPageProps) {
+  const [keyword,      setKeyword]      = useState(initialKeyword);
   const [region,       setRegion]       = useState('전체');
   const [statusFilter, setStatusFilter] = useState('all');
   const [expiryFilter, setExpiryFilter] = useState('all');
@@ -375,12 +387,10 @@ export default function InventoryPage({ embedded = false }: { embedded?: boolean
   const [sortDir,      setSortDir]      = useState<SortDir>('asc');
   const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set());
   const [drawerItem,   setDrawerItem]   = useState<Row | null>(null);
-  /** 재고 입력으로 값이 바뀌면 올려 다시 읽는다. */
-  const [refreshKey,   setRefreshKey]   = useState(0);
 
   // 입고/출고는 기간 합계, 현재재고·유통기한은 최신 제출본 기준.
   // 재제출분 제외·누계 시트 제외 규칙은 모두 v_inventory_status 안에 있다.
-  const { data, error, isLoading } = useCentralData(() => listInventoryStatus(), [refreshKey]);
+  const { data, error, isLoading } = useCentralData(() => listInventoryStatus(), [refreshToken]);
 
   // 이용·상담 물품지원이 만든 현장 출고. 저장 즉시 이 화면의 표시 재고에 반영된다.
   const outboundRecords = useSyncExternalStore(subscribeOutbound, getOutboundSnapshot);
@@ -504,16 +514,6 @@ export default function InventoryPage({ embedded = false }: { embedded?: boolean
       )}
 
       {notice}
-
-      {/*
-        재고 입력. 현장이 쓰던 방식(말로 몇 개만 / 쓰던 Excel 통째로)을 그대로 받아
-        기존 저장 경로로 넘긴다. 자료가 아직 없어도 입력은 할 수 있어야 하므로
-        아래 목록(items.length > 0)과 달리 항상 그린다.
-      */}
-      <InventoryUpdatePanel
-        inventory={data ?? []}
-        onApplied={() => setRefreshKey((k) => k + 1)}
-      />
 
       {items.length > 0 && (
         <>

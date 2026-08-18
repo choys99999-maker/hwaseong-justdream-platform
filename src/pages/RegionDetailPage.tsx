@@ -106,7 +106,7 @@ export default function RegionDetailPage() {
         <EmptyState title="존재하지 않는 지역입니다" message="지역별 현황 목록에서 다시 선택해 주세요." />
         <Link to="/admin/sites" className="inline-flex items-center gap-1.5 text-sm font-medium text-teal-600 hover:text-teal-700">
           <ArrowLeft size={16} />
-          거점 운영으로 돌아가기
+          거점 관리로 돌아가기
         </Link>
       </div>
     );

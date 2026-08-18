@@ -1,10 +1,4 @@
-import {
-  ClipboardCheck,
-  FolderClosed,
-  Inbox,
-  MapPinned,
-  type LucideIcon,
-} from 'lucide-react';
+import { ClipboardCheck, Inbox, MapPinned, type LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   path: string;
@@ -15,29 +9,32 @@ export interface NavItem {
 }
 
 /**
- * 관리자 사이드바 — 4개.
+ * 관리자 사이드바 — 3개.
  *
- * 공무원의 하루가 그대로 순서다: 오늘 할 일 → (거점을 고쳐야 하면) 거점 운영 →
- * (시민 건을 처리해야 하면) 시민 접수 → (자료를 걷어야 하면) 자료 관리.
- * 기능을 지우지 않고 이 4개 안으로 넣는다 — 물품 현황·빠른 입력·재고 관제는 거점 운영,
- * 이용·지원·복지연계는 시민 접수, 실적·분석은 자료 관리 안에 있다.
+ * 공무원이 스스로에게 던지는 질문이 그대로 메뉴다.
+ *   오늘 할 일  — 지금 뭐부터 해야 하지?
+ *   거점 관리   — 거점 상태·재고를 보고 고치려면?
+ *   시민 요청   — 시민이 보낸 건은 어디 있지?
+ *
+ * 기능을 지우지 않고 이 3개 안으로 넣는다. 한 업무로 가는 길은 하나만 둔다 —
+ * 재고 수정은 [거점 관리 > 재고 업데이트] 하나뿐이고, 자연어·Excel 은 그 안의 두 방식이다.
+ * 자료 보관함(`/admin/files`)은 경로로만 남기고 메뉴에서 내린다.
  */
 export const NAV_ITEMS: NavItem[] = [
   { path: '/admin', label: '오늘 할 일', icon: ClipboardCheck },
   {
     path: '/admin/sites',
-    label: '거점 운영',
+    label: '거점 관리',
     icon: MapPinned,
-    // 구 상세(지도에서 진입)·빠른 입력 단독 화면도 거점 운영 안이다.
+    // 구 상세(지도에서 진입)·재고·현황 입력도 거점 관리 안이다.
     matches: ['/admin/regions', '/admin/inventory', '/admin/quick-status'],
   },
   {
     path: '/admin/intake',
-    label: '시민 접수',
+    label: '시민 요청',
     icon: Inbox,
     matches: ['/admin/help-requests'],
   },
-  { path: '/admin/files', label: '자료 관리', icon: FolderClosed },
 ];
 
 /** 사이드바 활성 표시 판정. `/admin` 만 정확히 일치할 때 켜진다. */

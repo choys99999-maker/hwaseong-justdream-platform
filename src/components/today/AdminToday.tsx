@@ -1,6 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowRight, PhoneIncoming } from 'lucide-react';
 import TodayQueue, { TODAY_KIND_LABELS, type TodayItem, type TodayKind } from './TodayQueue';
 import OperationMapSection from '../dashboard/OperationMapSection';
 import CentralDataNotice from '../common/CentralDataNotice';
@@ -11,7 +9,7 @@ import { listSiteQuickStatus } from '../../store/citizenSites';
 import { getCityOverview } from '../../store/analytics';
 import { listOrganizations, listSubmissions } from '../../store/remote';
 import { operationActionItems } from '../../data/actionItems';
-import { mockSites } from '../../data/mockSites';
+import { mockSites, siteAreaOf } from '../../data/mockSites';
 import { buildSiteRows, updateGapLabel } from '../../utils/siteOperations';
 import { formatUpdatedAt } from '../../utils/submission';
 import { formatNumber } from '../../utils/format';
@@ -90,16 +88,21 @@ export default function AdminToday() {
         place: row.site.displayName,
         what: '거점 현황 갱신 필요',
         when: updateGapLabel(row),
-        to: `/admin/sites/${row.site.id}?tab=quick`,
+        // 거점 관리에서 그 거점 패널이 현황 수정 상태로 열린다.
+        to: `/admin/sites/${row.site.id}?edit=1`,
       }));
 
+    // 부족·임박은 물품 문제라 재고 목록으로, 자료 확인 필요는 거점 문제라 거점 패널로 보낸다.
     const supply: TodayItem[] = operationActionItems.map((action) => ({
       id: action.id,
       kind: 'supply' as const,
       place: action.siteName,
       what: action.summary,
       when: action.suggestion,
-      to: `/admin/sites/${action.siteId}`,
+      to:
+        action.kind === '자료 확인 필요'
+          ? `/admin/sites/${action.siteId}`
+          : `/admin/sites/inventory?q=${encodeURIComponent(siteAreaOf(action.siteId) ?? '')}`,
     }));
 
     return [...help, ...donation, ...stale, ...supply];
@@ -130,21 +133,15 @@ export default function AdminToday() {
     <div className="space-y-5">
       {/* ── 1. 오늘 처리할 일 ────────────────────────────────── */}
       <section aria-label="오늘 처리할 일" className="rounded-xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-base font-semibold text-slate-900">오늘 처리할 일</h2>
-            <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
-              {items.length}건
-            </span>
-          </div>
-          <Link
-            to="/admin/help-requests/new"
-            className="inline-flex items-center gap-1 text-xs font-medium text-teal-700 hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-          >
-            <PhoneIncoming size={13} />
-            전화로 받은 요청 대신 입력
-            <ArrowRight size={13} />
-          </Link>
+        {/*
+          이 화면은 알림판이다 — 처리는 하지 않고, 처리할 화면으로 데려가기만 한다.
+          (전화 대리 입력처럼 무언가를 만드는 동작은 시민 요청 > 도움 요청 한 곳에만 둔다)
+        */}
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-base font-semibold text-slate-900">오늘 처리할 일</h2>
+          <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-white">
+            {items.length}건
+          </span>
         </div>
 
         {/* 종류별 건수 — 그대로 큐 필터가 된다. 숫자 카드를 따로 만들지 않는다. */}
@@ -163,7 +160,7 @@ export default function AdminToday() {
 
         {queueError && (
           <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-xs text-amber-800">
-            시민 접수 큐를 불러오지 못했습니다: {queueError}
+            시민 요청 큐를 불러오지 못했습니다: {queueError}
           </p>
         )}
 
@@ -222,7 +219,7 @@ export default function AdminToday() {
                 label="중앙 집계 재고"
                 value={`${formatNumber(statsData.overview.inventoryTotalStock)}개`}
               />
-              <MiniStat label="자료 오류" value={`${formatNumber(flaggedCount)}건`} to="/admin/files" />
+              <MiniStat label="자료 오류" value={`${formatNumber(flaggedCount)}건`} />
             </dl>
           )}
         </section>
@@ -265,22 +262,11 @@ function SummaryDot({ color, label, value }: { color: string; label: string; val
   );
 }
 
-function MiniStat({ label, value, to }: { label: string; value: string; to?: string }) {
-  const body = (
-    <>
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-1 text-lg font-semibold tabular-nums text-slate-800">{value}</dd>
-    </>
+    </div>
   );
-  if (to) {
-    return (
-      <Link
-        to={to}
-        className="rounded-lg border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-teal-300 hover:bg-teal-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-      >
-        {body}
-      </Link>
-    );
-  }
-  return <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">{body}</div>;
 }

@@ -323,16 +323,62 @@ test.describe('관리자 화면 회귀 — 데스크톱', () => {
     await expect(page.locator('nav >> text=오늘 할 일')).toBeVisible();
   });
 
-  test('사이드바 메뉴는 4개뿐이다', async ({ page }) => {
+  test('사이드바 메뉴는 3개뿐이다', async ({ page }) => {
     await page.goto(`${BASE}/admin`);
     const nav = page.locator('aside nav');
-    await expect(nav.getByRole('link')).toHaveCount(4);
-    for (const label of ['오늘 할 일', '거점 운영', '시민 접수', '자료 관리']) {
+    await expect(nav.getByRole('link')).toHaveCount(3);
+    for (const label of ['오늘 할 일', '거점 관리', '시민 요청']) {
       await expect(nav.getByRole('link', { name: label })).toBeVisible();
     }
+    // 자료 관리·이용·연계는 메뉴에서 내렸다.
+    await expect(nav.getByRole('link', { name: '자료 관리' })).toHaveCount(0);
   });
 
-  test('4개 IA로 흡수된 예전 경로는 새 화면으로 리다이렉트된다', async ({ page }) => {
+  test('재고를 고치는 길은 [거점 관리 > 재고 업데이트] 하나뿐이다', async ({ page }) => {
+    await page.goto(`${BASE}/admin/sites`);
+    await expect(page.getByRole('heading', { name: '거점 관리', level: 2 })).toBeVisible({ timeout: 10000 });
+
+    // 재고 탭에는 입력 UI 가 없다 — 확인만 하는 화면이다.
+    await page.getByRole('tab', { name: '재고' }).click();
+    await expect(page).toHaveURL(/\/admin\/sites\/inventory$/);
+    await expect(page.getByRole('button', { name: '내용 확인하기' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Excel 업로드' })).toHaveCount(0);
+
+    // 자연어·Excel 두 방식이 [재고 업데이트] 하나 안에 함께 있다.
+    await page.getByRole('button', { name: '재고 업데이트' }).click();
+    const drawer = page.getByRole('dialog', { name: '재고 업데이트' });
+    await expect(drawer.getByText('빠른 수정')).toBeVisible();
+    await expect(drawer.getByPlaceholder('예) 우유 3개')).toBeVisible();
+    await expect(drawer.getByRole('button', { name: 'Excel 업로드' })).toBeVisible();
+  });
+
+  test('거점을 누르면 페이지를 새로 열지 않고 오른쪽 상세 패널이 열린다', async ({ page }) => {
+    await page.goto(`${BASE}/admin/sites`);
+    await expect(page.getByRole('heading', { name: '거점 관리', level: 2 })).toBeVisible({ timeout: 10000 });
+
+    await page.locator('ul li a[href*="/admin/sites/justdream-"]').first().click();
+    await expect(page).toHaveURL(/\/admin\/sites\/justdream-\d+$/);
+
+    // 목록은 그대로 있고(같은 화면), 패널 안에서 바로 현황을 고칠 수 있다.
+    const drawer = page.getByRole('dialog');
+    await expect(drawer.getByRole('button', { name: '현황 수정' })).toBeVisible();
+    await expect(drawer.getByRole('link', { name: '전체 재고 보기' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: '거점' })).toBeVisible();
+
+    await drawer.getByRole('button', { name: '현황 수정' }).click();
+    await expect(drawer.getByRole('button', { name: '지금 가능' })).toBeVisible();
+  });
+
+  test('시민 요청은 도움 요청·기부 두 탭뿐이다', async ({ page }) => {
+    await page.goto(`${BASE}/admin/intake`);
+    await expect(page.getByRole('heading', { name: '시민 요청', level: 2 })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expect(page.getByRole('tab', { name: '도움 요청' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: '기부' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: '이용·연계' })).toHaveCount(0);
+  });
+
+  test('IA로 흡수된 예전 경로는 새 화면으로 리다이렉트된다', async ({ page }) => {
     await page.goto(`${BASE}/inventory`);
     await expect(page).toHaveURL(/\/admin\/sites\/inventory$/);
 

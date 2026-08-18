@@ -55,13 +55,13 @@ const MESSY_FILE = writeWorkbook('봉담읍_8월.xlsx', [
 ]);
 
 /**
- * 업로드 화면까지는 URL 을 직접 치지 않고 화면 안의 링크를 눌러서 간다.
- * 라우터 방식(Browser/Hash)이나 배포 base 경로가 바뀌어도 테스트가 따라 깨지지 않는다.
+ * 자료 보관함(제출본 원본을 되짚는 화면)은 3개 IA 정리 때 사이드바에서 내렸다.
+ * 담당자가 쓰는 Excel 입구는 [거점 관리 > 재고 업데이트 > Excel 업로드] 하나뿐이고,
+ * 이 화면은 주소로만 남아 있다 — 그래서 여기서는 주소로 들어간다.
+ * (엔진 자체는 두 화면이 같은 `workers/excelWorker` 를 쓴다)
  */
 async function upload(page: import('@playwright/test').Page, filePath: string) {
-  await page.goto('/admin');
-  await page.getByRole('link', { name: '자료 관리', exact: true }).first().click();
-  await page.getByRole('link', { name: '자료 올리기' }).click();
+  await page.goto('/admin/files/upload');
   await expect(page.getByRole('heading', { name: '자료 올리기' })).toBeVisible();
   await page.setInputFiles('input[type="file"]', filePath);
 }

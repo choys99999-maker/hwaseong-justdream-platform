@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Check, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowRight, Check, PhoneIncoming, X } from 'lucide-react';
 import CentralDataNotice from '../common/CentralDataNotice';
 import StatusBadge from '../common/StatusBadge';
 import { useCentralData } from '../../hooks/useCentralData';
@@ -33,13 +33,24 @@ export default function HelpRequestPanel() {
 
   const selectedId = searchParams.get('id');
   const requests = useMemo(() => data ?? [], [data]);
-  const visible = onlyOpen ? requests.filter((request) => request.status === 'NEW') : requests;
+  const visible = useMemo(
+    () => (onlyOpen ? requests.filter((request) => request.status === 'NEW') : requests),
+    [requests, onlyOpen],
+  );
   const selected = requests.find((request) => request.id === selectedId) ?? null;
 
   // 오늘 할 일에서 특정 건을 눌러 들어오면, 그 건이 목록에서 걸러지지 않게 한다.
   useEffect(() => {
     if (selectedId && selected && selected.status !== 'NEW') setOnlyOpen(false);
   }, [selectedId, selected]);
+
+  // 빈 상세 패널을 크게 띄우지 않는다 — 목록이 있으면 첫 건을 미리 골라 둔다.
+  useEffect(() => {
+    if (selected || visible.length === 0) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('id', visible[0].id);
+    setSearchParams(next, { replace: true });
+  }, [selected, visible, searchParams, setSearchParams]);
 
   function select(id: string | null) {
     const next = new URLSearchParams(searchParams);
@@ -79,6 +90,16 @@ export default function HelpRequestPanel() {
         >
           전체 {requests.length}
         </button>
+
+        {/* 전화로 받은 요청을 대신 넣는 유일한 입구. 도움 요청을 다루는 화면에 둔다. */}
+        <Link
+          to="/admin/help-requests/new"
+          className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-teal-700 transition-colors hover:text-teal-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        >
+          <PhoneIncoming size={13} />
+          전화로 받은 요청 대신 입력
+          <ArrowRight size={13} />
+        </Link>
       </div>
 
       <CentralDataNotice
@@ -91,11 +112,11 @@ export default function HelpRequestPanel() {
       {visible.length > 0 && (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="grid grid-cols-[1fr_0.8fr_0.9fr_1.1fr_0.9fr_0.7fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-medium text-slate-400">
+            {/* 연락처는 목록에 두지 않는다 — 처리할 때 보는 값이라 오른쪽 상세에만 있다. */}
+            <div className="grid grid-cols-[1fr_0.8fr_1fr_0.9fr_0.7fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-medium text-slate-400">
               <span>접수 시각</span>
               <span>지역</span>
               <span>필요한 품목</span>
-              <span>연락처</span>
               <span>요청 방식</span>
               <span>상태</span>
             </div>
@@ -105,14 +126,13 @@ export default function HelpRequestPanel() {
                   <button
                     type="button"
                     onClick={() => select(request.id)}
-                    className={`grid w-full grid-cols-[1fr_0.8fr_0.9fr_1.1fr_0.9fr_0.7fr] items-center gap-3 px-4 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
+                    className={`grid w-full grid-cols-[1fr_0.8fr_1fr_0.9fr_0.7fr] items-center gap-3 px-4 py-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
                       request.id === selectedId ? 'bg-teal-50' : 'hover:bg-slate-50'
                     }`}
                   >
                     <span className="text-slate-500">{formatDateTime(request.createdAt)}</span>
                     <span className="font-medium text-slate-800">{request.dong}</span>
                     <span className="text-slate-700">{request.itemCategory}</span>
-                    <span className="truncate text-slate-600">{request.phone}</span>
                     <span className="text-slate-600">
                       {request.requestType ? REQUEST_TYPE_LABEL[request.requestType] : '—'}
                       {request.channel === 'PHONE' && (
@@ -153,8 +173,8 @@ function HelpRequestDetail({
 }) {
   if (!request) {
     return (
-      <aside className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-400">
-        목록에서 요청을 선택하면 상세와 처리 버튼이 여기에 표시됩니다.
+      <aside className="h-fit rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-400">
+        목록에서 요청을 선택하세요.
       </aside>
     );
   }
