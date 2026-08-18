@@ -1,6 +1,7 @@
 import type { DistrictId } from '../types';
 import type { SiteQuickStatus, SiteAvailability } from '../store/citizenSites';
 import { buildCitizenSites } from '../utils/citizenSite';
+import { siteAreaOf } from './mockSites';
 import { citizenSites as legacyDetail, type CitizenSite as LegacyDetail } from './citizenData';
 
 /**
@@ -128,10 +129,23 @@ function toAvailability(detail: LegacyDetail): SiteAvailability {
 }
 
 /**
+ * v_inventory_status 에서 온 실 재고 데이터. organizationName → 품목 목록 + 갱신 시각.
+ * category 열이 DB 스키마에 없어 품목명에서 추론한 값이 들어온다.
+ */
+export interface LiveInventoryData {
+  items: PlaceItem[];
+  updatedAt: string | null;
+}
+
+/**
  * 시민 거점 전체 목록.
  * `overrides` 는 현장 담당자가 남긴 최신 상태(site_quick_status). 비어 있으면 시연 기본값을 쓴다.
+ * `liveInventory` 는 v_inventory_status 의 실 재고. 중앙 저장소가 켜져 있을 때만 전달된다.
  */
-export function buildCitizenPlaces(overrides: Map<string, SiteQuickStatus>): CitizenPlace[] {
+export function buildCitizenPlaces(
+  overrides: Map<string, SiteQuickStatus>,
+  liveInventory?: Map<string, LiveInventoryData>,
+): CitizenPlace[] {
   const detailById = new Map(legacyDetail.map((d) => [d.id, d]));
 
   /** justdream id → 병합해 올릴 상세 정보 */
@@ -143,6 +157,8 @@ export function buildCitizenPlaces(overrides: Map<string, SiteQuickStatus>): Cit
 
   const primary: CitizenPlace[] = buildCitizenSites(overrides).map((site) => {
     const detail = mergedDetail.get(site.id);
+    const area = siteAreaOf(site.id);
+    const live = area ? liveInventory?.get(area) : undefined;
     return {
       id: site.id,
       name: site.name,
@@ -156,10 +172,12 @@ export function buildCitizenPlaces(overrides: Map<string, SiteQuickStatus>): Cit
       district: site.district,
       availability: site.availability,
       focusItem: site.focusItem,
-      items: detail ? toItems(detail) : [],
+      // citizenData 상세 데이터가 없는 거점은 v_inventory_status 실 재고로 채운다.
+      items: detail ? toItems(detail) : (live?.items ?? []),
       openDays: detail?.operatingDays ?? null,
       openHours: detail?.operatingHours ?? null,
-      updatedAt: site.updatedAt,
+      // 현장 담당자 동기화가 없고 실 재고가 있으면 재고 제출 시각을 갱신 기준으로 쓴다.
+      updatedAt: (!site.hasLiveStatus && live?.updatedAt) ? live.updatedAt : site.updatedAt,
       hasLiveStatus: site.hasLiveStatus,
     };
   });

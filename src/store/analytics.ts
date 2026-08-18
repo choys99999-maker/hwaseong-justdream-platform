@@ -176,6 +176,8 @@ export interface InventoryStatus {
   anomalyCodes: InventoryAnomalyCode[];
   /** 상태 라벨. DB(view)가 판정한 값이라 화면마다 달라지지 않는다. */
   status: InventoryStatusLabel;
+  /** 이 품목 정보가 마지막으로 제출된 시각 (v_inventory_status.last_reported_at). */
+  lastReportedAt: string | null;
 }
 
 export async function listInventoryStatus(): Promise<InventoryStatus[]> {
@@ -219,6 +221,7 @@ export async function listInventoryStatus(): Promise<InventoryStatus[]> {
       hasAnomaly,
       anomalyCodes: (r.anomaly_codes as InventoryAnomalyCode[]) ?? [],
       status: r.status as InventoryStatusLabel,
+      lastReportedAt: (r.last_reported_at as string) ?? null,
     };
   });
 }
