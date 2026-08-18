@@ -242,7 +242,7 @@ export default function OperationMapSection() {
         className={
           isFocusMode
             ? 'fixed inset-0 z-[60] flex flex-col bg-white'
-            : 'hci-scale-in relative flex flex-col rounded-[20px] border border-[rgba(20,50,80,0.08)] bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.03),0_16px_40px_rgba(30,64,100,0.07)]'
+            : 'hci-scale-in relative flex flex-col rounded-[22px] border border-[rgba(18,59,99,0.10)] bg-white p-4 shadow-[0_2px_5px_rgba(18,59,99,0.04),0_16px_44px_rgba(18,59,99,0.10),0_32px_80px_rgba(18,59,99,0.05)]'
         }
         style={isFocusMode ? undefined : { animationDelay: '160ms' }}
       >
@@ -268,7 +268,7 @@ export default function OperationMapSection() {
           className={
             isFocusMode
               ? 'absolute left-4 top-4 z-10 flex flex-wrap items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 shadow-md'
-              : 'flex h-[41px] flex-wrap items-center gap-1.5 rounded-[10px] border border-[rgba(20,50,80,0.06)] bg-[#F8FAFC] px-2'
+              : 'flex h-[41px] flex-wrap items-center gap-1.5 rounded-[10px] border border-[rgba(20,50,80,0.06)] bg-[#F3F8FD] px-2'
           }
           role="group"
           aria-label="지도 검색 및 필터"
@@ -540,17 +540,17 @@ function MapKpiChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="hci-fade-up flex min-w-[76px] flex-col rounded-[14px] border bg-white/94 px-3 py-1.5 text-left shadow-[0_8px_24px_rgba(30,64,100,0.06)] transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
+      className="hci-fade-up flex min-w-[92px] flex-col justify-center rounded-[16px] border bg-white/95 px-3.5 py-2.5 text-left shadow-[0_8px_24px_rgba(30,64,100,0.07)] transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
       style={{
         animationDelay: `${delay}ms`,
         borderColor: active ? color : 'rgba(20,50,80,0.08)',
-        boxShadow: active ? `0 0 0 1.5px ${color}, 0 8px 24px rgba(30,64,100,0.06)` : undefined,
+        boxShadow: active ? `0 0 0 1.5px ${color}, 0 8px 24px rgba(30,64,100,0.07)` : undefined,
       }}
     >
-      <span className="text-[20px] font-bold leading-tight tabular-nums" style={{ color }}>
+      <span className="text-[30px] font-extrabold leading-none tabular-nums" style={{ color }}>
         {value}
       </span>
-      <span className="text-[11px] font-medium text-[#667085]">{label}</span>
+      <span className="mt-1 text-[11.5px] font-medium text-[#667085]">{label}</span>
     </button>
   );
 }

@@ -399,6 +399,12 @@ body {
   opacity: 0;
 }
 
+/* 정상 거점은 라벨을 기본으로 숨겨 지도 최초 상태에서 문제 거점만 눈에 들어오게 한다.
+   hover/focus/선택 규칙(아래)이 나중에 나와 여전히 우선한다. */
+.gj-marker[data-status='normal'] .gj-marker-label {
+  opacity: 0;
+}
+
 .gj-marker[data-place='right'] .gj-marker-label {
   left: calc(100% + 5px);
   top: 50%;
