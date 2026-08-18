@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AlertCircle, ChevronRight, FolderClosed, Plus } from 'lucide-react';
-import AdminHero from '../components/common/AdminHero';
+import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
 import DataAnalysisView from '../components/analysis/DataAnalysisView';
 import { useCentralData } from '../hooks/useCentralData';
@@ -14,7 +14,6 @@ import {
 } from '../utils/submission';
 
 const MY_REGION_KEY = 'jd-my-region';
-const HERO_GRADIENT = 'linear-gradient(110deg, #EDF5FD 0%, #F8FBFF 100%)';
 
 /** 목록 한 줄. 중앙 DB의 유효 제출본만 들어온다. */
 interface SubmissionView {
@@ -149,64 +148,12 @@ export default function DataLibraryPage() {
     </div>
   );
 
-  const heroSummary = (
-    <dl className="flex w-full flex-col divide-y divide-[rgba(0,70,150,0.10)] sm:flex-row sm:divide-x sm:divide-y-0">
-      <StatItem label="전체 기관" value={organizations.length} unit="곳" hint="자료 제출 대상 읍면동" />
-      <StatItem
-        label="제출 완료"
-        value={submittedNames.size}
-        unit="곳"
-        hint={`이번 주 제출 ${thisWeekCount.toLocaleString()}건`}
-        tone="teal"
-      />
-      <button
-        type="button"
-        onClick={() => setShowMissingList((v) => !v)}
-        disabled={missingOrganizations.length === 0}
-        aria-expanded={showMissingList}
-        className={`flex-1 rounded-lg px-5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
-          missingOrganizations.length === 0
-            ? 'cursor-default'
-            : showMissingList
-              ? 'bg-white/60'
-              : 'hover:bg-white/50'
-        }`}
-      >
-        <span className="text-xs text-slate-500">미제출</span>
-        <span className="mt-0.5 flex items-baseline gap-1.5">
-          <span
-            className={`text-2xl font-bold leading-none tabular-nums ${
-              missingOrganizations.length > 0 ? 'text-[#DC6E2D]' : 'text-slate-900'
-            }`}
-          >
-            {missingOrganizations.length.toLocaleString()}
-          </span>
-          <span className="text-xs text-slate-400">곳</span>
-        </span>
-        {missingOrganizations.length > 0 && (
-          <span aria-hidden className="mt-1.5 block h-[3px] w-7 rounded-full bg-[#DC6E2D]" />
-        )}
-        <span className="mt-1 block text-xs text-amber-700">
-          {missingOrganizations.length === 0 ? '전 기관 제출 완료' : showMissingList ? '명단 접기' : '명단 보기'}
-        </span>
-      </button>
-      <StatItem
-        label="검토 필요"
-        value={issueCount}
-        unit="건"
-        hint="값 오류가 발견된 제출 자료"
-        tone={issueCount > 0 ? 'amber' : 'default'}
-      />
-    </dl>
-  );
-
   if (isAnalysisTab) {
     return (
       <div className="mx-auto w-full max-w-[1600px]">
-        <AdminHero
+        <PageHeader
           title="자료 관리"
           description="제출 자료에서 계산한 실적과 추이입니다. 예측이 아니라 올라온 자료의 집계입니다."
-          gradient={HERO_GRADIENT}
         />
         {tabRow}
         <DataAnalysisView />
@@ -218,11 +165,9 @@ export default function DataLibraryPage() {
 
   return (
     <div className="mx-auto w-full max-w-[1600px]">
-      <AdminHero
+      <PageHeader
         title="자료 관리"
         description="읍면동 제출 자료를 수집·검수하는 허브입니다. 여기서 저장된 자료가 오늘 할 일·거점 운영 화면의 기준이 됩니다."
-        gradient={HERO_GRADIENT}
-        summary={heroSummary}
       />
 
       {tabRow}
@@ -233,6 +178,49 @@ export default function DataLibraryPage() {
           <p className="text-sm text-red-700">{remoteError}</p>
         </div>
       )}
+
+      {/* 기관별 제출 상태 — 전체 기관 대비 어디까지 걷혔는지. 납작하게 가로로 이어 붙인다. */}
+      <dl className="flex flex-col divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white sm:flex-row sm:divide-x sm:divide-y-0">
+        <StatItem label="전체 기관" value={organizations.length} unit="곳" hint="자료 제출 대상 읍면동" />
+        <StatItem
+          label="제출 완료"
+          value={submittedNames.size}
+          unit="곳"
+          hint={`이번 주 제출 ${thisWeekCount.toLocaleString()}건`}
+          tone="teal"
+        />
+        <button
+          type="button"
+          onClick={() => setShowMissingList((v) => !v)}
+          disabled={missingOrganizations.length === 0}
+          aria-expanded={showMissingList}
+          className={`flex-1 px-5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
+            missingOrganizations.length === 0
+              ? 'cursor-default'
+              : showMissingList
+                ? 'bg-amber-50'
+                : 'hover:bg-amber-50/40'
+          }`}
+        >
+          <span className="text-xs text-slate-500">미제출</span>
+          <span className="mt-0.5 flex items-baseline gap-1.5">
+            <span className="text-2xl font-bold leading-none tabular-nums text-slate-900">
+              {missingOrganizations.length.toLocaleString()}
+            </span>
+            <span className="text-xs text-slate-400">곳</span>
+          </span>
+          <span className="mt-0.5 block text-xs text-amber-700">
+            {missingOrganizations.length === 0 ? '전 기관 제출 완료' : showMissingList ? '명단 접기' : '명단 보기'}
+          </span>
+        </button>
+        <StatItem
+          label="검토 필요"
+          value={issueCount}
+          unit="건"
+          hint="값 오류가 발견된 제출 자료"
+          tone={issueCount > 0 ? 'amber' : 'default'}
+        />
+      </dl>
 
       {/* 미제출 기관 명단 */}
       {showMissingList && missingOrganizations.length > 0 && (
@@ -319,9 +307,8 @@ export default function DataLibraryPage() {
             )}
           </div>
 
-          <section className="relative mt-4 overflow-hidden rounded-[16px] border border-[#DCE6F0] bg-white">
-            <span className="absolute inset-x-0 top-0 h-[3px] bg-[#004696]" aria-hidden />
-            <div className="grid grid-cols-[1.3fr_2fr_1fr_1fr_1fr_28px] gap-4 border-b border-slate-100 bg-[#F5F9FD] px-5 py-3 text-xs font-medium text-slate-400">
+          <section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="grid grid-cols-[1.3fr_2fr_1fr_1fr_1fr_28px] gap-4 border-b border-slate-100 px-5 py-3 text-xs font-medium text-slate-400">
               <span>제출 기관</span>
               <span>자료 · 읽은 행 수</span>
               <span>기준 기간</span>
@@ -337,12 +324,12 @@ export default function DataLibraryPage() {
                   : '조건에 맞는 자료가 없습니다.'}
               </p>
             ) : (
-              <ul className="divide-y divide-[#EDF1F5]">
+              <ul className="divide-y divide-slate-50">
                 {visible.map((s) => (
                   <li key={s.id}>
                     <Link
                       to={`/admin/files/${s.id}`}
-                      className="grid grid-cols-[1.3fr_2fr_1fr_1fr_1fr_28px] items-center gap-4 px-5 py-4 text-sm transition-colors hover:bg-[#F8FBFE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+                      className="grid grid-cols-[1.3fr_2fr_1fr_1fr_1fr_28px] items-center gap-4 px-5 py-4 text-sm transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
                     >
                       <span className="flex min-w-0 items-center gap-2">
                         <span className="truncate font-medium text-slate-800">{s.regionText}</span>

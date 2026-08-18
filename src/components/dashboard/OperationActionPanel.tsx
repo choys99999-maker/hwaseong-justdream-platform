@@ -55,7 +55,7 @@ function DemoMetricsLabel() {
 
 function MetricTile({ label, value, unit }: { label: string; value: number; unit: string }) {
   return (
-    <div className="rounded-lg border border-[#F3DCC7]/70 bg-white p-3">
+    <div className="rounded-lg bg-slate-50 p-3">
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="mt-1 text-lg font-semibold text-slate-900">
         {formatNumber(value)}
@@ -271,7 +271,7 @@ export default function OperationActionPanel({
         {/* C. 운영 요약 */}
         <DemoMetricsLabel />
         <dl className="mt-1.5 grid grid-cols-2 gap-2">
-          <div className="rounded-lg border border-[#F3DCC7]/70 bg-white px-3 py-2">
+          <div className="rounded-lg bg-slate-50 px-3 py-2">
             <dt className="text-xs text-slate-500">최근 자료</dt>
             <dd className="mt-0.5 text-sm font-semibold text-slate-900">{formatShortDate(selectedSite.lastUpdatedAt)}</dd>
           </div>
@@ -283,7 +283,7 @@ export default function OperationActionPanel({
             <MetricTile label="유통기한 임박" value={selectedSite.expiringCount} unit="개" />
           )}
         </dl>
-        <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-[#F3DCC7]/70 bg-white px-3 py-2 text-xs text-slate-600">
+        <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
           <Package size={13} className="shrink-0 text-slate-400" />
           <span className="text-slate-400">주요 품목</span>
           <span className="ml-1 font-medium">{selectedSite.focusItem}</span>

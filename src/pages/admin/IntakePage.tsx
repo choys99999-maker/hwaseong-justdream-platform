@@ -1,11 +1,9 @@
 import { useSearchParams } from 'react-router-dom';
-import AdminHero from '../../components/common/AdminHero';
+import PageHeader from '../../components/common/PageHeader';
 import HelpRequestPanel from '../../components/intake/HelpRequestPanel';
 import DonationPanel from '../../components/intake/DonationPanel';
 import CounselingLinkageTab from '../../components/usage/CounselingLinkageTab';
 import SupportRecordsPage from '../SupportRecordsPage';
-
-const HERO_GRADIENT = 'linear-gradient(110deg, #EDF5FD 0%, #ECF8F5 100%)';
 
 type TabKey = 'help' | 'donation' | 'usage';
 type UsageView = 'records' | 'linkage';
@@ -60,7 +58,7 @@ export default function IntakePage() {
 
   return (
     <div className="space-y-5">
-      <AdminHero title="시민 요청" description={DESCRIPTIONS[activeTab]} gradient={HERO_GRADIENT} />
+      <PageHeader title="시민 요청" description={DESCRIPTIONS[activeTab]} />
 
       <div
         className="inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1"

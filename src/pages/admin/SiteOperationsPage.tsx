@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChevronRight, Zap } from 'lucide-react';
-import AdminHero from '../../components/common/AdminHero';
+import PageHeader from '../../components/common/PageHeader';
 import SiteStatusBadge from '../../components/common/SiteStatusBadge';
 import SiteDetailDrawer from '../../components/sites/SiteDetailDrawer';
 import InventoryUpdateDrawer from '../../components/inventory/InventoryUpdateDrawer';
@@ -12,8 +12,6 @@ import { REGION_NAMES } from '../../data/regionMeta';
 import { buildSiteRows, updateGapLabel, type SiteOperationRow } from '../../utils/siteOperations';
 import { formatNumber } from '../../utils/format';
 import type { SiteStatus } from '../../types';
-
-const HERO_GRADIENT = 'linear-gradient(110deg, #EDF5FD 0%, #F8FBFE 100%)';
 
 const TABS = [
   { to: '/admin/sites', label: '거점' },
@@ -105,10 +103,9 @@ export default function SiteOperationsPage() {
 
   return (
     <div className="space-y-5">
-      <AdminHero
+      <PageHeader
         title="거점 관리"
-        description="화성시 25개 거점의 운영 상태를 관리합니다. 고칠 때는 [재고 업데이트] 하나로 들어갑니다."
-        gradient={HERO_GRADIENT}
+        description="거점의 지금 상태와 재고를 한곳에서 봅니다. 고칠 때는 [재고 업데이트] 하나로 들어갑니다."
         actions={
           <button
             type="button"
@@ -117,17 +114,6 @@ export default function SiteOperationsPage() {
           >
             <Zap size={15} /> 재고 업데이트
           </button>
-        }
-        summary={
-          !isInventoryTab ? (
-            <>
-              <span className="text-sm font-semibold text-[#182230]">화성시 거점 {summary.total}곳</span>
-              <HeroStat dot="#E5484D" label="물품 부족" value={summary.shortage} />
-              <HeroStat dot="#DC6E2D" label="확인 필요" value={summary.needsCheck} />
-              <HeroStat dot="#98A2B3" label="갱신 필요" value={summary.needsUpdate ?? '—'} />
-              {error && <span className="text-xs text-amber-700">현장 입력을 불러오지 못했습니다</span>}
-            </>
-          ) : undefined
         }
       />
 
@@ -164,11 +150,7 @@ export default function SiteOperationsPage() {
         />
       ) : (
         <>
-          <div
-            className="flex flex-wrap gap-1.5 rounded-lg border border-[#DCE6F0] bg-white px-3 py-2.5"
-            role="group"
-            aria-label="거점 상태 필터"
-          >
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="거점 상태 필터">
             {STATUS_FILTERS.map((filter) => (
               <button
                 key={filter.key}
@@ -184,6 +166,22 @@ export default function SiteOperationsPage() {
                 {filter.label}
               </button>
             ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm">
+            <span className="font-semibold text-slate-900">화성시 거점 {summary.total}곳</span>
+            <span className="text-slate-600">
+              부족 <strong className="font-semibold tabular-nums text-rose-600">{summary.shortage}</strong>
+            </span>
+            <span className="text-slate-600">
+              확인 필요{' '}
+              <strong className="font-semibold tabular-nums text-amber-600">{summary.needsCheck}</strong>
+            </span>
+            <span className="text-slate-600">
+              갱신 필요{' '}
+              <strong className="font-semibold tabular-nums text-slate-800">{summary.needsUpdate ?? '—'}</strong>
+            </span>
+            {error && <span className="ml-auto text-xs text-amber-700">현장 입력을 불러오지 못했습니다</span>}
           </div>
 
           <SiteTable
@@ -221,16 +219,6 @@ export default function SiteOperationsPage() {
   );
 }
 
-/** Hero 하단에 흡수한 작은 숫자 그룹 — 별도 카드를 새로 만들지 않는다. */
-function HeroStat({ dot, label, value }: { dot: string; label: string; value: number | string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-sm text-[#667085]">
-      <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: dot }} />
-      {label} <strong className="font-semibold tabular-nums text-[#182230]">{value}</strong>
-    </span>
-  );
-}
-
 /** 거점 목록. 한 줄이 곧 한 거점이고, 누르면 오른쪽 패널이 열린다. */
 function SiteTable({
   rows,
@@ -256,9 +244,8 @@ function SiteTable({
   const grid = 'grid grid-cols-[1.6fr_0.9fr_1fr_1fr_1.1fr_0.7fr_28px] gap-4';
 
   return (
-    <div className="relative overflow-hidden rounded-[16px] border border-[#DCE6F0] bg-white">
-      <span className="absolute inset-x-0 top-0 h-[3px] bg-[#004696]" aria-hidden />
-      <div className={`${grid} border-b border-slate-100 bg-[#F4F8FC] px-5 py-3 text-xs font-medium text-slate-400`}>
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className={`${grid} border-b border-slate-100 px-5 py-3 text-xs font-medium text-slate-400`}>
         <span>거점명</span>
         <span>지역</span>
         <span>현재 상태</span>
@@ -267,20 +254,14 @@ function SiteTable({
         <span>부족</span>
         <span />
       </div>
-      <ul className="divide-y divide-[#EDF1F5]">
+      <ul className="divide-y divide-slate-50">
         {rows.map((row) => (
           <li key={row.site.id}>
             <Link
               to={`/admin/sites/${row.site.id}`}
               aria-current={row.site.id === selectedId ? 'true' : undefined}
               className={`${grid} items-center px-5 py-3.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
-                row.site.id === selectedId
-                  ? 'bg-[#EAF3FC]'
-                  : row.site.status === 'shortage'
-                    ? 'hover:bg-[#FFF5F3]'
-                    : row.site.status === 'missing' || row.site.status === 'expiring'
-                      ? 'hover:bg-[#FFF9F0]'
-                      : 'hover:bg-[#F8FBFE]'
+                row.site.id === selectedId ? 'bg-teal-50' : 'hover:bg-slate-50'
               }`}
             >
               <span className="min-w-0 truncate font-medium text-slate-800" title={row.site.name}>

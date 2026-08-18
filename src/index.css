@@ -186,33 +186,11 @@ body {
   animation: hciSlideInRight 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
-/*
- * ─────────────────────────────────────────────────────────────────────────────
- * 관리자 desktop Hero band 전용 진입 모션. AdminHero 컴포넌트(거점 관리·시민 요청·
- * 자료 관리·현장 담당자 운영 현황)에서만 쓴다 — 시민 화면과 무관하다.
- * ─────────────────────────────────────────────────────────────────────────────
- */
-@keyframes admin-hero-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@utility admin-hero-in {
-  animation: admin-hero-in 220ms ease;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .hci-fade-up,
   .hci-scale-in,
   .hci-slide-in-right,
-  .gj-marker.hci-pop,
-  .admin-hero-in {
+  .gj-marker.hci-pop {
     animation: none !important;
   }
 }

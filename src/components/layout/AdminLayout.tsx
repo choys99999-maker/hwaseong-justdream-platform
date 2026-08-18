@@ -8,7 +8,7 @@ export default function AdminLayout() {
   const title = getPageTitle(location.pathname);
 
   return (
-    <div className="flex h-screen bg-[#F2F6FA]">
+    <div className="flex h-screen bg-slate-50">
       <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header title={title} />

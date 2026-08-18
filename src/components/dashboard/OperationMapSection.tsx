@@ -246,14 +246,6 @@ export default function OperationMapSection() {
         }
         style={isFocusMode ? undefined : { animationDelay: '160ms' }}
       >
-        {/* 상단 accent — 화성 Blue. 지도가 이 화면의 hero 임을 시각적으로 확정한다. */}
-        {!isFocusMode && (
-          <span
-            className="pointer-events-none absolute inset-x-0 top-0 h-[3px] rounded-t-[20px] bg-[#004696]"
-            aria-hidden
-          />
-        )}
-
         {/* 제목 + 확장 버튼 (일반 모드만) — 검색·필터보다도 낮은 위계로, 지도 자체를 가리지 않는다 */}
         {!isFocusMode && (
           <div className="mb-2 flex items-center justify-between gap-3">
@@ -459,17 +451,12 @@ export default function OperationMapSection() {
         )}
       </div>
 
-      {/* ── 우측 Action Dock (접기/펼치기) — 지도 위에 뜬 카드처럼, 지도보다 튀지 않게.
-          상단에 옅은 Orange accent 만 얹어 "확인·처리가 모이는 자리" 라는 신호를 지도의 Blue accent와 짝짓는다. ── */}
+      {/* ── 우측 Action Dock (접기/펼치기) — 지도 위에 뜬 카드처럼, 지도보다 튀지 않게 ── */}
       {!isFocusMode && (
         <div
           className="hci-slide-in-right relative flex flex-col rounded-[18px] border border-[rgba(20,50,80,0.08)] bg-white/96 shadow-[0_18px_44px_rgba(22,55,90,0.10)]"
           style={{ animationDelay: '520ms' }}
         >
-          <span
-            className="pointer-events-none absolute inset-x-0 top-0 h-[3px] rounded-t-[18px] bg-[#DC6E2D]"
-            aria-hidden
-          />
           {/* 패널 토글 버튼 — 카드 왼쪽 경계에 걸쳐 떠 있음.
               위아래로 쌓인 좁은 화면에서는 접을 이유가 없으므로 토글도 감춘다. */}
           {!isNarrow && (
@@ -484,10 +471,7 @@ export default function OperationMapSection() {
             </button>
           )}
 
-          {/* 패널 내용 — 접혔을 때 숨김. 제목은 OperationActionPanel 이 모드별로 직접 낸다.
-              배경은 흰색 그대로 둔다 — orange wash 를 얹으면 내부 리스트 행(hover:bg-[#F8FAFC])과
-              경계 없는 border-left 인디케이터가 묻혀 origin 의 "카드 배경은 항상 흰색" 원칙이 깨진다.
-              신호는 위 Action Dock 상단의 3px accent 하나로 충분하다. */}
+          {/* 패널 내용 — 접혔을 때 숨김. 제목은 OperationActionPanel 이 모드별로 직접 낸다. */}
           <div
             className="flex h-full flex-col p-4 transition-opacity"
             style={{

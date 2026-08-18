@@ -1,9 +1,7 @@
-import AdminHero from '../../components/common/AdminHero';
+import PageHeader from '../../components/common/PageHeader';
 import AdminToday from '../../components/today/AdminToday';
 import FieldToday from '../../components/today/FieldToday';
 import { useAdminRole } from '../../hooks/useAdminRole';
-
-const HERO_GRADIENT = 'linear-gradient(110deg, #EAF4FD 0%, #F5F9FD 65%, #FFF8F2 100%)';
 
 /**
  * 운영 현황 — 관리자 PC의 첫 화면.
@@ -22,10 +20,9 @@ export default function TodayPage() {
 
   return (
     <div>
-      <AdminHero
+      <PageHeader
         title="운영 현황"
         description="우리 거점에서 지금 입력할 것과 처리할 건만 모았습니다."
-        gradient={HERO_GRADIENT}
       />
       <FieldToday />
     </div>
