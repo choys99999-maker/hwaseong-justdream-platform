@@ -1,16 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import {
-  AlertCircle,
-  ChevronRight,
-  Database,
-  FileSpreadsheet,
-  FolderClosed,
-  Plus,
-  RefreshCw,
-  ScanSearch,
-  ShieldCheck,
-} from 'lucide-react';
+import { AlertCircle, ChevronRight, FolderClosed, Plus } from 'lucide-react';
 import PageHeader from '../components/common/PageHeader';
 import EmptyState from '../components/common/EmptyState';
 import DataAnalysisView from '../components/analysis/DataAnalysisView';
@@ -24,15 +14,6 @@ import {
 } from '../utils/submission';
 
 const MY_REGION_KEY = 'jd-my-region';
-
-/** 자료 처리 흐름 — 현재 실제 구현(Excel 업로드 파이프라인)을 그대로 시각화한 것뿐, 새 단계 아님 */
-const PROCESS_STEPS = [
-  { label: '기관 자료', icon: FileSpreadsheet },
-  { label: '자동 인식', icon: ScanSearch },
-  { label: '오류 검증', icon: ShieldCheck },
-  { label: '공통 형식 변환', icon: RefreshCw },
-  { label: '중앙 집계', icon: Database },
-] as const;
 
 /** 목록 한 줄. 중앙 DB의 유효 제출본만 들어온다. */
 interface SubmissionView {
@@ -130,39 +111,51 @@ export default function DataLibraryPage() {
     localStorage.setItem(MY_REGION_KEY, region);
   }
 
-  const tabBar = (
-    <div className="mb-4 inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1" role="tablist" aria-label="자료 관리 탭">
-      {[
-        { key: 'files', label: '자료' },
-        { key: 'analysis', label: '분석' },
-      ].map((tab) => {
-        const active = tab.key === 'analysis' ? isAnalysisTab : !isAnalysisTab;
-        return (
-          <button
-            key={tab.key}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => setSearchParams(tab.key === 'analysis' ? { tab: 'analysis' } : {}, { replace: true })}
-            className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
-              active ? 'bg-teal-50 text-teal-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
-            }`}
-          >
-            {tab.label}
-          </button>
-        );
-      })}
+  const tabRow = (
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+      <div className="inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1" role="tablist" aria-label="자료 관리 탭">
+        {[
+          { key: 'files', label: '자료' },
+          { key: 'analysis', label: '분석' },
+        ].map((tab) => {
+          const active = tab.key === 'analysis' ? isAnalysisTab : !isAnalysisTab;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setSearchParams(tab.key === 'analysis' ? { tab: 'analysis' } : {}, { replace: true })}
+              className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+                active ? 'bg-teal-50 text-teal-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <span className="hidden text-sm text-slate-400 sm:inline">엑셀 자료를 올리면 자동으로 확인합니다</span>
+        <Link
+          to="/admin/files/upload"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+        >
+          <Plus size={16} /> 자료 올리기
+        </Link>
+      </div>
     </div>
   );
 
   if (isAnalysisTab) {
     return (
-      <div className="mx-auto w-full max-w-[1280px]">
+      <div className="mx-auto w-full max-w-[1600px]">
         <PageHeader
           title="자료 관리"
           description="제출 자료에서 계산한 실적과 추이입니다. 예측이 아니라 올라온 자료의 집계입니다."
         />
-        {tabBar}
+        {tabRow}
         <DataAnalysisView />
       </div>
     );
@@ -171,43 +164,13 @@ export default function DataLibraryPage() {
   if (isLoading) return null;
 
   return (
-    <div className="mx-auto w-full max-w-[1280px]">
+    <div className="mx-auto w-full max-w-[1600px]">
       <PageHeader
         title="자료 관리"
         description="읍면동 제출 자료를 수집·검수하는 허브입니다. 여기서 저장된 자료가 오늘 할 일·거점 운영 화면의 기준이 됩니다."
       />
 
-      {tabBar}
-
-      {/* 새 자료 올리기 — 이 화면에서 가장 자주 하는 일이라 가장 강한 CTA로 둔다.
-          업로드하면 무슨 처리가 일어나는지(자동 시트 인식 → 오류 검증 → 중앙 집계)를 같은 카드에서 알린다. */}
-      <section
-        aria-label="새 자료 올리기"
-        className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-teal-200 bg-teal-50/50 px-5 py-4"
-      >
-        <div className="min-w-0">
-          <h2 className="text-base font-semibold text-slate-900">새 자료 올리기</h2>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {PROCESS_STEPS.map((step, index) => (
-              <div key={step.label} className="flex shrink-0 items-center gap-1.5">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-teal-600">
-                  <step.icon size={11} />
-                </span>
-                <span className="whitespace-nowrap text-xs text-slate-600">{step.label}</span>
-                {index < PROCESS_STEPS.length - 1 && (
-                  <ChevronRight size={12} className="shrink-0 text-teal-300" />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-        <Link
-          to="/admin/files/upload"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
-        >
-          <Plus size={16} /> 자료 올리기
-        </Link>
-      </section>
+      {tabRow}
 
       {remoteError && (
         <div className="mb-4 flex items-start gap-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
@@ -216,11 +179,10 @@ export default function DataLibraryPage() {
         </div>
       )}
 
-      {/* 기관별 제출 상태 — 전체 기관 대비 어디까지 걷혔는지 */}
-      <h2 className="mb-1.5 text-xs font-medium text-slate-500">기관별 제출 상태</h2>
-      <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <SummaryTile label="전체 기관" value={organizations.length} unit="곳" hint="자료 제출 대상 읍면동" />
-        <SummaryTile
+      {/* 기관별 제출 상태 — 전체 기관 대비 어디까지 걷혔는지. 납작하게 가로로 이어 붙인다. */}
+      <dl className="flex flex-col divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white sm:flex-row sm:divide-x sm:divide-y-0">
+        <StatItem label="전체 기관" value={organizations.length} unit="곳" hint="자료 제출 대상 읍면동" />
+        <StatItem
           label="제출 완료"
           value={submittedNames.size}
           unit="곳"
@@ -232,24 +194,26 @@ export default function DataLibraryPage() {
           onClick={() => setShowMissingList((v) => !v)}
           disabled={missingOrganizations.length === 0}
           aria-expanded={showMissingList}
-          className={`rounded-xl border px-5 py-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+          className={`flex-1 px-5 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
             missingOrganizations.length === 0
-              ? 'cursor-default border-slate-200 bg-white'
+              ? 'cursor-default'
               : showMissingList
-                ? 'border-amber-400 bg-amber-50 ring-1 ring-inset ring-amber-400'
-                : 'border-amber-200 bg-white hover:border-amber-300 hover:bg-amber-50/40'
+                ? 'bg-amber-50'
+                : 'hover:bg-amber-50/40'
           }`}
         >
-          <span className="text-sm text-slate-500">미제출</span>
-          <span className="mt-1.5 block text-[28px] font-bold leading-none tabular-nums text-slate-900">
-            {missingOrganizations.length.toLocaleString()}
-            <span className="ml-1 text-sm font-normal text-slate-400">곳</span>
+          <span className="text-xs text-slate-500">미제출</span>
+          <span className="mt-0.5 flex items-baseline gap-1.5">
+            <span className="text-2xl font-bold leading-none tabular-nums text-slate-900">
+              {missingOrganizations.length.toLocaleString()}
+            </span>
+            <span className="text-xs text-slate-400">곳</span>
           </span>
           <span className="mt-0.5 block text-xs text-amber-700">
             {missingOrganizations.length === 0 ? '전 기관 제출 완료' : showMissingList ? '명단 접기' : '명단 보기'}
           </span>
         </button>
-        <SummaryTile
+        <StatItem
           label="검토 필요"
           value={issueCount}
           unit="건"
@@ -276,7 +240,7 @@ export default function DataLibraryPage() {
       )}
 
       {submissions.length === 0 ? (
-        <div className="mt-6">
+        <div className="mt-5">
           <EmptyState
             icon={FolderClosed}
             title="아직 제출된 자료가 없습니다"
@@ -285,7 +249,7 @@ export default function DataLibraryPage() {
         </div>
       ) : (
         <>
-          <h2 className="mt-6 text-xs font-medium text-slate-500">최근 업로드</h2>
+          <h2 className="mt-5 text-xs font-medium text-slate-500">최근 업로드</h2>
           <div className="mt-1.5 flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1">
               <ScopeTab active={scope === 'all'} onClick={() => setScope('all')}>
@@ -412,7 +376,8 @@ export default function DataLibraryPage() {
   );
 }
 
-function SummaryTile({
+/** 기관별 제출 상태 바의 한 칸. 세로로 쌓인 카드 대신 얇고 가로로 이어지는 통계 칸. */
+function StatItem({
   label,
   value,
   unit,
@@ -426,15 +391,13 @@ function SummaryTile({
   tone?: 'default' | 'teal' | 'amber';
 }) {
   return (
-    <div
-      className={`rounded-xl border px-5 py-4 ${
-        tone === 'amber' ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-white'
-      }`}
-    >
-      <dt className="text-sm text-slate-500">{label}</dt>
-      <dd className="mt-1.5 text-[28px] font-bold leading-none tabular-nums text-slate-900">
-        {value.toLocaleString()}
-        <span className="ml-1 text-sm font-normal text-slate-400">{unit}</span>
+    <div className="flex-1 px-5 py-3">
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 flex items-baseline gap-1.5">
+        <span className="text-2xl font-bold leading-none tabular-nums text-slate-900">
+          {value.toLocaleString()}
+        </span>
+        <span className="text-xs text-slate-400">{unit}</span>
       </dd>
       {hint && (
         <p className={`mt-0.5 text-xs ${tone === 'teal' ? 'text-teal-600' : tone === 'amber' ? 'text-amber-700' : 'text-slate-400'}`}>

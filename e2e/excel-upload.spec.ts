@@ -66,70 +66,63 @@ async function upload(page: import('@playwright/test').Page, filePath: string) {
   await page.setInputFiles('input[type="file"]', filePath);
 }
 
-test('표준 양식 — 바로 업로드할 수 있다고 알린다', async ({ page }) => {
+test('표준 양식 — 확인할 것 없이 바로 저장할 수 있다', async ({ page }) => {
   await upload(page, STANDARD_FILE);
 
-  await expect(page.getByRole('heading', { name: '자료를 확인했어요' })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('업로드할 수 있습니다')).toBeVisible();
-  await expect(page.getByText('5개 열 중 5개 인식')).toBeVisible();
+  // 정상 파일에는 "확인해주세요" 예외 배너가 아예 뜨지 않는다.
+  const save = page.getByRole('button', { name: '이대로 저장' });
+  await expect(save).toBeEnabled({ timeout: 15_000 });
+  await expect(page.getByText('개 항목을 확인해주세요', { exact: false })).toHaveCount(0);
 
   // 저장될 내용에 정규화된 값이 그대로 보인다.
   const table = page.getByRole('table').first();
   await expect(table.getByText('쌀')).toBeVisible();
   await expect(table.getByText('2026-12-31')).toBeVisible();
 
-  await expect(page.getByRole('button', { name: '자료 저장' })).toBeEnabled();
+  // 원본 엑셀 탭으로 바꿔도 원본을 그대로 확인할 수 있다.
+  await page.getByRole('tab', { name: '원본 엑셀' }).click();
+  await expect(page.getByRole('table').first().getByText('쌀')).toBeVisible();
 });
 
-test('미인식 열이 있으면 통과시키지 않고 무엇을 확인해야 하는지 알린다', async ({ page }) => {
+test('미인식 열이 있으면 통과시키지 않고 무엇을 확인해야 하는지 한 줄로 알린다', async ({ page }) => {
   await upload(page, MESSY_FILE);
 
-  await expect(page.getByRole('heading', { name: '저장 전에 확인해 주세요' })).toBeVisible({
-    timeout: 15_000,
-  });
-
-  // 인식/미인식 개수를 숫자로 보여준다.
-  await expect(page.getByText('8개 열 중 6개 인식')).toBeVisible();
-  await expect(page.getByText('2개 확인 필요')).toBeVisible();
-
-  // 어떤 열인지 이름으로 알려준다.
-  await expect(page.getByText('연결되지 않은 열 2개', { exact: false })).toBeVisible();
-  await expect(page.getByText('특수관리코드').first()).toBeVisible();
-  await expect(page.getByText('보관위치').first()).toBeVisible();
+  // 문제가 있을 때만 나타나는 한 줄 예외 배너.
+  await expect(page.getByText('2개 항목을 확인해주세요')).toBeVisible({ timeout: 15_000 });
 
   // 확인하기 전에는 저장 버튼이 열리지 않는다.
-  const save = page.getByRole('button', { name: '자료 저장' });
+  const save = page.getByRole('button', { name: '이대로 저장' });
   await expect(save).toBeDisabled();
 
-  // 제목에서 찾은 지역, 다른 표현으로 쓴 열, 정규화된 값이 모두 결과에 드러난다.
-  await expect(page.getByText('품목명', { exact: false }).first()).toBeVisible();
+  // 정상적으로 읽힌 값은 예외 배너를 열지 않아도 "저장될 내용" 탭에서 바로 보인다.
   const table = page.getByRole('table').first();
   await expect(table.getByText('1000')).toBeVisible();
   await expect(table.getByText('2026-12-31')).toBeVisible();
   await expect(table.getByText('2026-09-30')).toBeVisible();
-
   // 합계 행은 저장 대상에서 빠진다. (표에 1050 이 나오면 안 된다)
   await expect(table.getByText('1050')).toHaveCount(0);
 
-  // 확인했다고 표시하면 저장할 수 있다.
-  await page.getByRole('checkbox').check();
+  // "확인하기"를 눌러야 어떤 열인지 이름으로 볼 수 있다.
+  await page.getByRole('button', { name: '확인하기' }).click();
+  await expect(page.getByText('연결되지 않은 열 2개', { exact: false })).toBeVisible();
+  await expect(page.getByText('특수관리코드').first()).toBeVisible();
+  await expect(page.getByText('보관위치').first()).toBeVisible();
+
+  // 확인 패널을 열어본 것 자체가 확인이다 — 체크박스 없이 저장할 수 있게 된다.
   await expect(save).toBeEnabled();
 });
 
-test('열 연결을 직접 고치면 확인 항목이 사라진다', async ({ page }) => {
+test('열 연결을 직접 고치면 확인 항목이 줄어든다', async ({ page }) => {
   await upload(page, MESSY_FILE);
-  await expect(page.getByRole('heading', { name: '저장 전에 확인해 주세요' })).toBeVisible({
-    timeout: 15_000,
-  });
+  await expect(page.getByText('2개 항목을 확인해주세요')).toBeVisible({ timeout: 15_000 });
 
-  await page.getByRole('button', { name: '열 연결 확인·수정' }).click();
+  await page.getByRole('button', { name: '확인하기' }).click();
 
-  // 미인식 열도 반드시 표에 한 줄씩 나온다.
+  // 미인식 열도 반드시 표에 한 줄씩 나온다. (매핑 UI는 실제 기능 그대로, 문제가 있을 때만 펼쳐진다)
   await expect(page.getByLabel('특수관리코드 열을 연결할 플랫폼 항목')).toBeVisible();
   await expect(page.getByLabel('보관위치 열을 연결할 플랫폼 항목')).toBeVisible();
 
   // 쓰지 않기로 정하는 것도 사용자의 결정이다 — 여기서는 기관명으로 연결해 본다.
   await page.getByLabel('특수관리코드 열을 연결할 플랫폼 항목').selectOption('organization');
-  await expect(page.getByText('7개 인식')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('연결되지 않은 열 1개', { exact: false })).toBeVisible();
+  await expect(page.getByText('연결되지 않은 열 1개', { exact: false })).toBeVisible({ timeout: 15_000 });
 });

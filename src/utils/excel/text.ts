@@ -40,17 +40,29 @@ const BRACKETS = /\([^)]*\)|（[^）]*）|\[[^\]]*\]|［[^］]*］|<[^>]*>|〈[^
 const PUNCT = /[·∙•・.,、/\\|+*※#'"`~^_=:;?!\-–—ㅡ]/g;
 
 /**
+ * 어노테이션 제거 규칙 하나를 적용하되, 그 결과 통째로 빈 문자열이 되면 적용하지 않는다.
+ * "입고수량('26.8.3 기준)"의 "기준" 문구는 덧붙은 설명이라 지워도 "입고수량"이 남지만,
+ * 열 이름이 정말로 "기준일"이나 "단위" 그 자체인 경우에는 같은 규칙이 이름 전체를 삼켜버려
+ * 아무 것도 안 남는다. 그럴 때는 지우지 않고 원래 글자를 그대로 남긴다.
+ */
+function stripUnlessEmpty(s: string, pattern: RegExp): string {
+  const next = s.replace(pattern, ' ');
+  return next.trim() ? next : s;
+}
+
+/**
  * 2단계 비교 키. 괄호 설명·날짜 기준 문구·단위·기호·공백을 모두 없앤다.
  * "입고수량('26.8.3 기준)" → "입고수량"
  * "출고 량 (단위: 개)"     → "출고량"
+ * 다만 "기준일", "단위"처럼 열 이름 전체가 어노테이션 문구와 겹치면 지우지 않는다.
  */
 export function headerKeyLoose(value: unknown): string {
   let s = toText(value).normalize('NFKC').toLowerCase();
   s = s.replace(/\s+/g, ' ');
-  s = s.replace(BRACKETS, ' ');
-  s = s.replace(DATE_BASIS, ' ');
-  s = s.replace(/기준일자?|기준$/g, ' ');
-  s = s.replace(UNIT_PHRASE, ' ');
+  s = stripUnlessEmpty(s, BRACKETS);
+  s = stripUnlessEmpty(s, DATE_BASIS);
+  s = stripUnlessEmpty(s, /기준일자?|기준$/g);
+  s = stripUnlessEmpty(s, UNIT_PHRASE);
   s = s.replace(PUNCT, ' ');
   s = s.replace(/\s+/g, '');
   return s;

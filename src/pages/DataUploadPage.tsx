@@ -24,6 +24,7 @@ import {
 } from '../utils/submission';
 import { isCentralStoreEnabled } from '../lib/supabase';
 import {
+  derivePeriodFromRecords,
   listOrganizations,
   listRegisteredFileNames,
   saveSubmission,
@@ -42,6 +43,7 @@ const COLLAPSED_ERRORS = 3;
 const MAX_LISTED_ERRORS = 50;
 
 type Step = 'select' | 'uploading' | 'review' | 'importing' | 'done';
+type ContentTab = 'content' | 'raw';
 
 interface ErrorItem {
   label: string;
@@ -49,10 +51,17 @@ interface ErrorItem {
   message: string;
 }
 
-/** 마지막으로 선택한 제출 기관. 다음 업로드 때 기본값으로 쓴다. */
+/** 마지막으로 선택한 제출 기관. 자동 인식이 안 될 때만 기본값으로 쓴다. */
 const ORG_KEY = 'jd-org-id';
 
 type Mappings = Record<string, Record<string, PlatformColumnKey | null>>;
+
+/** 파일 안에서 읽은 기관명으로 제출 기관을 확정할 수 있는지. */
+type OrgDetection =
+  | { status: 'unknown' }
+  | { status: 'ambiguous' }
+  | { status: 'matched'; organization: Organization }
+  | { status: 'unmatched'; name: string };
 
 export default function DataUploadPage() {
   const [step, setStep] = useState<Step>('select');
@@ -67,16 +76,15 @@ export default function DataUploadPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isParsing, setIsParsing] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [showMapper, setShowMapper] = useState(false);
+  const [contentTab, setContentTab] = useState<ContentTab>('content');
+  /** 확인이 필요한 항목·열 연결 패널을 열었는지. 정상 파일에서는 기본으로 닫혀 있다. */
+  const [showIssues, setShowIssues] = useState(false);
   const [showAllErrors, setShowAllErrors] = useState(false);
-  /** 확인이 필요한 자료를 사용자가 보고 넘어가겠다고 밝힌 상태. */
-  const [acknowledged, setAcknowledged] = useState(false);
-  /** 중앙 저장소용 제출 기관(읍면동). 파일명에서 추론하지 않고 명시적으로 고른다. */
+  /** 중앙 저장소용 제출 기관(읍면동). 파일에서 자동으로 판별되면 여기서 고르지 않는다. */
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   /** 이미 올라온 자료의 파일 이름. 이름 겹침을 저장 전에 잡기 위해서만 쓴다. */
   const [registeredNames, setRegisteredNames] = useState<RegisteredFileName[]>([]);
-  /** 저장될 파일 이름. 겹치면 사용자가 여기서 고친다. */
+  /** 저장될 파일 이름. 평소엔 원본 파일명 그대로 쓰고, 이름이 겹칠 때만 사용자가 고친다. */
   const [fileName, setFileName] = useState('');
   /**
    * 같은 동에 같은 이름이 이미 있을 때 사용자가 고른 처리.
@@ -185,10 +193,9 @@ export default function DataUploadPage() {
           setCheckResults(null);
           setError(null);
           setIsParsing(false);
-          setShowPreview(false);
-          setShowMapper(false);
+          setContentTab('content');
+          setShowIssues(false);
           setShowAllErrors(false);
-          setAcknowledged(false);
           setStep('review');
           break;
         }
@@ -315,8 +322,6 @@ export default function DataUploadPage() {
   }
 
   function handleMappingChange(sheetName: string, col: string, target: PlatformColumnKey | null) {
-    // 연결을 바꾸면 저장될 내용도 달라진다. 다시 확인받는다.
-    setAcknowledged(false);
     setSheetMappings((prev) => ({
       ...prev,
       [sheetName]: { ...prev[sheetName], [col]: target },
@@ -351,10 +356,9 @@ export default function DataUploadPage() {
     setError(null);
     setUploadProgress(0);
     setIsParsing(false);
-    setShowPreview(false);
-    setShowMapper(false);
+    setContentTab('content');
+    setShowIssues(false);
     setShowAllErrors(false);
-    setAcknowledged(false);
     setStep('select');
   }
 
@@ -444,6 +448,34 @@ export default function DataUploadPage() {
     attention.totalsMismatches.length;
   const needsConfirm = attentionCount > 0 || errorItems.length > 0;
   const canRead = recognizedSheets.length > 0;
+  /** 확인할 것 하나 없이 처음부터 정상 인식된 시트가 하나라도 있는지. 예외 처리 없이 통과한다. */
+  const forcePanelOpen = !canRead;
+
+  /** 확인 패널에서 보여줄 한 줄 요약. 가장 눈에 띄는 문제 하나만 짚어준다. */
+  const primaryIssueMessage = useMemo(() => {
+    if (attention.unknownSheets.length > 0) {
+      return `${attention.unknownSheets[0]} 시트의 자료 종류를 확정하지 못했어요.`;
+    }
+    if (attention.unmappedColumns.length > 0) {
+      const first = attention.unmappedColumns[0];
+      return attention.unmappedColumns.length === 1
+        ? `${first.name} 열을 확인하지 못했어요.`
+        : `${first.name} 열 등 ${attention.unmappedColumns.length}개 열을 확인하지 못했어요.`;
+    }
+    if (attention.totalsMismatches.length > 0) {
+      return '파일에 적힌 합계와 읽은 값의 합이 다릅니다.';
+    }
+    if (attention.skippedRows.length > 0) {
+      return `${attention.skippedRows.length}개 행을 데이터로 볼지 판단하지 못했어요.`;
+    }
+    if (errorItems.length > 0) {
+      return `값을 읽지 못한 칸이 ${errorItems.length.toLocaleString()}곳 있어요.`;
+    }
+    if (attention.suggestedColumns.length > 0) {
+      return '비슷해 보여 자동으로 연결한 열이 있어요. 맞는지 확인해 주세요.';
+    }
+    return null;
+  }, [attention, errorItems]);
 
   // 안내에 쓰는 건수는 "실제로 가져올 양"이다. 빈 줄·집계 행은 빼고 센다.
   const readableRows = (checkResults ?? [])
@@ -458,14 +490,66 @@ export default function DataUploadPage() {
   const savedRecords = convertResults.reduce((sum, r) => sum + r.records.length, 0);
   const savedErrors = convertResults.reduce((sum, r) => sum + r.errors.length, 0);
 
+  /** 인식된 시트가 담고 있는 자료 종류. "물품·재고", "주간 실적" 처럼 사람이 읽는 이름. */
+  const typesLabel = useMemo(() => {
+    const labels = Array.from(new Set(recognizedSheets.map((s) => sheetTypeLabel(s.sheetType))));
+    return labels.length > 0 ? labels.join(', ') : '내용 없음';
+  }, [recognizedSheets]);
+
+  // ── 제출 기관 자동 판별 ──────────────────────────────────
+  // 시트 안의 기관명(생성/재고는 organization, 실적/연계는 institution)이 전부 같은 값이면
+  // 그 값으로 등록된 기관을 찾아 확정한다. 여러 기관이 섞였거나 등록된 기관과 맞지 않으면
+  // 사용자에게 고르게 한다 — 잘못된 기관으로 조용히 저장되는 것이 가장 위험하기 때문이다.
+  const orgDetection: OrgDetection = useMemo(() => {
+    if (!checkResults) return { status: 'unknown' };
+    const values = new Set<string>();
+    for (const result of checkResults) {
+      const sheet = sheets.find((s) => s.sheetName === result.sheetName);
+      if (!sheet || !isSheetRecognized(sheet, sheetMappings)) continue;
+      const key: PlatformColumnKey = sheet.sheetType === 'generic' ? 'organization' : 'institution';
+      for (const record of result.records) {
+        const value = record[key];
+        if (typeof value === 'string' && value.trim()) values.add(value.trim());
+      }
+    }
+    if (values.size === 0) return { status: 'unknown' };
+    if (values.size > 1) return { status: 'ambiguous' };
+    const [name] = values;
+    const match = organizations.find((o) => o.name === name);
+    return match ? { status: 'matched', organization: match } : { status: 'unmatched', name };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkResults, sheets, sheetMappings, organizations]);
+
+  useEffect(() => {
+    if (orgDetection.status === 'matched' && orgIdRef.current !== orgDetection.organization.id) {
+      selectOrg(orgDetection.organization.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgDetection]);
+
+  const currentOrgName = organizations.find((o) => o.id === orgId)?.name;
+  const orgLabel = orgDetection.status === 'matched' ? orgDetection.organization.name : currentOrgName;
+  /** 자동으로 확정되지 않았을 때만 기관 선택 UI를 보여준다. */
+  const showOrgPicker = isCentralStoreEnabled && orgDetection.status !== 'matched';
   /** 중앙 저장소가 켜져 있으면 제출 기관을 고르기 전에는 저장하지 않는다. */
   const needsOrg = isCentralStoreEnabled && !orgId;
+
+  /** 기준일(입고일로 인식된 값) 중 가장 이르고 늦은 날짜. 저장될 기간과 같은 계산이다. */
+  const periodLabel = useMemo(() => {
+    if (!checkResults) return null;
+    const period = derivePeriodFromRecords(buildPayloads(checkResults));
+    if (!period.start) return null;
+    const dot = (iso: string) => iso.replaceAll('-', '.');
+    return period.end && period.end !== period.start
+      ? `${dot(period.start)} ~ ${dot(period.end)}`
+      : dot(period.start);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checkResults, sheets, sheetMappings]);
 
   // ── 파일 이름 겹침 ────────────────────────────────────────
   // 다른 동끼리 이름이 겹치는 것은 막지 않는다. 목록에 기관명이 함께 나오기 때문이다.
   // 같은 동 안에서 겹치면 DB가 이전 자료를 대체한다. 덮어쓸 생각이 아니었다면 예전
   // 자료가 말없이 사라지므로, 저장 전에 어느 쪽인지 물어본다.
-  const currentOrgName = organizations.find((o) => o.id === orgId)?.name;
   const sameOrgConflicts = useMemo(
     () => findSameOrganizationConflicts(registeredNames, fileName, orgId),
     [registeredNames, fileName, orgId],
@@ -486,42 +570,10 @@ export default function DataUploadPage() {
       .map((r) => r.fileName);
     setFileName(suggestUniqueFileName(fileName, takenInOrg, currentOrgName));
   }
+
   const canSave =
     canRead && !hasDuplicateMapping && !isChecking && !needsOrg && !needsNameDecision &&
-    fileName.trim() !== '' && (!needsConfirm || acknowledged);
-
-  function renderOrgSelector() {
-    if (!isCentralStoreEnabled) return null;
-    return (
-      <div className="mt-6">
-        <label htmlFor="org-select" className="block text-sm font-medium text-slate-700">
-          제출 기관(읍면동)
-        </label>
-        {orgLoadError ? (
-          <p className="mt-2 text-sm text-red-600">{orgLoadError}</p>
-        ) : (
-          <select
-            id="org-select"
-            value={orgId}
-            onChange={(e) => selectOrg(e.target.value)}
-            className="mt-2 w-full max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
-          >
-            <option value="">선택해주세요</option>
-            {organizations.map((org) => (
-              <option key={org.id} value={org.id}>
-                {org.regionName} · {org.name}
-              </option>
-            ))}
-          </select>
-        )}
-        {needsOrg && !orgLoadError && (
-          <p className="mt-2 text-xs text-slate-400">
-            어느 읍면동의 자료인지 선택해야 저장할 수 있습니다.
-          </p>
-        )}
-      </div>
-    );
-  }
+    fileName.trim() !== '' && (!needsConfirm || showIssues);
 
   function renderSheetPicker() {
     if (dataSheets.length < 2) return null;
@@ -553,8 +605,10 @@ export default function DataUploadPage() {
     );
   }
 
+  const issuesOpen = showIssues || forcePanelOpen;
+
   return (
-    <div className="mx-auto w-full max-w-[960px]">
+    <div className="mx-auto w-full max-w-[1000px]">
       <div className="mb-4">
         <Link
           to="/admin/files"
@@ -568,7 +622,7 @@ export default function DataUploadPage() {
         title="자료 올리기"
         description={
           step === 'select'
-            ? 'Excel 파일을 올리면 표 위치와 열 뜻을 자동으로 찾아 읽습니다. 저장 전에 무엇이 어떻게 저장될지 확인할 수 있습니다.'
+            ? 'Excel 파일을 올리면 자동으로 읽습니다. 내용을 확인하고 저장하세요.'
             : undefined
         }
       />
@@ -648,9 +702,9 @@ export default function DataUploadPage() {
         </section>
       )}
 
-      {/* ── 확인 ── */}
+      {/* ── 확인 · 이 화면에서 "내용 확인 → 저장"만 하면 끝난다 ── */}
       {step === 'review' && sheets.length > 0 && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {error && (
             <div className="flex items-start gap-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3">
               <AlertCircle size={18} className="mt-0.5 shrink-0 text-red-500" />
@@ -658,405 +712,390 @@ export default function DataUploadPage() {
             </div>
           )}
 
-          {/* 요약 */}
-          <section className="rounded-2xl border border-slate-200 bg-white px-9 py-8">
-            <h2 className="text-[22px] font-semibold tracking-tight text-slate-900">
-              {!canRead
-                ? '이 파일의 양식을 확인할 수 없습니다'
-                : isChecking
-                  ? '내용을 확인하고 있어요'
-                  : needsConfirm
-                    ? '저장 전에 확인해 주세요'
-                    : '자료를 확인했어요'}
-            </h2>
-
-            <p className="mt-5 text-sm font-medium text-slate-800">{fileName}</p>
+          {/* 파일 정체성 — 무엇을, 어느 기관 자료로, 몇 건 읽었는지 한 줄로 */}
+          <div>
+            <p className="text-sm font-medium text-slate-900">{fileName}</p>
             <p className="mt-1 text-sm text-slate-500">
               {canRead
-                ? `${recognizedSheets.length}개 자료 · ${readableRows.toLocaleString()}건`
+                ? `${orgLabel ? `${orgLabel} · ` : ''}${typesLabel} · ${readableRows.toLocaleString()}건`
                 : '표준 항목과 맞는 열을 찾지 못했습니다. 아래에서 직접 연결해 주세요.'}
             </p>
+          </div>
 
-            {canRead && !isChecking && !needsConfirm && (
-              <p className="mt-6 flex items-center gap-2 text-sm font-medium text-emerald-600">
-                <Check size={16} strokeWidth={3} /> 업로드할 수 있습니다
-              </p>
-            )}
-            {canRead && !isChecking && needsConfirm && (
-              <p className="mt-6 flex items-center gap-2 text-sm font-medium text-amber-700">
-                <TriangleAlert size={16} /> 확인할 항목 {attentionCount + errorItems.length}건이 있습니다
-              </p>
-            )}
-
-            {/* 시트별 안내 (누계 제외, 병합 머리글 등) */}
-            {dataSheets.some((s) => s.notes.length > 0) && (
-              <ul className="mt-5 space-y-1.5">
-                {dataSheets.flatMap((sheet) =>
-                  sheet.notes.map((note, i) => (
-                    <li key={`${sheet.sheetName}-${i}`} className="text-xs text-slate-500">
-                      <span className="font-medium text-slate-600">{sheet.sheetName}</span> · {note}
-                    </li>
-                  )),
-                )}
-              </ul>
-            )}
-          </section>
-
-          {/* 확인이 필요한 것들 */}
+          {/* 예외 상황일 때만 보이는 한 줄 배너. 정상 파일에는 아예 나타나지 않는다. */}
           {!isChecking && needsConfirm && (
-            <section className="rounded-2xl border border-amber-200 bg-white px-9 py-8">
-              <h3 className="text-base font-semibold text-slate-900">확인이 필요한 항목</h3>
-
-              {attention.unknownSheets.length > 0 && (
-                <div className="mt-5">
-                  <p className="text-sm font-medium text-slate-700">자료 종류를 확정하지 못한 시트</p>
-                  <p className="mt-1 text-sm text-slate-500">{attention.unknownSheets.join(', ')}</p>
-                </div>
+            <section className="rounded-xl border border-amber-200 bg-amber-50/70 px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="flex items-center gap-2 text-sm font-semibold text-amber-800">
+                  <TriangleAlert size={16} />
+                  {(attentionCount + errorItems.length).toLocaleString()}개 항목을 확인해주세요
+                </p>
+                {!issuesOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setShowIssues(true)}
+                    className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3.5 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                  >
+                    확인하기 <ChevronRight size={15} />
+                  </button>
+                )}
+              </div>
+              {primaryIssueMessage && !issuesOpen && (
+                <p className="mt-1.5 text-sm text-amber-700">{primaryIssueMessage}</p>
               )}
 
-              {attention.unmappedColumns.length > 0 && (
-                <div className="mt-5">
-                  <p className="text-sm font-medium text-slate-700">
-                    연결되지 않은 열 {attention.unmappedColumns.length}개 — 이 열의 값은 저장되지 않습니다
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    {attention.unmappedColumns.map((col) => (
-                      <li key={`${col.sheetName}-${col.name}`} className="text-sm text-slate-600">
-                        <span className="font-medium text-slate-800">{col.name}</span>
-                        <span className="text-slate-400">
-                          {' '}
-                          ({col.sheetName} · {col.letter}열) — {col.reason}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {attention.suggestedColumns.length > 0 && (
-                <div className="mt-5">
-                  <p className="text-sm font-medium text-slate-700">
-                    비슷해 보여 연결한 열 {attention.suggestedColumns.length}개 — 맞는지 확인해 주세요
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {attention.suggestedColumns.map((c) => c.name).join(', ')}
-                  </p>
-                </div>
-              )}
-
-              {attention.totalsMismatches.length > 0 && (
-                <div className="mt-5">
-                  <p className="text-sm font-medium text-slate-700">
-                    파일에 적힌 합계와 읽은 값의 합이 다릅니다
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    {attention.totalsMismatches.map((check) => (
-                      <li
-                        key={`${check.sheetName}-${check.field}`}
-                        className="text-sm text-slate-600"
-                      >
-                        <span className="tabular-nums text-slate-400">
-                          {check.sheetName} · {check.rowNumber}행
-                        </span>{' '}
-                        — {fieldLabel(check.field)}: 파일의 합계{' '}
-                        <span className="font-medium">{check.declared.toLocaleString()}</span> vs 읽은
-                        값의 합 <span className="font-medium">{check.computed.toLocaleString()}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-1 text-xs text-slate-400">
-                    빠뜨린 줄이 있거나 열이 잘못 연결되었을 수 있습니다. 열 연결과 저장될 내용을
-                    확인해 주세요.
-                  </p>
-                </div>
-              )}
-
-              {attention.skippedRows.length > 0 && (
-                <div className="mt-5">
-                  <p className="text-sm font-medium text-slate-700">
-                    데이터 행인지 판단하기 어려워 제외한 행 {attention.skippedRows.length}개
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    {attention.skippedRows.slice(0, COLLAPSED_ERRORS).map((row) => (
-                      <li key={`${row.sheetName}-${row.rowNumber}`} className="text-sm text-slate-600">
-                        <span className="tabular-nums text-slate-400">
-                          {row.sheetName} · {row.rowNumber}행
-                        </span>{' '}
-                        — {row.message}
-                      </li>
-                    ))}
-                  </ul>
-                  {attention.skippedRows.length > COLLAPSED_ERRORS && (
-                    <p className="mt-1 text-xs text-slate-400">
-                      외 {attention.skippedRows.length - COLLAPSED_ERRORS}건 더 있습니다.
-                    </p>
+              {issuesOpen && (
+                <div className="mt-4 space-y-5 border-t border-amber-200/70 pt-4">
+                  {attention.unknownSheets.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">자료 종류를 확정하지 못한 시트</p>
+                      <p className="mt-1 text-sm text-slate-500">{attention.unknownSheets.join(', ')}</p>
+                    </div>
                   )}
-                </div>
-              )}
 
-              {errorItems.length > 0 && (
-                <div className="mt-5">
-                  <p className="text-sm font-medium text-slate-700">
-                    값을 읽지 못한 칸 {errorItems.length.toLocaleString()}곳 — 저장하면 해당 칸은 비워
-                    둡니다
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    {(showAllErrors
-                      ? errorItems.slice(0, MAX_LISTED_ERRORS)
-                      : errorItems.slice(0, COLLAPSED_ERRORS)
-                    ).map((item, i) => (
-                      <li key={i} className="text-sm text-slate-600">
-                        <span className="tabular-nums text-slate-400">
-                          {item.label} · {item.cell}
-                        </span>{' '}
-                        — {item.message}
-                      </li>
-                    ))}
-                  </ul>
-                  {errorItems.length > COLLAPSED_ERRORS && (
+                  {attention.unmappedColumns.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">
+                        연결되지 않은 열 {attention.unmappedColumns.length}개 — 이 열의 값은 저장되지 않습니다
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {attention.unmappedColumns.map((col) => (
+                          <li key={`${col.sheetName}-${col.name}`} className="text-sm text-slate-600">
+                            <span className="font-medium text-slate-800">{col.name}</span>
+                            <span className="text-slate-400">
+                              {' '}
+                              ({col.sheetName} · {col.letter}열) — {col.reason}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {attention.suggestedColumns.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">
+                        비슷해 보여 연결한 열 {attention.suggestedColumns.length}개 — 맞는지 확인해 주세요
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {attention.suggestedColumns.map((c) => c.name).join(', ')}
+                      </p>
+                    </div>
+                  )}
+
+                  {attention.totalsMismatches.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">
+                        파일에 적힌 합계와 읽은 값의 합이 다릅니다
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {attention.totalsMismatches.map((check) => (
+                          <li key={`${check.sheetName}-${check.field}`} className="text-sm text-slate-600">
+                            <span className="tabular-nums text-slate-400">
+                              {check.sheetName} · {check.rowNumber}행
+                            </span>{' '}
+                            — {fieldLabel(check.field)}: 파일의 합계{' '}
+                            <span className="font-medium">{check.declared.toLocaleString()}</span> vs 읽은
+                            값의 합 <span className="font-medium">{check.computed.toLocaleString()}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {attention.skippedRows.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">
+                        데이터 행인지 판단하기 어려워 제외한 행 {attention.skippedRows.length}개
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {attention.skippedRows.slice(0, COLLAPSED_ERRORS).map((row) => (
+                          <li key={`${row.sheetName}-${row.rowNumber}`} className="text-sm text-slate-600">
+                            <span className="tabular-nums text-slate-400">
+                              {row.sheetName} · {row.rowNumber}행
+                            </span>{' '}
+                            — {row.message}
+                          </li>
+                        ))}
+                      </ul>
+                      {attention.skippedRows.length > COLLAPSED_ERRORS && (
+                        <p className="mt-1 text-xs text-slate-400">
+                          외 {attention.skippedRows.length - COLLAPSED_ERRORS}건 더 있습니다.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {errorItems.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">
+                        값을 읽지 못한 칸 {errorItems.length.toLocaleString()}곳 — 저장하면 해당 칸은 비워
+                        둡니다
+                      </p>
+                      <ul className="mt-2 space-y-1">
+                        {(showAllErrors
+                          ? errorItems.slice(0, MAX_LISTED_ERRORS)
+                          : errorItems.slice(0, COLLAPSED_ERRORS)
+                        ).map((item, i) => (
+                          <li key={i} className="text-sm text-slate-600">
+                            <span className="tabular-nums text-slate-400">
+                              {item.label} · {item.cell}
+                            </span>{' '}
+                            — {item.message}
+                          </li>
+                        ))}
+                      </ul>
+                      {errorItems.length > COLLAPSED_ERRORS && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllErrors((v) => !v)}
+                          aria-expanded={showAllErrors}
+                          className="mt-2 inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                        >
+                          {showAllErrors ? '접기' : `${errorItems.length.toLocaleString()}곳 모두 보기`}
+                          <ChevronRight
+                            size={15}
+                            className={`transition-transform ${showAllErrors ? 'rotate-90' : ''}`}
+                          />
+                        </button>
+                      )}
+                      {showAllErrors && errorItems.length > MAX_LISTED_ERRORS && (
+                        <p className="mt-2 text-xs text-slate-400">
+                          외 {(errorItems.length - MAX_LISTED_ERRORS).toLocaleString()}건 더 있습니다.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 열 연결 — 문제가 있을 때만 펼쳐서 보여준다 */}
+                  {activeSheet && activeSheet.columnDiagnostics.length > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">열 연결</p>
+                      <div className="mt-2 space-y-3">
+                        {renderSheetPicker()}
+                        <ColumnMapper
+                          diagnostics={activeSheet.columnDiagnostics}
+                          mappings={activeMapping}
+                          columnDefs={getColumnsForType(activeSheet.sheetType)}
+                          onChange={(col, target) =>
+                            handleMappingChange(activeSheet.sheetName, col, target)
+                          }
+                        />
+                        {hasDuplicateMapping && (
+                          <p className="text-sm text-amber-700">
+                            같은 항목이 두 열에 연결되어 있습니다. 하나만 남겨주세요.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {!forcePanelOpen && (
                     <button
                       type="button"
-                      onClick={() => setShowAllErrors((v) => !v)}
-                      aria-expanded={showAllErrors}
-                      className="mt-2 inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                      onClick={() => setShowIssues(false)}
+                      className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
                     >
-                      {showAllErrors ? '접기' : `${errorItems.length.toLocaleString()}곳 모두 보기`}
-                      <ChevronRight
-                        size={15}
-                        className={`transition-transform ${showAllErrors ? 'rotate-90' : ''}`}
-                      />
+                      접기
                     </button>
-                  )}
-                  {showAllErrors && errorItems.length > MAX_LISTED_ERRORS && (
-                    <p className="mt-2 text-xs text-slate-400">
-                      외 {(errorItems.length - MAX_LISTED_ERRORS).toLocaleString()}건 더 있습니다.
-                    </p>
                   )}
                 </div>
               )}
             </section>
           )}
 
-          {/* 저장될 내용 — 늘 펼쳐 둔다 */}
-          {activeSheet && (
-            <section className="rounded-2xl border border-slate-200 bg-white px-9 py-8">
-              <h3 className="text-base font-semibold text-slate-900">저장될 내용</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                아래 내용이 그대로 통합 현황에 반영됩니다. 다르면 열 연결을 고쳐 주세요.
-              </p>
+          {/* 저장될 내용 / 원본 엑셀 — 핵심 검토 영역. 늘 여기서 바로 본다. */}
+          {canRead && (
+            <section>
+              <div
+                className="inline-flex gap-1 rounded-lg border border-slate-200 bg-white p-1"
+                role="tablist"
+                aria-label="검토 영역"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={contentTab === 'content'}
+                  onClick={() => setContentTab('content')}
+                  className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+                    contentTab === 'content' ? 'bg-teal-50 text-teal-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                  }`}
+                >
+                  저장될 내용
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={contentTab === 'raw'}
+                  onClick={() => setContentTab('raw')}
+                  className={`rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 ${
+                    contentTab === 'raw' ? 'bg-teal-50 text-teal-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                  }`}
+                >
+                  원본 엑셀
+                </button>
+              </div>
 
-              <div className="mt-5 space-y-5">
-                {renderSheetPicker()}
-                {isChecking ? (
-                  <div className="flex items-center justify-center py-10">
-                    <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-teal-100 border-t-teal-600" />
+              <div className="mt-3">
+                {contentTab === 'content' ? (
+                  <div className="space-y-3">
+                    {renderSheetPicker()}
+                    {isChecking ? (
+                      <div className="flex items-center justify-center py-10">
+                        <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-teal-100 border-t-teal-600" />
+                      </div>
+                    ) : (
+                      activeSheet && (
+                        <ConversionPreview
+                          sheetType={activeSheet.sheetType}
+                          result={activeResult}
+                          mappings={activeMapping}
+                        />
+                      )
+                    )}
                   </div>
                 ) : (
-                  <ConversionPreview
-                    sheet={activeSheet}
-                    result={activeResult}
-                    mappings={activeMapping}
+                  <ExcelPreview
+                    key={fileName}
+                    sheets={sheets}
+                    fileName={fileName}
+                    mappings={sheetMappings}
+                    workerRef={workerRef}
                   />
-                )}
-              </div>
-
-              {/* 열 연결 — 인식이 잘 됐을 때도 언제나 열 수 있다 */}
-              <div className="mt-8 border-t border-slate-100 pt-5">
-                <button
-                  type="button"
-                  onClick={() => setShowMapper((v) => !v)}
-                  aria-expanded={showMapper}
-                  className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-                >
-                  열 연결 확인·수정
-                  <ChevronRight
-                    size={15}
-                    className={`transition-transform ${showMapper ? 'rotate-90' : ''}`}
-                  />
-                </button>
-
-                {showMapper && (
-                  <div className="mt-5">
-                    {activeSheet.columnDiagnostics.length === 0 ? (
-                      <p className="text-sm text-slate-400">연결할 열이 없습니다.</p>
-                    ) : (
-                      <ColumnMapper
-                        diagnostics={activeSheet.columnDiagnostics}
-                        mappings={activeMapping}
-                        columnDefs={getColumnsForType(activeSheet.sheetType)}
-                        onChange={(col, target) =>
-                          handleMappingChange(activeSheet.sheetName, col, target)
-                        }
-                      />
-                    )}
-                    {hasDuplicateMapping && (
-                      <p className="mt-4 text-sm text-amber-700">
-                        같은 항목이 두 열에 연결되어 있습니다. 하나만 남겨주세요.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* 원본 미리보기 */}
-              <div className="mt-5 border-t border-slate-100 pt-5">
-                <button
-                  type="button"
-                  onClick={() => setShowPreview((v) => !v)}
-                  aria-expanded={showPreview}
-                  className="inline-flex items-center gap-1 text-sm text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-                >
-                  원본 엑셀 미리보기
-                  <ChevronRight
-                    size={15}
-                    className={`transition-transform ${showPreview ? 'rotate-90' : ''}`}
-                  />
-                </button>
-
-                {showPreview && (
-                  <div className="mt-5">
-                    <ExcelPreview
-                      key={fileName}
-                      sheets={sheets}
-                      fileName={fileName}
-                      mappings={sheetMappings}
-                      workerRef={workerRef}
-                    />
-                  </div>
                 )}
               </div>
             </section>
           )}
 
-          {/* 저장 */}
-          <section className="rounded-2xl border border-slate-200 bg-white px-9 py-8">
-            {renderOrgSelector()}
+          {periodLabel && (
+            <div className="flex items-center justify-between border-t border-slate-100 pt-4 text-sm">
+              <span className="text-slate-500">기준일</span>
+              <span className="font-medium text-slate-800">{periodLabel}</span>
+            </div>
+          )}
 
-            {/* 파일 이름 — 같은 동에 같은 이름이 있으면 어떻게 할지 먼저 정한다 */}
-            {isCentralStoreEnabled && (
-              <div className="mt-6">
-                <label htmlFor="file-name" className="block text-sm font-medium text-slate-700">
-                  저장할 파일 이름
-                </label>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <input
-                    id="file-name"
-                    type="text"
-                    value={fileName}
-                    onChange={(e) => setFileName(e.target.value)}
-                    aria-invalid={needsNameDecision}
-                    className={`w-full max-w-md rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
-                      needsNameDecision
-                        ? 'border-amber-300 text-amber-900 focus:ring-amber-400'
-                        : 'border-slate-200 text-slate-700 focus:ring-teal-500'
-                    }`}
-                  />
-                  {nameChoice === 'rename' && hasNameConflict && (
+          {/* 제출 기관 — 파일에서 자동으로 확정되지 않았을 때만 보여준다 */}
+          {showOrgPicker && (
+            <div>
+              <label htmlFor="org-select" className="block text-sm font-medium text-slate-700">
+                제출 기관(읍면동)
+                {orgDetection.status === 'ambiguous' && (
+                  <span className="ml-1.5 font-normal text-slate-400">— 파일에 기관이 여러 개 섞여 있어요</span>
+                )}
+              </label>
+              {orgLoadError ? (
+                <p className="mt-2 text-sm text-red-600">{orgLoadError}</p>
+              ) : (
+                <select
+                  id="org-select"
+                  value={orgId}
+                  onChange={(e) => selectOrg(e.target.value)}
+                  className="mt-2 w-full max-w-xs rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                >
+                  <option value="">선택해주세요</option>
+                  {organizations.map((org) => (
+                    <option key={org.id} value={org.id}>
+                      {org.regionName} · {org.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
+          {/* 파일 이름 겹침 — 같은 동에 같은 이름이 있을 때만 나타난다 */}
+          {isCentralStoreEnabled && hasNameConflict && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-medium text-amber-900">
+                {currentOrgName ?? '이 기관'}에 같은 이름의 자료가 이미 있습니다
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {sameOrgConflicts.map((match, i) => (
+                  <li key={i} className="text-sm text-amber-800">
+                    {match.fileName}
+                  </li>
+                ))}
+              </ul>
+
+              {nameChoice === 'ask' && (
+                <>
+                  <p className="mt-2 text-xs text-amber-800">
+                    덮어쓰면 이전 자료는 통합 현황 집계에서 빠집니다. 둘 다 남기려면 이름을 바꿔주세요.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNameChoice('overwrite')}
+                      className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                    >
+                      덮어쓰기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNameChoice('rename')}
+                      className="rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    >
+                      이름 바꿔서 올리기
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {nameChoice === 'rename' && (
+                <div className="mt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      id="file-name"
+                      type="text"
+                      value={fileName}
+                      onChange={(e) => setFileName(e.target.value)}
+                      className="w-full max-w-md rounded-lg border border-amber-300 px-3 py-2 text-sm text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
                     <button
                       type="button"
                       onClick={applySuggestedName}
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
                     >
                       겹치지 않는 이름 제안
                     </button>
-                  )}
-                </div>
-
-                {hasNameConflict ? (
-                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-                    <p className="text-sm font-medium text-amber-900">
-                      {currentOrgName ?? '이 기관'}에 같은 이름의 자료가 이미 있습니다
-                    </p>
-                    <ul className="mt-1 space-y-0.5">
-                      {sameOrgConflicts.map((match, i) => (
-                        <li key={i} className="text-sm text-amber-800">
-                          {match.fileName}
-                        </li>
-                      ))}
-                    </ul>
-
-                    {nameChoice === 'ask' && (
-                      <>
-                        <p className="mt-2 text-xs text-amber-800">
-                          덮어쓰면 이전 자료는 통합 현황 집계에서 빠집니다. 둘 다 남기려면 이름을
-                          바꿔주세요.
-                        </p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setNameChoice('overwrite')}
-                            className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-amber-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-                          >
-                            덮어쓰기
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setNameChoice('rename')}
-                            className="rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-800 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
-                          >
-                            이름 바꿔서 올리기
-                          </button>
-                        </div>
-                      </>
-                    )}
-
-                    {nameChoice === 'rename' && (
-                      <p className="mt-2 text-sm text-amber-800">
-                        위 칸에서 이름을 바꿔주세요. 같은 이름이 없어지면 저장할 수 있습니다.
-                      </p>
-                    )}
                   </div>
-                ) : nameChoice === 'overwrite' ? (
-                  <p className="mt-2 text-sm text-amber-700">
-                    덮어쓰기로 저장합니다. 이전 자료는 집계에서 빠집니다.
+                  <p className="mt-2 text-sm text-amber-800">
+                    위 칸에서 이름을 바꿔주세요. 같은 이름이 없어지면 저장할 수 있습니다.
                   </p>
-                ) : (
-                  <p className="mt-2 text-xs text-slate-400">
-                    이 이름으로 자료·데이터 관리 목록에 표시됩니다. 원본 파일은 그대로 보관됩니다.
-                  </p>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            {needsConfirm && !isChecking && canRead && (
-              <label className="mt-6 flex items-start gap-2.5 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={acknowledged}
-                  onChange={(e) => setAcknowledged(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
-                />
-                <span>
-                  위 "확인이 필요한 항목"과 "저장될 내용"을 확인했습니다. 이대로 저장합니다.
-                </span>
-              </label>
-            )}
-
-            <div className="mt-7 flex flex-wrap items-center gap-4">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!canSave}
-                className="rounded-lg bg-teal-600 px-7 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
-              >
-                자료 저장
-              </button>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
-              >
-                다른 파일 선택
-              </button>
+              {nameChoice === 'overwrite' && (
+                <p className="mt-2 text-sm text-amber-700">
+                  덮어쓰기로 저장합니다. 이전 자료는 집계에서 빠집니다.
+                </p>
+              )}
             </div>
+          )}
 
+          {/* 저장 */}
+          <div className="flex flex-col items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!canSave}
+              className="rounded-lg bg-teal-600 px-8 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+            >
+              이대로 저장
+            </button>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            >
+              다른 파일 선택
+            </button>
             {!canRead && (
-              <p className="mt-4 text-sm text-slate-500">
-                꼭 필요한 항목이 연결되지 않아 아직 저장할 수 없습니다. "열 연결 확인·수정"에서
-                지정해 주세요.
+              <p className="text-sm text-slate-500">
+                꼭 필요한 항목이 연결되지 않아 아직 저장할 수 없습니다. 위 "열 연결"에서 지정해 주세요.
               </p>
             )}
-          </section>
+          </div>
         </div>
       )}
 

@@ -95,7 +95,7 @@ export const GENERIC_COLUMNS: PlatformColumnDef[] = [
     key: 'organization',
     label: '기관명',
     required: false,
-    aliases: ['기관', '단체명', '거점', '거점명', '운영기관', '배부처', '수행기관', '센터명', '매장명', '나눔가게', '제공처'],
+    aliases: ['기관', '단체명', '거점', '거점명', '운영기관', '배부처', '수행기관', '센터명', '매장명', '나눔가게', '제공처', '제출기관', '제출 기관'],
   },
   {
     key: 'itemName',
@@ -119,13 +119,13 @@ export const GENERIC_COLUMNS: PlatformColumnDef[] = [
     key: 'stock',
     label: '현재재고',
     required: false,
-    aliases: ['재고', '재고량', '현재고', '잔량', '잔여수량', '재고수량', '보유수량', '남은수량', '기말재고', '현재재고량'],
+    aliases: ['재고', '재고량', '현재고', '잔량', '잔여수량', '재고수량', '보유수량', '남은수량', '기말재고', '현재재고량', '수량'],
   },
   {
     key: 'inboundDate',
     label: '입고일',
     required: false,
-    aliases: ['입고일자', '입고날짜', '반입일', '반입일자', '기부일', '후원일', '등록일', '접수일'],
+    aliases: ['입고일자', '입고날짜', '반입일', '반입일자', '기부일', '후원일', '등록일', '접수일', '기준일'],
   },
   {
     key: 'expirationDate',

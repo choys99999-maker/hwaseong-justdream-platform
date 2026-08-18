@@ -813,6 +813,42 @@ const CASES: Case[] = [
       },
     ],
   },
+
+  {
+    id: 'Z',
+    title: '단위·기준일 등 짧은 헤더가 그대로 열 이름일 때 — 어노테이션으로 오인해 지우면 안 된다',
+    sheets: [
+      {
+        name: '물품재고',
+        aoa: [
+          ['기관명', '품목명', '수량', '단위', '유통기한', '기준일'],
+          ['동탄6동', '쌀 10kg', 18, '포', '2027-05-31', '2026-08-18'],
+          ['동탄6동', '즉석밥 세트', 7, '세트', '2027-02-28', '2026-08-18'],
+        ],
+      },
+    ],
+    expect: [
+      {
+        sheetName: '물품재고',
+        type: 'generic',
+        recordCount: 2,
+        mapped: {
+          organization: '기관명',
+          itemName: '품목명',
+          stock: '수량',
+          expirationDate: '유통기한',
+          inboundDate: '기준일',
+        },
+        // "단위"는 저장 대상이 아니라고 미리 정해둔 열이다 — 미인식이 아니라 "저장 안 함"이어야 한다.
+        ignoredColumns: ['단위'],
+        needsAttention: [],
+        records: [
+          { organization: '동탄6동', itemName: '쌀 10kg', stock: 18, expirationDate: '2027-05-31', inboundDate: '2026-08-18' },
+          { organization: '동탄6동', itemName: '즉석밥 세트', stock: 7, expirationDate: '2027-02-28', inboundDate: '2026-08-18' },
+        ],
+      },
+    ],
+  },
 ];
 
 // ── 자체 감사 ─────────────────────────────────────────────

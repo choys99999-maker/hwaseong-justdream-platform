@@ -87,7 +87,7 @@ export interface SheetPayload {
 /** 기간 산출에 쓰는 날짜 필드. 생년월일·유통기한은 자료 기간이 아니다. */
 const PERIOD_KEYS: PlatformColumnKey[] = ['consultDate', 'inboundDate'];
 
-function derivePeriodFromRecords(sheets: SheetPayload[]): { start: string | null; end: string | null } {
+export function derivePeriodFromRecords(sheets: SheetPayload[]): { start: string | null; end: string | null } {
   let min: string | null = null;
   let max: string | null = null;
   for (const sheet of sheets) {
