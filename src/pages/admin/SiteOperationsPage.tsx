@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronRight, Zap } from 'lucide-react';
+import { ChevronRight, Sparkles } from 'lucide-react';
 import SiteStatusBadge from '../../components/common/SiteStatusBadge';
 import SiteDetailDrawer from '../../components/sites/SiteDetailDrawer';
-import InventoryUpdateDrawer from '../../components/inventory/InventoryUpdateDrawer';
+import InventoryUpdateModal from '../../components/inventory/InventoryUpdateModal';
 import InventoryPage from '../InventoryPage';
 import {
   Accent,
@@ -191,7 +191,7 @@ export default function SiteOperationsPage() {
       onClick={() => setUpdateOpen(true)}
       className="ad-lift inline-flex items-center gap-1.5 rounded-xl bg-[#004696] px-4 py-2.5 text-[13.5px] font-semibold text-white hover:bg-[#00356F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] focus-visible:ring-offset-2"
     >
-      <Zap size={15} /> 재고 업데이트
+      <Sparkles size={15} /> AI 재고 업데이트
     </button>
   );
 
@@ -236,7 +236,7 @@ export default function SiteOperationsPage() {
           initialKeyword={searchParams.get('q') ?? ''}
         />
         {updateOpen && (
-          <InventoryUpdateDrawer
+          <InventoryUpdateModal
             onClose={() => setUpdateOpen(false)}
             onApplied={() => setRefreshKey((k) => k + 1)}
           />
@@ -432,7 +432,7 @@ export default function SiteOperationsPage() {
       )}
 
       {updateOpen && (
-        <InventoryUpdateDrawer
+        <InventoryUpdateModal
           onClose={() => setUpdateOpen(false)}
           onApplied={() => setRefreshKey((k) => k + 1)}
         />

@@ -6,7 +6,9 @@ import type { CitizenStatusPreview, CitizenSyncTarget } from '../../store/invent
 import type { InventoryUpdateDiff, InventoryUpdateLine } from '../../types/inventoryUpdate';
 
 interface InventoryUpdateConfirmProps {
-  /** "다음 내용으로 반영할까요?" 위에 붙는 한 줄 설명 */
+  /** 결과 목록 위에 붙는 제목. 기본값은 엑셀 반영에 쓰던 문구 그대로다. */
+  heading?: ReactNode;
+  /** 제목 아래 한 줄 설명 */
   description: string;
   diffs: InventoryUpdateDiff[];
   onChangeLines: (lines: InventoryUpdateLine[]) => void;
@@ -34,6 +36,7 @@ interface InventoryUpdateConfirmProps {
  * 모든 줄은 그 자리에서 고칠 수 있고, 값을 읽지 못한 줄이 남아 있으면 반영을 막는다.
  */
 export default function InventoryUpdateConfirm({
+  heading = '다음 내용으로 반영할까요?',
   description,
   diffs,
   onChangeLines,
@@ -76,7 +79,7 @@ export default function InventoryUpdateConfirm({
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-base font-semibold text-slate-900">다음 내용으로 반영할까요?</h3>
+        <h3 className="text-base font-semibold text-slate-900">{heading}</h3>
         <p className="mt-1 text-sm text-slate-500">{description}</p>
       </div>
 
@@ -87,10 +90,12 @@ export default function InventoryUpdateConfirm({
         {diffs.map((diff, index) => {
           const needsValue = diff.stock === null;
           const missingName = diff.itemName.trim() === '';
+          const willBeEmpty = diff.stock !== null && diff.stock <= 0;
           return (
             <li
               key={index}
-              className={`rounded-xl border px-3 py-2.5 ${
+              style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+              className={`ad-rise rounded-xl border px-3 py-2.5 ${
                 needsValue || missingName ? 'border-amber-300 bg-amber-50/50' : 'border-slate-200 bg-white'
               }`}
             >
@@ -100,7 +105,7 @@ export default function InventoryUpdateConfirm({
                   value={diff.itemName}
                   onChange={(e) => update(index, { itemName: e.target.value })}
                   placeholder="품목명"
-                  className="min-w-32 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="min-w-32 flex-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#004696]"
                 />
 
                 <div className="flex items-center gap-1.5">
@@ -115,7 +120,7 @@ export default function InventoryUpdateConfirm({
                       })
                     }
                     placeholder="수량"
-                    className="w-24 rounded-lg border border-slate-200 px-2.5 py-1.5 text-right text-sm tabular-nums text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                    className="w-24 rounded-lg border border-slate-200 px-2.5 py-1.5 text-right text-sm tabular-nums text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#004696]"
                   />
                   <span className="text-sm text-slate-400">개</span>
                 </div>
@@ -124,7 +129,7 @@ export default function InventoryUpdateConfirm({
                   type="button"
                   onClick={() => remove(index)}
                   aria-label={`${diff.itemName || `${index + 1}번째 품목`} 빼기`}
-                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
                 >
                   <X size={15} />
                 </button>
@@ -147,9 +152,15 @@ export default function InventoryUpdateConfirm({
                 )}
                 <span className="text-slate-300">·</span>
                 <span className="truncate text-slate-400" title={diff.sourceText}>
-                  {diff.sourceText}
+                  AI가 이해한 문장 “{diff.sourceText}”
                 </span>
               </div>
+
+              {willBeEmpty && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs font-medium text-[#DC6E2D]">
+                  <TriangleAlert size={12} /> 반영 후 품절 상태가 됩니다
+                </p>
+              )}
 
               {diff.issue && (
                 <p className="mt-1.5 flex items-start gap-1.5 text-xs text-amber-800">
@@ -165,22 +176,22 @@ export default function InventoryUpdateConfirm({
       <button
         type="button"
         onClick={add}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:border-teal-300 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-500 transition-colors hover:border-[#004696]/40 hover:text-[#004696] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
       >
         <Plus size={14} /> 품목 직접 추가
       </button>
 
       {/* ── 시민 화면 ── */}
       {citizenTargets.length > 0 && citizenPreview && (
-        <label className="flex items-start gap-2.5 rounded-xl border border-teal-100 bg-teal-50/60 px-3.5 py-3 text-sm">
+        <label className="flex items-start gap-2.5 rounded-xl border border-[#004696]/15 bg-[#EAF3FC] px-3.5 py-3 text-sm">
           <input
             type="checkbox"
             checked={syncCitizen}
             onChange={(e) => onSyncCitizenChange(e.target.checked)}
-            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-[#004696] focus:ring-[#004696]"
           />
           <span className="text-slate-700">
-            <span className="font-medium text-teal-800">시민 화면도 함께 갱신</span>
+            <span className="font-medium text-[#004696]">시민 화면도 함께 갱신</span>
             <span className="mt-0.5 block text-xs text-slate-500">
               {organizationName} 거점 {citizenTargets.length}곳 (
               {citizenTargets.map((t) => t.siteName).join(', ')})의 "지금 상태"를{' '}
@@ -212,23 +223,23 @@ export default function InventoryUpdateConfirm({
         </p>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={onApply}
-          disabled={!canApply}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-teal-600 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
-        >
-          <Check size={15} strokeWidth={2.5} />
-          {applying ? '반영하는 중...' : `${applicable}개 품목 반영`}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={onBack}
           disabled={applying}
-          className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-800 disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
         >
           {backLabel}
+        </button>
+        <button
+          type="button"
+          onClick={onApply}
+          disabled={!canApply}
+          className="inline-flex h-12 items-center gap-1.5 rounded-xl bg-[#004696] px-6 text-sm font-bold text-white transition-colors hover:bg-[#00356F] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] focus-visible:ring-offset-2"
+        >
+          <Check size={15} strokeWidth={2.5} />
+          {applying ? '재고를 반영하고 있습니다...' : `${applicable}개 품목 반영하기`}
         </button>
       </div>
     </div>
