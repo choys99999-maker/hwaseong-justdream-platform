@@ -6,8 +6,10 @@ import DistrictFilter from '../map/DistrictFilter';
 import MapLegend from '../map/MapLegend';
 import MapSearch from '../map/MapSearch';
 import OperationActionPanel from './OperationActionPanel';
+import OperationKpiBar, { type KpiStatus } from './OperationKpiBar';
 import { mockSites, getSiteById } from '../../data/mockSites';
 import { districtRiskLevels } from '../../data/operationSummary';
+import { REGION_NAMES } from '../../data/regionMeta';
 import { BOUNDARY_ATTRIBUTION } from '../../data/districtBoundaries';
 import { JUSTDREAM_PROGRAM_TOTALS } from '../../data/justdreamSummary';
 
@@ -60,6 +62,8 @@ export default function OperationMapSection() {
   const [programTypeFilter, setProgramTypeFilter] = useState<ProgramTypeFilter>('ALL');
   const [facilityTypeFilter, setFacilityTypeFilter] = useState<FacilityTypeFilter>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+  /** 지도 바로 위 KPI 버튼 — 정상/부족/확인 필요 강조. "운영 상태" 드롭다운과는 별개로 겹쳐 적용된다. */
+  const [kpiFilter, setKpiFilter] = useState<KpiStatus>('ALL');
 
   /** 시설유형·운영상태처럼 자주 안 쓰는 필터는 팝오버 안으로 옮긴다. */
   const [isFilterPopoverOpen, setIsFilterPopoverOpen] = useState(false);
@@ -86,9 +90,22 @@ export default function OperationMapSection() {
       if (statusFilter !== 'ALL') {
         if (site.status !== statusFilter) return false;
       }
+      if (kpiFilter !== 'ALL') {
+        if (kpiFilter === 'needsCheck') {
+          if (site.status !== 'expiring' && site.status !== 'missing') return false;
+        } else if (site.status !== kpiFilter) {
+          return false;
+        }
+      }
       return true;
     },
-    [programTypeFilter, facilityTypeFilter, statusFilter],
+    [programTypeFilter, facilityTypeFilter, statusFilter, kpiFilter],
+  );
+
+  /** KPI 카운트는 구 선택 범위만 반영한다 — 시설유형·사업유형 등 다른 필터와는 무관하게 "지금 이 구에 몇 곳" 을 보여준다. */
+  const kpiScopeSites = useMemo(
+    () => (selectedDistrict === null ? mockSites : mockSites.filter((site) => site.district === selectedDistrict)),
+    [selectedDistrict],
   );
 
   const handleSelectDistrict = useCallback((district: DistrictId | null) => {
@@ -203,7 +220,19 @@ export default function OperationMapSection() {
       };
 
   return (
-    <section style={sectionStyle}>
+    <div className="space-y-3">
+      {/* ── KPI 바: 전체 상태 → 어디가 문제인지 판단하는 첫 단계이자 지도 필터 ── */}
+      {!isFocusMode && (
+        <OperationKpiBar
+          scopeSites={kpiScopeSites}
+          districtName={selectedDistrict ? REGION_NAMES[selectedDistrict] : null}
+          value={kpiFilter}
+          onChange={setKpiFilter}
+          onClearDistrict={() => handleSelectDistrict(null)}
+        />
+      )}
+
+      <section style={sectionStyle}>
       {/* ── 지도 카드 ── */}
       <div
         className={
@@ -391,7 +420,7 @@ export default function OperationMapSection() {
             </button>
           )}
 
-          {/* 패널 내용 — 접혔을 때 숨김 */}
+          {/* 패널 내용 — 접혔을 때 숨김. 제목은 OperationActionPanel 이 모드별로 직접 낸다. */}
           <div
             className="flex h-full flex-col p-4 transition-opacity"
             style={{
@@ -401,11 +430,11 @@ export default function OperationMapSection() {
             }}
             aria-hidden={collapsed}
           >
-            <h3 className="shrink-0 text-sm font-semibold text-slate-900">선택 지역·기관 요약</h3>
-            <div className="mt-2 min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               <OperationActionPanel
                 selectedDistrict={selectedDistrict}
                 selectedSite={selectedSite}
+                statusFilter={kpiFilter}
                 onSelectDistrict={handleSelectDistrict}
                 onClearSite={() => {
                   setSelectedSiteId(null);
@@ -430,6 +459,7 @@ export default function OperationMapSection() {
           )}
         </div>
       )}
-    </section>
+      </section>
+    </div>
   );
 }

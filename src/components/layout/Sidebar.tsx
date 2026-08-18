@@ -39,7 +39,7 @@ export default function Sidebar() {
       <div className="relative border-b border-slate-200">
         <Link
           to="/admin"
-          aria-label="오늘 할 일 홈으로 이동"
+          aria-label="운영 현황 홈으로 이동"
           className={`flex flex-col items-center py-4 cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-inset overflow-hidden ${
             collapsed ? 'px-2' : 'px-5'
           }`}

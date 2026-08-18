@@ -12,13 +12,28 @@ import {
   type OperationActionItem,
 } from '../../data/actionItems';
 import { formatNumber } from '../../utils/format';
-import { siteAreaOf, EXPIRING_THRESHOLD } from '../../data/mockSites';
+import { siteAreaOf, EXPIRING_THRESHOLD, mockSites } from '../../data/mockSites';
+import type { KpiStatus } from './OperationKpiBar';
 
-const CITY_ACTION_LIMIT = 5;
+/** 우측 패널 기본 목록 길이. "최대 3~5개" 만 보여주고 나머지는 거점 관리에서 본다. */
+const ACTION_LIST_LIMIT = 5;
+/** 전체 목록으로 넘어갈 때 쓰는 상태 필터 — SiteOperationsPage 의 StatusFilter 값과 맞춘다. */
+const ALL_ACTION_ITEMS_LINK = '/admin/sites?status=check';
+
+/** KPI 선택(정상 제외)에 맞춰 확인 필요 목록을 좁힌다. */
+function filterItemsByKpi(items: OperationActionItem[], statusFilter: KpiStatus): OperationActionItem[] {
+  if (statusFilter === 'shortage') return items.filter((item) => item.kind === '부족');
+  if (statusFilter === 'needsCheck') {
+    return items.filter((item) => item.kind === '유통기한 임박' || item.kind === '자료 확인 필요');
+  }
+  return items;
+}
 
 interface OperationActionPanelProps {
   selectedDistrict: DistrictId | null;
   selectedSite: OperationSite | null;
+  /** 지도 위 KPI 선택. 화성시 전체·구 요약 모드에서 목록을 그 상태 기준으로 좁힌다. */
+  statusFilter: KpiStatus;
   onSelectDistrict: (district: DistrictId | null) => void;
   onClearSite: () => void;
 }
@@ -84,12 +99,14 @@ function ActionItemList({
   items,
   emptyMessage,
   linkTo,
+  linkLabel = '이어서 확인',
   showSite = true,
 }: {
   title: string;
   items: OperationActionItem[];
   emptyMessage: string;
   linkTo?: string;
+  linkLabel?: string;
   showSite?: boolean;
 }) {
   return (
@@ -106,14 +123,44 @@ function ActionItemList({
           ))}
         </ul>
       )}
-      {items.length > 0 && linkTo && (
+      {linkTo && (
         <Link
           to={linkTo}
           className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
         >
-          이어서 확인
+          {linkLabel}
           <ArrowRight size={12} />
         </Link>
+      )}
+    </div>
+  );
+}
+
+/** KPI "정상" 선택 시 — 확인할 것이 없다는 것 자체가 답이므로 목록이 아니라 안심 메시지에 가깝게 보여준다. */
+function NormalSitesList({ sites }: { sites: OperationSite[] }) {
+  const visible = sites.slice(0, ACTION_LIST_LIMIT);
+  return (
+    <div className="mt-4">
+      <h4 className="text-sm font-semibold text-slate-900">정상 운영 중인 거점</h4>
+      {visible.length === 0 ? (
+        <p className="mt-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
+          정상 운영 중인 거점이 없습니다.
+        </p>
+      ) : (
+        <ul className="mt-2 space-y-1.5">
+          {visible.map((site) => (
+            <li
+              key={site.id}
+              className="flex items-center justify-between gap-2 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-800"
+            >
+              <span className="min-w-0 truncate font-medium">{site.displayName}</span>
+              <span className="shrink-0 text-xs text-emerald-600">{REGION_NAMES[site.district]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {sites.length > ACTION_LIST_LIMIT && (
+        <p className="mt-2 text-xs text-slate-400">외 {sites.length - ACTION_LIST_LIMIT}곳 더 정상 운영 중입니다.</p>
       )}
     </div>
   );
@@ -133,6 +180,7 @@ const ACTION_KIND_STYLE: Record<ActionKind, string> = {
 export default function OperationActionPanel({
   selectedDistrict,
   selectedSite,
+  statusFilter,
   onSelectDistrict,
   onClearSite,
 }: OperationActionPanelProps) {
@@ -282,11 +330,17 @@ export default function OperationActionPanel({
         </dl>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <ActionItemList
-            title="확인이 필요한 사항"
-            items={getActionItemsByDistrict(selectedDistrict)}
-            emptyMessage="이 구에는 현재 확인이 필요한 거점이 없습니다."
-          />
+          {statusFilter === 'normal' ? (
+            <NormalSitesList sites={mockSites.filter((site) => site.district === selectedDistrict && site.status === 'normal')} />
+          ) : (
+            <ActionItemList
+              title="확인이 필요한 거점"
+              items={filterItemsByKpi(getActionItemsByDistrict(selectedDistrict), statusFilter).slice(0, ACTION_LIST_LIMIT)}
+              emptyMessage="이 구에는 현재 확인이 필요한 거점이 없습니다."
+              linkTo={ALL_ACTION_ITEMS_LINK}
+              linkLabel="전체 확인 필요 거점 보기"
+            />
+          )}
         </div>
       </div>
     );
@@ -312,11 +366,17 @@ export default function OperationActionPanel({
       </dl>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ActionItemList
-          title="오늘 확인이 필요한 사항"
-          items={getActionItemsByDistrict(null).slice(0, CITY_ACTION_LIMIT)}
-          emptyMessage="현재 확인이 필요한 거점이 없습니다."
-        />
+        {statusFilter === 'normal' ? (
+          <NormalSitesList sites={mockSites.filter((site) => site.status === 'normal')} />
+        ) : (
+          <ActionItemList
+            title="확인이 필요한 거점"
+            items={filterItemsByKpi(getActionItemsByDistrict(null), statusFilter).slice(0, ACTION_LIST_LIMIT)}
+            emptyMessage="현재 확인이 필요한 거점이 없습니다."
+            linkTo={ALL_ACTION_ITEMS_LINK}
+            linkLabel="전체 확인 필요 거점 보기"
+          />
+        )}
       </div>
     </div>
   );

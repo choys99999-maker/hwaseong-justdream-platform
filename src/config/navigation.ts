@@ -1,4 +1,4 @@
-import { ClipboardCheck, Inbox, MapPinned, type LucideIcon } from 'lucide-react';
+import { Activity, Inbox, MapPinned, type LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   path: string;
@@ -12,7 +12,7 @@ export interface NavItem {
  * 관리자 사이드바 — 3개.
  *
  * 공무원이 스스로에게 던지는 질문이 그대로 메뉴다.
- *   오늘 할 일  — 지금 뭐부터 해야 하지?
+ *   운영 현황   — 화성시 전체가 지금 정상인가, 문제는 어디인가?
  *   거점 관리   — 거점 상태·재고를 보고 고치려면?
  *   시민 요청   — 시민이 보낸 건은 어디 있지?
  *
@@ -21,7 +21,7 @@ export interface NavItem {
  * 자료 보관함(`/admin/files`)은 경로로만 남기고 메뉴에서 내린다.
  */
 export const NAV_ITEMS: NavItem[] = [
-  { path: '/admin', label: '오늘 할 일', icon: ClipboardCheck },
+  { path: '/admin', label: '운영 현황', icon: Activity },
   {
     path: '/admin/sites',
     label: '거점 관리',

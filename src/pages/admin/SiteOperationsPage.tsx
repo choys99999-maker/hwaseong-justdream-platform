@@ -28,6 +28,12 @@ const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
   { key: 'normal', label: '정상' },
 ];
 
+/** 운영 현황 KPI의 "확인 필요 거점 전체 보기" 링크(`?status=check`)처럼 다른 화면에서 필터를 지정해 들어온다. */
+function resolveStatusFilter(value: string | null): StatusFilter {
+  if (value === 'shortage' || value === 'check' || value === 'normal') return value;
+  return 'all';
+}
+
 function matchesFilter(status: SiteStatus, filter: StatusFilter): boolean {
   if (filter === 'all') return true;
   if (filter === 'shortage') return status === 'shortage';
@@ -58,7 +64,7 @@ export default function SiteOperationsPage() {
   const [searchParams] = useSearchParams();
   const isInventoryTab = location.pathname.startsWith('/admin/sites/inventory');
 
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => resolveStatusFilter(searchParams.get('status')));
   const [updateOpen, setUpdateOpen] = useState(false);
   /** 현황 저장·재고 반영 후 목록이 옛 값을 보여주지 않도록 다시 읽는다. */
   const [refreshKey, setRefreshKey] = useState(0);

@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import { Outlet, useOutletContext } from 'react-router-dom';
-import DemoRoleSwitcher from '../demo/DemoRoleSwitcher';
 import Drawer from '../citizen/ui/Drawer';
 
 interface CitizenShell {
@@ -27,7 +26,6 @@ export default function CitizenLayout() {
   return (
     <div className="h-dvh bg-paper text-body text-ink-950">
       <div className="mx-auto flex h-full w-full max-w-[480px] flex-col overflow-hidden bg-surface">
-        <DemoRoleSwitcher />
         <main className="relative min-h-0 flex-1 overflow-y-auto">
           <Outlet context={{ openDrawer } satisfies CitizenShell} />
         </main>

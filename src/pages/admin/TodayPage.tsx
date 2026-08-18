@@ -4,12 +4,12 @@ import FieldToday from '../../components/today/FieldToday';
 import { useAdminRole } from '../../hooks/useAdminRole';
 
 /**
- * 오늘 할 일 — 관리자 PC의 첫 화면.
+ * 운영 현황 — 관리자 PC의 첫 화면.
  *
  * 같은 데이터를 쓰지만 역할에 따라 우선순위가 다르다.
- *   - 시청 관리자 : 화성시 전체에서 확인·조치할 곳
+ *   - 시청 관리자 : 화성시 전체 거점의 운영 상태와 확인이 필요한 곳
  *   - 현장 담당자 : 우리 거점에서 입력·처리할 것
- * 역할 전환은 상단 바에서 한다.
+ * 역할 전환은 우측 상단 프로필 메뉴에서 한다.
  */
 export default function TodayPage() {
   const { role } = useAdminRole();
@@ -17,10 +17,10 @@ export default function TodayPage() {
   return (
     <div>
       <PageHeader
-        title="오늘 할 일"
+        title="운영 현황"
         description={
           role === 'admin'
-            ? '지금 확인하고 조치해야 할 건을 먼저 보여 드립니다. 통계는 화면 맨 아래에 있습니다.'
+            ? '화성시 전체 거점의 운영 상태와 확인이 필요한 곳을 한눈에 봅니다.'
             : '우리 거점에서 지금 입력할 것과 처리할 건만 모았습니다.'
         }
       />
