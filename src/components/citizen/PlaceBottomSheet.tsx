@@ -195,7 +195,7 @@ export default function PlaceBottomSheet({
           )}
 
           {/* 물품 요약 카드 */}
-          <div className="mt-3 rounded-card border border-line-200 bg-paper px-4 py-2.5">
+          <div className="mt-3 rounded-card border border-line-200 bg-paper px-4 py-2">
             <p className="text-note font-bold text-ink-600">
               {status.closed ? '최근 확인된 물품' : '현재 확인된 물품'}
             </p>
@@ -219,7 +219,7 @@ export default function PlaceBottomSheet({
               </button>
             )}
 
-            <p className={`mt-1.5 text-note ${isStale ? 'text-warn-600' : 'text-ink-400'}`}>
+            <p className={`mt-1 text-note font-normal ${isStale ? 'text-warn-500' : 'text-ink-400'}`}>
               {isStale ? `${checkedText} · 최신 정보가 아닐 수 있어요` : checkedText}
             </p>
           </div>
