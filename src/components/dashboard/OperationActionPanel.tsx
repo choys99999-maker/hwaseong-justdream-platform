@@ -65,31 +65,40 @@ function MetricTile({ label, value, unit }: { label: string; value: number; unit
   );
 }
 
-const KIND_BADGE: Record<ActionKind, string> = {
-  '부족': 'bg-rose-50 text-rose-700 ring-rose-600/20',
-  '유통기한 임박': 'bg-amber-50 text-amber-700 ring-amber-600/20',
-  '자료 확인 필요': 'bg-slate-100 text-slate-600 ring-slate-500/20',
+/** Action Dock 왼쪽 상태 indicator 색. danger=부족, warning=유통기한 임박, information=자료 확인 필요. */
+const KIND_INDICATOR: Record<ActionKind, string> = {
+  '부족': '#E5484D',
+  '유통기한 임박': '#F59E0B',
+  '자료 확인 필요': '#004696',
 };
 
+const KIND_TEXT: Record<ActionKind, string> = {
+  '부족': 'text-[#C0271F]',
+  '유통기한 임박': 'text-[#A5620A]',
+  '자료 확인 필요': 'text-[#475569]',
+};
+
+/** Action Dock 안에서 한 row = 한 divider 구분선. 개별 카드로 만들지 않는다(section 18). */
 function ActionItemRow({ item, showSite = true }: { item: OperationActionItem; showSite?: boolean }) {
   return (
-    <li className="rounded-lg border border-slate-100 bg-white px-3 py-2.5 text-sm">
-      <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 font-medium text-slate-800">
-          {showSite && <span className="mr-1">{item.siteName}</span>}
-          {item.summary}
+    <li
+      className="flex gap-2.5 px-3 py-2.5 text-sm transition-colors duration-150 hover:translate-x-0.5 hover:bg-[#F8FAFC]"
+      style={{ borderLeft: `3px solid ${KIND_INDICATOR[item.kind]}` }}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 font-medium text-slate-800">
+            {showSite && <span className="mr-1">{item.siteName}</span>}
+            {item.summary}
+          </p>
+          <span className={`shrink-0 text-[11px] font-medium ${KIND_TEXT[item.kind]}`}>{item.kind}</span>
+        </div>
+        <p className="mt-1 flex items-center gap-1 text-xs text-[#004696]">
+          <ArrowRight size={13} className="shrink-0" />
+          {item.suggestion}
         </p>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${KIND_BADGE[item.kind]}`}
-        >
-          {item.kind}
-        </span>
+        {showSite && <p className="mt-0.5 text-[11px] text-slate-400">{item.districtName}</p>}
       </div>
-      <p className="mt-1 flex items-center gap-1 text-xs text-teal-700">
-        <ArrowRight size={13} className="shrink-0" />
-        {item.suggestion}
-      </p>
-      {showSite && <p className="mt-0.5 text-[11px] text-slate-400">{item.districtName}</p>}
     </li>
   );
 }
@@ -111,13 +120,13 @@ function ActionItemList({
 }) {
   return (
     <div className="mt-4">
-      <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
+      <h4 className="text-sm font-semibold text-[#182230]">{title}</h4>
       {items.length === 0 ? (
         <p className="mt-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
           {emptyMessage}
         </p>
       ) : (
-        <ul className="mt-2 space-y-2">
+        <ul className="mt-2 divide-y divide-[rgba(20,50,80,0.06)] overflow-hidden rounded-[12px] border border-[rgba(20,50,80,0.06)]">
           {items.map((item) => (
             <ActionItemRow key={item.id} item={item} showSite={showSite} />
           ))}
@@ -126,7 +135,7 @@ function ActionItemList({
       {linkTo && (
         <Link
           to={linkTo}
-          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[#004696] hover:text-[#073B74] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
         >
           {linkLabel}
           <ArrowRight size={12} />
@@ -141,20 +150,21 @@ function NormalSitesList({ sites }: { sites: OperationSite[] }) {
   const visible = sites.slice(0, ACTION_LIST_LIMIT);
   return (
     <div className="mt-4">
-      <h4 className="text-sm font-semibold text-slate-900">정상 운영 중인 거점</h4>
+      <h4 className="text-sm font-semibold text-[#182230]">정상 운영 중인 거점</h4>
       {visible.length === 0 ? (
         <p className="mt-2 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-slate-400">
           정상 운영 중인 거점이 없습니다.
         </p>
       ) : (
-        <ul className="mt-2 space-y-1.5">
+        <ul className="mt-2 divide-y divide-[rgba(20,50,80,0.06)] overflow-hidden rounded-[12px] border border-[rgba(20,50,80,0.06)]">
           {visible.map((site) => (
             <li
               key={site.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm text-emerald-800"
+              className="flex items-center justify-between gap-2 px-3 py-2.5 text-sm transition-colors duration-150 hover:translate-x-0.5 hover:bg-[#F8FAFC]"
+              style={{ borderLeft: '3px solid #16A36A' }}
             >
-              <span className="min-w-0 truncate font-medium">{site.displayName}</span>
-              <span className="shrink-0 text-xs text-emerald-600">{REGION_NAMES[site.district]}</span>
+              <span className="min-w-0 truncate font-medium text-slate-800">{site.displayName}</span>
+              <span className="shrink-0 text-xs text-slate-400">{REGION_NAMES[site.district]}</span>
             </li>
           ))}
         </ul>
@@ -201,7 +211,7 @@ export default function OperationActionPanel({
         <button
           type="button"
           onClick={onClearSite}
-          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-[#004696] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
         >
           <ArrowLeft size={16} />
           {selectedDistrict ? `${REGION_NAMES[selectedDistrict]} 요약으로 돌아가기` : '화성시 전체 요약으로 돌아가기'}
@@ -234,7 +244,7 @@ export default function OperationActionPanel({
         <div className="mt-3">
           <p className="mb-2 text-xs font-semibold text-slate-700">지금 확인할 사항</p>
           {siteActions.length === 0 ? (
-            <div className="flex items-center gap-2 rounded-lg bg-teal-50 px-3 py-2.5 text-sm text-teal-700">
+            <div className="flex items-center gap-2 rounded-lg bg-[#EAF8F2] px-3 py-2.5 text-sm text-[#16A36A]">
               <span className="font-bold">✓</span>
               특이사항 없이 운영 중입니다.
             </div>
@@ -283,13 +293,13 @@ export default function OperationActionPanel({
         <div className="mt-auto space-y-1.5 pt-4">
           <Link
             to={`/admin/sites/${selectedSite.id}`}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#004696] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#073B74] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] focus-visible:ring-offset-2"
           >
             거점 상세 열기
           </Link>
           <Link
             to={`/admin/regions/${selectedSite.district}?site=${selectedSite.id}`}
-            className="block w-full text-center text-xs font-medium text-slate-500 transition-colors hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="block w-full text-center text-xs font-medium text-slate-500 transition-colors hover:text-[#004696] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
           >
             소속 구 현황 보기
           </Link>
@@ -306,7 +316,7 @@ export default function OperationActionPanel({
         <button
           type="button"
           onClick={() => onSelectDistrict(null)}
-          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-[#004696] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
         >
           <ArrowLeft size={16} />
           화성시 전체 요약으로 돌아가기

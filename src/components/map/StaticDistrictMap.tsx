@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Minus, Plus, RotateCw } from 'lucide-react';
-import type { DistrictId, OperationSite, SiteStatus } from '../../types';
-import { districtBoundaries, getDistrictBBox } from '../../data/districtBoundaries';
+import type { BoundaryRing, DistrictId, OperationSite, SiteStatus } from '../../types';
+import { HWASEONG_BBOX, districtBoundaries, getDistrictBBox } from '../../data/districtBoundaries';
 import { SITE_STATUS_COLORS, SITE_STATUS_LABELS } from '../../data/regionMeta';
 import {
   bboxOfPoints,
@@ -26,13 +26,19 @@ import type { MapFocusRequest } from './mapTypes';
  */
 
 const POLYGON_STYLE = {
-  base: { strokeWidth: 1, strokeOpacity: 0.7, fillOpacity: 0.2 },
-  hover: { strokeWidth: 1.5, strokeOpacity: 1, fillOpacity: 0.34 },
-  selected: { strokeWidth: 1.5, strokeOpacity: 1, fillOpacity: 0.3 },
-  dimmed: { strokeWidth: 0.75, strokeOpacity: 0.3, fillOpacity: 0.08 },
+  base: { strokeWidth: 1, strokeOpacity: 0.5, fillOpacity: 0.06 },
+  hover: { strokeWidth: 1, strokeOpacity: 0.7, fillOpacity: 0.11 },
+  selected: { strokeWidth: 1, strokeOpacity: 0.9, fillOpacity: 0.17 },
+  dimmed: { strokeWidth: 1, strokeOpacity: 0.3, fillOpacity: 0.03 },
 } as const;
 
-const OUTLINE_COLOR = '#475569';
+/** 구마다 다른 원색을 쓰지 않고 화성시 전체를 한 톤(Hwaseong Blue)으로 통일한다. */
+const HWASEONG_BLUE = '#004696';
+const OUTLINE_COLOR = '#183B63';
+/** 화성시 바깥을 눌러 화성시 자체가 지도의 주인공이 되게 하는 마스크. */
+const OUTSIDE_MASK_COLOR = '#0B2547';
+const OUTSIDE_MASK_OPACITY = 0.32;
+const MASK_PADDING_DEG = 1.5;
 const FIT_PADDING = 20;
 /** 검색으로 특정 거점을 고를 때의 표시 범위(도). 약 1km 안쪽이 보인다. */
 const FOCUS_SPAN_DEG = 0.012;
@@ -59,7 +65,6 @@ interface StaticDistrictMapProps {
 
 export default function StaticDistrictMap({
   sites,
-  districtRiskLevels,
   selectedDistrict,
   selectedSiteId,
   onSelectDistrict,
@@ -133,6 +138,17 @@ export default function StaticDistrictMap({
   );
 
   const coincidentShifts = useMemo(() => computeCoincidentShifts(sites), [sites]);
+
+  /** 화성시 바깥 마스크 — 화성시보다 큰 사각형에서 각 구 외곽선을 구멍으로 뚫는다(evenodd). */
+  const maskRings = useMemo<BoundaryRing[]>(() => {
+    const outer: BoundaryRing = [
+      [HWASEONG_BBOX[0] - MASK_PADDING_DEG, HWASEONG_BBOX[1] - MASK_PADDING_DEG],
+      [HWASEONG_BBOX[2] + MASK_PADDING_DEG, HWASEONG_BBOX[1] - MASK_PADDING_DEG],
+      [HWASEONG_BBOX[2] + MASK_PADDING_DEG, HWASEONG_BBOX[3] + MASK_PADDING_DEG],
+      [HWASEONG_BBOX[0] - MASK_PADDING_DEG, HWASEONG_BBOX[3] + MASK_PADDING_DEG],
+    ];
+    return [outer, ...districtBoundaries.flatMap((district) => district.outline)];
+  }, []);
 
   const visibleSites = useMemo(
     () =>
@@ -260,9 +276,17 @@ export default function StaticDistrictMap({
                 onClick={handleBackgroundClick}
               />
 
-              {/* 읍면동 폴리곤 — 구 상태 색으로 칠한다 */}
+              {/* 화성시 바깥을 눌러 화성시 자체가 지도의 주인공이 되게 하는 마스크 */}
+              <path
+                d={ringsToPath(maskRings, projector)}
+                fill={OUTSIDE_MASK_COLOR}
+                fillOpacity={OUTSIDE_MASK_OPACITY}
+                fillRule="evenodd"
+                pointerEvents="none"
+              />
+
+              {/* 읍면동 폴리곤 — 구마다 다른 색이 아니라 화성시 전체를 한 톤(브랜드 블루)으로 통일한다 */}
               {districtBoundaries.map((district) => {
-                const colors = SITE_STATUS_COLORS[districtRiskLevels[district.id]];
                 const isSelected = selectedDistrict === district.id;
                 const isDimmed = selectedDistrict !== null && !isSelected;
                 const style = isSelected
@@ -292,10 +316,10 @@ export default function StaticDistrictMap({
                         <path
                           key={`${area.code}-${index}`}
                           d={ringsToPath(rings, projector)}
-                          fill={colors.fill}
+                          fill={HWASEONG_BLUE}
                           fillOpacity={style.fillOpacity}
                           fillRule="evenodd"
-                          stroke={colors.stroke}
+                          stroke="#ffffff"
                           strokeOpacity={style.strokeOpacity}
                           strokeWidth={style.strokeWidth}
                         />
@@ -343,6 +367,7 @@ export default function StaticDistrictMap({
                     type="button"
                     className="gj-marker"
                     data-selected={String(isSelected)}
+                    data-status={site.status}
                     data-place="right"
                     data-coincident={shift !== 0 ? 'true' : undefined}
                     aria-label={`${site.name} · ${SITE_STATUS_LABELS[site.status]}`}
@@ -403,7 +428,7 @@ export default function StaticDistrictMap({
 
       {/* 상단 — 왜 대체 지도인지 알린다 */}
       {notice && (
-        <div className="absolute left-1/2 top-3 z-10 flex max-w-[calc(100%-6rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 bg-amber-50/95 px-3 py-1 text-[11px] text-amber-900 shadow-sm">
+        <div className="absolute left-1/2 top-16 z-10 flex max-w-[calc(100%-6rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200 bg-amber-50/95 px-3 py-1 text-[11px] text-amber-900 shadow-sm">
           <span className="truncate">{notice}</span>
           {onRetryKakao && (
             <button

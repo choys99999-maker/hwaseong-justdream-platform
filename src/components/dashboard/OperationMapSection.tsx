@@ -6,7 +6,7 @@ import DistrictFilter from '../map/DistrictFilter';
 import MapLegend from '../map/MapLegend';
 import MapSearch from '../map/MapSearch';
 import OperationActionPanel from './OperationActionPanel';
-import OperationKpiBar, { type KpiStatus } from './OperationKpiBar';
+import type { KpiStatus } from './OperationKpiBar';
 import { mockSites, getSiteById } from '../../data/mockSites';
 import { districtRiskLevels } from '../../data/operationSummary';
 import { REGION_NAMES } from '../../data/regionMeta';
@@ -190,6 +190,19 @@ export default function OperationMapSection() {
   const selectedSite = getSiteById(selectedSiteId);
   const hasSecondaryFilters = facilityTypeFilter !== 'ALL' || statusFilter !== 'ALL';
 
+  /**
+   * 지도 위 floating KPI — 실제 거점 명단의 운영 상태 집계다. 만들어낸 수치가 아니다.
+   * 구를 선택하면 kpiScopeSites 를 따라 그 구 범위로 좁혀진다(origin OperationKpiBar 와 동일한 규칙).
+   * 칩을 누르면 kpiFilter 를 바꿔 지도 마커·우측 패널이 그 상태 기준으로 함께 바뀐다.
+   */
+  const kpiCounts = {
+    total: kpiScopeSites.length,
+    normal: kpiScopeSites.filter((site) => site.status === 'normal').length,
+    shortage: kpiScopeSites.filter((site) => site.status === 'shortage').length,
+    needsCheck: kpiScopeSites.filter((site) => site.status === 'expiring' || site.status === 'missing').length,
+  };
+  const kpiTotalLabel = selectedDistrict ? `${REGION_NAMES[selectedDistrict]} 거점` : '전체 거점';
+
   const totalSiteCount = mockSites.length;
   const visibleSiteCount = useMemo(
     () =>
@@ -220,36 +233,28 @@ export default function OperationMapSection() {
       };
 
   return (
-    <div className="space-y-3">
-      {/* ── KPI 바: 전체 상태 → 어디가 문제인지 판단하는 첫 단계이자 지도 필터 ── */}
-      {!isFocusMode && (
-        <OperationKpiBar
-          scopeSites={kpiScopeSites}
-          districtName={selectedDistrict ? REGION_NAMES[selectedDistrict] : null}
-          value={kpiFilter}
-          onChange={setKpiFilter}
-          onClearDistrict={() => handleSelectDistrict(null)}
-        />
-      )}
-
-      <section style={sectionStyle}>
-      {/* ── 지도 카드 ── */}
+    <section style={sectionStyle}>
+      {/* ── 지도 카드 — hero surface. 첫 화면의 절대적인 주인공이라 카드보다 큰 존재감을 준다.
+          origin 의 OperationKpiBar 는 별도로 렌더링하지 않는다 — 그 데이터/필터 로직(kpiFilter,
+          kpiScopeSites)은 지도 위 floating KPI 칩(MapKpiChip)에 그대로 연결해 KPI 가 두 번
+          보이지 않게 한다. ── */}
       <div
         className={
           isFocusMode
             ? 'fixed inset-0 z-[60] flex flex-col bg-white'
-            : 'relative flex flex-col rounded-xl border border-slate-200 bg-white p-4'
+            : 'hci-scale-in relative flex flex-col rounded-[20px] border border-[rgba(20,50,80,0.08)] bg-white p-4 shadow-[0_1px_2px_rgba(16,24,40,0.03),0_16px_40px_rgba(30,64,100,0.07)]'
         }
+        style={isFocusMode ? undefined : { animationDelay: '160ms' }}
       >
-        {/* 제목 + 확장 버튼 (일반 모드만) */}
+        {/* 제목 + 확장 버튼 (일반 모드만) — 검색·필터보다도 낮은 위계로, 지도 자체를 가리지 않는다 */}
         {!isFocusMode && (
           <div className="mb-2 flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-900">화성시 거점 운영 지도</h3>
+            <h3 className="text-[13px] font-medium text-[#667085]">화성시 거점 운영 지도</h3>
             <button
               type="button"
               onClick={openFocusMode}
               aria-label="지도 크게 보기"
-              className="inline-flex shrink-0 items-center gap-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-500 transition-colors hover:border-teal-300 hover:bg-teal-50/40 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+              className="inline-flex shrink-0 items-center gap-1 rounded border border-[rgba(20,50,80,0.1)] bg-white px-2 py-1 text-xs text-slate-500 transition-colors hover:border-[#004696]/30 hover:bg-[#EAF3FC] hover:text-[#004696] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
             >
               <Expand size={13} />
               전체화면
@@ -258,12 +263,12 @@ export default function OperationMapSection() {
         )}
 
         {/* 검색 + 필터 — 단일 행, compact. 기본으로 보이는 건 검색·구·사업유형뿐이고
-            시설유형·운영상태는 "필터" 팝오버 안으로 옮겼다. */}
+            시설유형·운영상태는 "필터" 팝오버 안으로 옮겼다. 지도보다 눈에 띄지 않도록 낮춘 위계다. */}
         <div
           className={
             isFocusMode
               ? 'absolute left-4 top-4 z-10 flex flex-wrap items-center gap-1.5 rounded-lg bg-white/95 px-3 py-2 shadow-md'
-              : 'flex flex-wrap items-center gap-1.5'
+              : 'flex h-[41px] flex-wrap items-center gap-1.5 rounded-[10px] border border-[rgba(20,50,80,0.06)] bg-[#F8FAFC] px-2'
           }
           role="group"
           aria-label="지도 검색 및 필터"
@@ -351,6 +356,49 @@ export default function OperationMapSection() {
         <div
           className={`${isFocusMode ? 'relative flex-1' : 'relative mt-2 h-[clamp(440px,calc(100vh-420px),720px)]'}${selectionSource === 'SEARCH' ? ' gj-map-search-active' : ''}`}
         >
+          {/* 지도 위 floating KPI — "카드 여러 개"가 아니라 지도 일부처럼 보이도록 좌상단에 얹는다.
+              전체화면 모드는 검색·필터 오버레이가 같은 자리를 쓰므로 기본 화면에서만 보여준다. */}
+          {!isFocusMode && (
+            <div
+              className="absolute left-3 top-3 z-10 flex gap-2"
+              role="group"
+              aria-label="화성시 운영 현황 요약"
+            >
+              <MapKpiChip
+                label={kpiTotalLabel}
+                value={kpiCounts.total}
+                color="#004696"
+                delay={340}
+                active={kpiFilter === 'ALL'}
+                onClick={() => setKpiFilter('ALL')}
+              />
+              <MapKpiChip
+                label="정상 운영"
+                value={kpiCounts.normal}
+                color="#16A36A"
+                delay={375}
+                active={kpiFilter === 'normal'}
+                onClick={() => setKpiFilter('normal')}
+              />
+              <MapKpiChip
+                label="물품 부족"
+                value={kpiCounts.shortage}
+                color="#E5484D"
+                delay={410}
+                active={kpiFilter === 'shortage'}
+                onClick={() => setKpiFilter('shortage')}
+              />
+              <MapKpiChip
+                label="확인 필요"
+                value={kpiCounts.needsCheck}
+                color="#DC6E2D"
+                delay={445}
+                active={kpiFilter === 'needsCheck'}
+                onClick={() => setKpiFilter('needsCheck')}
+              />
+            </div>
+          )}
+
           <KakaoDistrictMap
             sites={mockSites}
             districtRiskLevels={districtRiskLevels}
@@ -403,9 +451,12 @@ export default function OperationMapSection() {
         )}
       </div>
 
-      {/* ── 우측 패널 (접기/펼치기) ── */}
+      {/* ── 우측 Action Dock (접기/펼치기) — 지도 위에 뜬 카드처럼, 지도보다 튀지 않게 ── */}
       {!isFocusMode && (
-        <div className="relative flex flex-col rounded-xl border border-slate-200 bg-white">
+        <div
+          className="hci-slide-in-right relative flex flex-col rounded-[18px] border border-[rgba(20,50,80,0.08)] bg-white/96 shadow-[0_18px_44px_rgba(22,55,90,0.10)]"
+          style={{ animationDelay: '520ms' }}
+        >
           {/* 패널 토글 버튼 — 카드 왼쪽 경계에 걸쳐 떠 있음.
               위아래로 쌓인 좁은 화면에서는 접을 이유가 없으므로 토글도 감춘다. */}
           {!isNarrow && (
@@ -414,7 +465,7 @@ export default function OperationMapSection() {
               onClick={() => setIsPanelCollapsed((v) => !v)}
               aria-label={isPanelCollapsed ? '운영 패널 펼치기' : '운영 패널 접기'}
               aria-expanded={!isPanelCollapsed}
-              className="absolute left-0 top-5 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-sm transition-colors hover:border-teal-300 hover:text-teal-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+              className="absolute left-0 top-5 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-[rgba(20,50,80,0.1)] bg-white text-slate-400 shadow-sm transition-colors hover:border-[#004696]/30 hover:text-[#004696] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
             >
               {isPanelCollapsed ? <ChevronLeft size={13} /> : <ChevronRight size={13} />}
             </button>
@@ -430,6 +481,8 @@ export default function OperationMapSection() {
             }}
             aria-hidden={collapsed}
           >
+            {/* 별도 제목을 두지 않는다 — OperationActionPanel 이 모드별로(화성시 전체/구 이름/거점 이름)
+                자기 제목을 직접 낸다. 위에 "선택 지역·기관 요약" 을 또 얹으면 제목이 두 번 보인다. */}
             <div className="min-h-0 flex-1 overflow-y-auto">
               <OperationActionPanel
                 selectedDistrict={selectedDistrict}
@@ -459,7 +512,45 @@ export default function OperationMapSection() {
           )}
         </div>
       )}
-      </section>
-    </div>
+    </section>
+  );
+}
+
+/**
+ * 지도 위 floating KPI 칩. 숫자만 상태색이고 카드 배경은 항상 흰색이다(면적으로 상태색을 쓰지 않는다).
+ * 동시에 지도 필터 버튼이다 — 누르면 그 상태의 거점만 지도·우측 패널에 남는다(origin KpiButton과 동일 규칙).
+ */
+function MapKpiChip({
+  label,
+  value,
+  color,
+  delay,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  color: string;
+  delay: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="hci-fade-up flex min-w-[76px] flex-col rounded-[14px] border bg-white/94 px-3 py-1.5 text-left shadow-[0_8px_24px_rgba(30,64,100,0.06)] transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
+      style={{
+        animationDelay: `${delay}ms`,
+        borderColor: active ? color : 'rgba(20,50,80,0.08)',
+        boxShadow: active ? `0 0 0 1.5px ${color}, 0 8px 24px rgba(30,64,100,0.06)` : undefined,
+      }}
+    >
+      <span className="text-[20px] font-bold leading-tight tabular-nums" style={{ color }}>
+        {value}
+      </span>
+      <span className="text-[11px] font-medium text-[#667085]">{label}</span>
+    </button>
   );
 }

@@ -125,6 +125,78 @@ body {
 
 /*
  * ─────────────────────────────────────────────────────────────────────────────
+ * 관리자 메인 화면(Hwaseong Civic Intelligence) 진입 애니메이션.
+ * "화면이 조립되는" 느낌을 주는 절제된 fade/scale/slide 뿐이다 — bounce·spring 없음.
+ * KakaoDistrictMap/StaticDistrictMap 마커·구역 KPI 도 이 파일의 규칙을 함께 쓴다.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+@keyframes hciFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hciScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes hciSlideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes hciPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.hci-fade-up {
+  animation: hciFadeUp 380ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.hci-scale-in {
+  animation: hciScaleIn 380ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.hci-slide-in-right {
+  animation: hciSlideInRight 360ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hci-fade-up,
+  .hci-scale-in,
+  .hci-slide-in-right,
+  .gj-marker.hci-pop {
+    animation: none !important;
+  }
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
  * 관리자 지도(KakaoDistrictMap) 마커. 시민 화면과 무관하며 이번 개편 대상이 아니다.
  * React 트리 밖(CustomOverlay)에서 만드는 DOM 이라 여기서 스타일을 정의한다.
  * ─────────────────────────────────────────────────────────────────────────────
@@ -157,6 +229,47 @@ body {
     width 120ms ease-in-out,
     height 120ms ease-in-out,
     box-shadow 120ms ease-in-out;
+}
+
+.gj-marker.hci-pop {
+  animation: hciPopIn 240ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* 마커 3단계 — 정상은 손대지 않고, 주의는 살짝 크게, 부족/긴급만 강조 + pulse. */
+.gj-marker[data-status='expiring']::before,
+.gj-marker[data-status='missing']::before {
+  width: 13px;
+  height: 13px;
+}
+
+.gj-marker[data-status='shortage'] {
+  z-index: 1;
+}
+
+.gj-marker[data-status='shortage']::before {
+  width: 14px;
+  height: 14px;
+  animation: gjCriticalPulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes gjCriticalPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 1px 1.5px rgb(15 23 42 / 0.22),
+      0 0 0 0 rgba(244, 63, 94, 0.32);
+  }
+  50% {
+    box-shadow:
+      0 1px 1.5px rgb(15 23 42 / 0.22),
+      0 0 0 8px rgba(244, 63, 94, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gj-marker[data-status='shortage']::before {
+    animation: none !important;
+  }
 }
 
 .gj-marker[data-coincident='true'] {
@@ -299,39 +412,56 @@ body {
   box-shadow: 0 2px 6px rgb(15 23 42 / 0.14);
 }
 
-.gj-cluster {
+/*
+ * 구 단위 요약 — 지도 위 floating KPI 라벨. 원형 배지 대신 화이트 카드로 두어
+ * "행정구역마다 알록달록"이 아니라 지도 자체(브랜드 블루)와 한 톤으로 읽히게 한다.
+ */
+.gj-region-kpi {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 1px;
-  width: 44px;
-  height: 44px;
-  border-radius: 9999px;
-  background: rgba(0, 84, 166, 0.9);
-  border: 2.5px solid #ffffff;
-  color: #ffffff;
-  line-height: 1;
+  min-width: 88px;
+  padding: 7px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(20, 50, 80, 0.08);
+  box-shadow: 0 8px 20px rgba(30, 64, 100, 0.09);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgb(15 23 42 / 0.32), 0 0 0 6px rgba(0, 84, 166, 0.14);
-  transition: transform 100ms ease-in-out, box-shadow 100ms ease-in-out;
+  text-align: center;
+  line-height: 1.3;
   user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 160ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 160ms ease-in-out;
 }
 
-.gj-cluster-count {
-  font-size: 15px;
+.gj-region-kpi:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px rgba(30, 64, 100, 0.13);
+}
+
+.gj-region-kpi-name {
+  font-size: 13px;
   font-weight: 700;
+  color: #182230;
 }
 
-.gj-cluster-name {
-  font-size: 9px;
+.gj-region-kpi-count {
+  font-size: 11.5px;
   font-weight: 500;
-  opacity: 0.9;
+  color: #667085;
 }
 
-.gj-cluster:hover {
-  transform: scale(1.09);
-  box-shadow: 0 4px 12px rgb(15 23 42 / 0.38), 0 0 0 9px rgba(0, 84, 166, 0.2);
+.gj-region-kpi-alert {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #dc6e2d;
+}
+
+.gj-region-kpi-alert[hidden] {
+  display: none;
 }
 
 /*

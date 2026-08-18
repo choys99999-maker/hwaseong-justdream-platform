@@ -95,7 +95,7 @@ export default function MapSearch({ sites, onSelectSite, onClearSearch, classNam
 
   return (
     <div ref={containerRef} className={className ?? 'relative w-56 shrink-0'}>
-      <div className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 shadow-sm focus-within:border-teal-400 focus-within:ring-2 focus-within:ring-teal-500/40">
+      <div className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 shadow-sm focus-within:border-[#004696]/50 focus-within:ring-2 focus-within:ring-[#004696]/30">
         <Search size={14} className="shrink-0 text-slate-400" aria-hidden />
         <input
           ref={inputRef}
@@ -127,7 +127,7 @@ export default function MapSearch({ sites, onSelectSite, onClearSearch, classNam
               inputRef.current?.focus();
             }}
             aria-label="검색어 지우기"
-            className="shrink-0 rounded p-0.5 text-slate-300 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+            className="shrink-0 rounded p-0.5 text-slate-300 hover:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
           >
             <X size={13} />
           </button>
@@ -151,7 +151,7 @@ export default function MapSearch({ sites, onSelectSite, onClearSearch, classNam
                   onMouseEnter={() => setActiveIndex(i)}
                   onClick={() => commitSelection(entry)}
                   className={`flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left ${
-                    i === activeIndex ? 'bg-teal-50' : 'hover:bg-slate-50'
+                    i === activeIndex ? 'bg-[#EAF3FC]' : 'hover:bg-slate-50'
                   }`}
                 >
                   <span className="text-xs font-medium text-slate-800">{entry.site.name}</span>

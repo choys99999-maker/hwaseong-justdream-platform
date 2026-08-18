@@ -10,24 +10,34 @@ import type { MapFocusRequest } from './mapTypes';
 
 export type { MapFocusRequest } from './mapTypes';
 
-/** 폴리곤 표현 기준. 지명과 도로가 읽히도록 기본 채도를 낮게 유지한다. */
+/**
+ * 폴리곤 표현 기준. 구마다 다른 원색을 쓰지 않고 모두 Hwaseong Blue 한 톤 안에서
+ * 옅음(기본) → 진함(hover/선택)으로만 구분한다 — "문제 있는 구"는 지도 위 KPI 라벨과
+ * 개별 거점 마커 색으로 전달하고, 폴리곤은 화성시 자체를 브랜드 오브젝트로 보여주는 역할만 한다.
+ */
+const HWASEONG_BLUE = '#004696';
 const POLYGON_STYLE = {
-  base: { strokeWeight: 2, strokeOpacity: 0.85, fillOpacity: 0.18, zIndex: 1 },
-  hover: { strokeWeight: 3, strokeOpacity: 1, fillOpacity: 0.28, zIndex: 3 },
-  selected: { strokeWeight: 3, strokeOpacity: 1, fillOpacity: 0.24, zIndex: 4 },
-  dimmed: { strokeWeight: 1, strokeOpacity: 0.35, fillOpacity: 0.07, zIndex: 1 },
+  base: { strokeWeight: 1, strokeOpacity: 0.5, fillOpacity: 0.06, zIndex: 1 },
+  hover: { strokeWeight: 1, strokeOpacity: 0.7, fillOpacity: 0.11, zIndex: 3 },
+  selected: { strokeWeight: 1, strokeOpacity: 0.9, fillOpacity: 0.17, zIndex: 4 },
+  dimmed: { strokeWeight: 1, strokeOpacity: 0.3, fillOpacity: 0.03, zIndex: 1 },
 } as const;
 
 /**
- * 구 경계선. 읍면동 경계(strokeWeight 1~3)보다는 굵되, 카카오맵 지명·도로를 덮지 않도록
- * 중간 회색·반투명으로 눌러 둔다. 상태 색상(fill)은 그대로 두고 경계선만 얹는다.
+ * 구 경계선. 읍면동 경계보다 굵게, 화성시 외곽이 지도에서 즉시 인지되도록 짙은 남색으로 얹는다.
  */
-const DISTRICT_OUTLINE_COLOR = '#475569';
+const DISTRICT_OUTLINE_COLOR = '#183B63';
 const DISTRICT_OUTLINE_STYLE = {
-  base: { strokeWeight: 3, strokeOpacity: 0.75, zIndex: 6 },
-  selected: { strokeWeight: 4, strokeOpacity: 0.9, zIndex: 8 },
-  dimmed: { strokeWeight: 2, strokeOpacity: 0.25, zIndex: 6 },
+  base: { strokeWeight: 2.2, strokeOpacity: 0.8, zIndex: 6 },
+  selected: { strokeWeight: 2.8, strokeOpacity: 0.95, zIndex: 8 },
+  dimmed: { strokeWeight: 1.5, strokeOpacity: 0.3, zIndex: 6 },
 } as const;
+
+/** 화성시 바깥 지역을 눌러 화성시 자체가 지도의 주인공이 되게 하는 마스크 색. */
+const OUTSIDE_MASK_COLOR = '#0B2547';
+const OUTSIDE_MASK_OPACITY = 0.32;
+/** 마스크 사각형이 화면 팬닝에도 항상 화면을 덮도록 화성시 범위 밖으로 넉넉히 잡는 여백(도). */
+const MASK_PADDING_DEG = 1.5;
 
 const BOUNDS_PADDING = 24;
 /**
@@ -90,18 +100,28 @@ interface ClusterEntry {
   districtId: DistrictId;
   overlay: KakaoCustomOverlay;
   countElement: HTMLSpanElement;
+  alertElement: HTMLParagraphElement;
   element: HTMLDivElement;
 }
+
+/** 마커가 화면에 나타날 때 살짝 pop 되는 간격(ms). 30~40ms 씩 어긋나 화면이 조립되는 느낌을 준다. */
+const MARKER_POP_STAGGER_MS = 35;
 
 /**
  * 거점 마커 = 상태 원형 + 기관명 라벨. 버튼 하나가 통째로 클릭 타깃이 된다.
  * 라벨은 absolute 라 버튼 크기(12px)를 바꾸지 않으므로 오버레이 앵커가 항상 원 중심이다.
  */
-function createMarkerElement(site: OperationSite, shift: number): { element: HTMLButtonElement; label: HTMLSpanElement } {
+function createMarkerElement(
+  site: OperationSite,
+  shift: number,
+  popIndex: number,
+): { element: HTMLButtonElement; label: HTMLSpanElement } {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'gj-marker';
+  button.className = 'gj-marker hci-pop';
+  button.style.animationDelay = `${popIndex * MARKER_POP_STAGGER_MS}ms`;
   button.style.setProperty('--gj-status', SITE_STATUS_COLORS[site.status].fill);
+  button.dataset.status = site.status;
   button.setAttribute('aria-label', `${site.name} · ${SITE_STATUS_LABELS[site.status]}`);
   button.dataset.selected = 'false';
   button.dataset.place = 'right';
@@ -125,22 +145,37 @@ function createMarkerElement(site: OperationSite, shift: number): { element: HTM
   return { element: button, label };
 }
 
-/** 구 단위 요약 오버레이. 개별 거점 마커와 헷갈리지 않도록 구 이름을 함께 적는다. */
-function createClusterElement(districtName: string): { element: HTMLDivElement; countElement: HTMLSpanElement } {
+/**
+ * 구 단위 요약 오버레이 — 광역 줌에서 지도를 가리지 않는 작은 floating KPI 라벨.
+ * 구 이름 + 거점 수 + (있으면) 확인 필요 수만 담는다. 원형 배지가 아니라 화이트 카드라
+ * 지도 자체(브랜드 블루 폴리곤)와 톤이 부딪히지 않는다.
+ */
+function createRegionKpiElement(districtName: string): {
+  element: HTMLDivElement;
+  countElement: HTMLSpanElement;
+  alertElement: HTMLParagraphElement;
+} {
   const div = document.createElement('div');
-  div.className = 'gj-cluster';
+  div.className = 'gj-region-kpi';
   div.setAttribute('aria-label', `${districtName} 거점 요약`);
 
-  const count = document.createElement('span');
-  count.className = 'gj-cluster-count';
-  count.textContent = '0';
-
-  const name = document.createElement('span');
-  name.className = 'gj-cluster-name';
+  const name = document.createElement('p');
+  name.className = 'gj-region-kpi-name';
   name.textContent = districtName;
 
-  div.append(count, name);
-  return { element: div, countElement: count };
+  const count = document.createElement('span');
+  count.textContent = '0개 거점';
+
+  const countLine = document.createElement('p');
+  countLine.className = 'gj-region-kpi-count';
+  countLine.appendChild(count);
+
+  const alertLine = document.createElement('p');
+  alertLine.className = 'gj-region-kpi-alert';
+  alertLine.hidden = true;
+
+  div.append(name, countLine, alertLine);
+  return { element: div, countElement: count, alertElement: alertLine };
 }
 
 export default function KakaoDistrictMap({
@@ -193,7 +228,6 @@ export default function KakaoDistrictMap({
     const hovered = hoveredDistrictRef.current;
 
     polygonsRef.current.forEach(({ district, polygon }) => {
-      const colors = SITE_STATUS_COLORS[districtRiskLevels[district]];
       const isSelected = selected === district;
       const isDimmed = selected !== null && !isSelected;
       const style = isSelected
@@ -205,8 +239,8 @@ export default function KakaoDistrictMap({
             : POLYGON_STYLE.base;
 
       polygon.setOptions({
-        strokeColor: colors.stroke,
-        fillColor: colors.fill,
+        strokeColor: '#ffffff',
+        fillColor: HWASEONG_BLUE,
         strokeWeight: style.strokeWeight,
         strokeOpacity: style.strokeOpacity,
         fillOpacity: style.fillOpacity,
@@ -229,7 +263,7 @@ export default function KakaoDistrictMap({
       });
       polyline.setZIndex(style.zIndex);
     });
-  }, [districtRiskLevels]);
+  }, []);
 
   /** 선택된 구(없으면 화성시 전체) 실제 outline 좌표로 bounds를 계산해 지도를 맞춘다. */
   const fitMapToDistrict = useCallback((district: DistrictId | null) => {
@@ -342,6 +376,27 @@ export default function KakaoDistrictMap({
         maps.event.addListener(map, 'idle', onIdle);
         cleanupRef.current.push(() => maps.event.removeListener(map, 'idle', onIdle));
 
+        // 화성시 바깥을 눌러 화성시 경계 자체가 지도의 주인공이 되게 하는 마스크.
+        // 화성시보다 훨씬 큰 사각형에서 각 구 외곽선을 구멍으로 뚫어(evenodd) 시 안쪽만 남긴다.
+        const maskOuterRing = [
+          new maps.LatLng(minLat - MASK_PADDING_DEG, minLng - MASK_PADDING_DEG),
+          new maps.LatLng(minLat - MASK_PADDING_DEG, maxLng + MASK_PADDING_DEG),
+          new maps.LatLng(maxLat + MASK_PADDING_DEG, maxLng + MASK_PADDING_DEG),
+          new maps.LatLng(maxLat + MASK_PADDING_DEG, minLng - MASK_PADDING_DEG),
+        ];
+        const maskHoles = districtBoundaries.flatMap((district) =>
+          district.outline.map((ring) => ring.map(([lng, lat]) => new maps.LatLng(lat, lng))),
+        );
+        const maskPolygon = new maps.Polygon({
+          path: [maskOuterRing, ...maskHoles],
+          strokeWeight: 0,
+          fillColor: OUTSIDE_MASK_COLOR,
+          fillOpacity: OUTSIDE_MASK_OPACITY,
+          zIndex: 0,
+        });
+        maskPolygon.setMap(map);
+        cleanupRef.current.push(() => maskPolygon.setMap(null));
+
         // 구 폴리곤
         districtBoundaries.forEach((district) => {
           district.areas.forEach((area) => {
@@ -397,8 +452,8 @@ export default function KakaoDistrictMap({
         // 좌표가 겹치는 거점은 표시 위치만 좌우로 벌린다. (실제 좌표는 그대로)
         const coincidentShifts = computeCoincidentShifts(sites);
 
-        sites.forEach((site) => {
-          const { element, label } = createMarkerElement(site, coincidentShifts.get(site.id) ?? 0);
+        sites.forEach((site, index) => {
+          const { element, label } = createMarkerElement(site, coincidentShifts.get(site.id) ?? 0, index);
           const onClick = (event: MouseEvent) => {
             event.stopPropagation();
             handlersRef.current.onSelectSite(site.id);
@@ -427,7 +482,7 @@ export default function KakaoDistrictMap({
           // bbox 중심은 서해 도서 때문에 만세구에서 바다로 나간다. 구 내부가 보장된 대표점을 쓴다.
           const [centerLng, centerLat] = district.center;
 
-          const { element, countElement } = createClusterElement(district.name);
+          const { element, countElement, alertElement } = createRegionKpiElement(district.name);
           const onClusterClick = (e: MouseEvent) => {
             e.stopPropagation();
             handlersRef.current.onSelectDistrict(district.id);
@@ -447,7 +502,7 @@ export default function KakaoDistrictMap({
             element.removeEventListener('click', onClusterClick);
             overlay.setMap(null);
           });
-          clusterOverlaysRef.current.push({ districtId: district.id, overlay, countElement, element });
+          clusterOverlaysRef.current.push({ districtId: district.id, overlay, countElement, alertElement, element });
         });
 
         paintPolygons();
@@ -501,16 +556,23 @@ export default function KakaoDistrictMap({
     });
 
     // 구 단위 요약 오버레이
-    clusterOverlaysRef.current.forEach(({ districtId, overlay, countElement }) => {
+    clusterOverlaysRef.current.forEach(({ districtId, overlay, countElement, alertElement }) => {
       if (!inClusterMode) {
         overlay.setMap(null);
         return;
       }
-      const count = markersRef.current.filter(
-        (m) => m.site.district === districtId && (!fn || fn(m.site)),
-      ).length;
-      countElement.textContent = String(count);
-      overlay.setMap(count > 0 ? mapRef.current : null);
+      const districtSites = markersRef.current
+        .filter((m) => m.site.district === districtId && (!fn || fn(m.site)))
+        .map((m) => m.site);
+      const needsAttention = districtSites.filter((site) => site.status !== 'normal').length;
+      countElement.textContent = `${districtSites.length}개 거점`;
+      if (needsAttention > 0) {
+        alertElement.textContent = `${needsAttention}곳 확인 필요`;
+        alertElement.hidden = false;
+      } else {
+        alertElement.hidden = true;
+      }
+      overlay.setMap(districtSites.length > 0 ? mapRef.current : null);
     });
 
     scheduleLabelLayout();
