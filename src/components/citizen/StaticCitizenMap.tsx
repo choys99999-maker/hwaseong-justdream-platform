@@ -180,6 +180,7 @@ export default function StaticCitizenMap({
                   data-dim={rankedIds.length > 0 && !isRanked ? 'true' : 'false'}
                   data-selected={place.id === selectedId ? 'true' : 'false'}
                   data-zoomed="false"
+                  data-availability={place.availability}
                   aria-label={`${isRanked ? `추천 ${rank + 1}순위 ` : ''}${place.displayName}`}
                   onClick={() => onSelect(place.id)}
                 >

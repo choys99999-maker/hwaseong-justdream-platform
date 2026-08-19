@@ -82,6 +82,7 @@ function createPinElement(place: CitizenPlace): HTMLButtonElement {
   btn.dataset.selected = 'false';
   btn.dataset.zoomed = 'false';
   btn.dataset.clustered = 'false';
+  btn.dataset.availability = place.availability;
   btn.setAttribute('aria-label', place.displayName);
 
   const dot = document.createElement('span');
