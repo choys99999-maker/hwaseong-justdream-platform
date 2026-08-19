@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ChevronRight, LocateFixed, MapPin, Menu } from 'lucide-react';
 import CitizenMap from '../../components/citizen/CitizenMap';
 import DongPicker from '../../components/citizen/DongPicker';
@@ -30,6 +30,7 @@ import type { AreaCentroid } from '../../data/mockSites';
  */
 export default function HomePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { openDrawer } = useCitizenShell();
   const geo = useGeolocation();
   const { isDemoMode } = useDemoMode();
@@ -51,6 +52,34 @@ export default function HomePage() {
 
   // 위치 요청이 "내 주변 찾기" 버튼에서 시작된 것인지 표시한다. 자동으로 위치를 묻지 않는다.
   const awaitingLocation = useRef(false);
+
+  /**
+   * 지도를 초기 광역 상태로 완전히 되돌린다.
+   * - React state 초기화 → CitizenMap의 선택·추천 표시가 사라짐
+   * - focusToken 증가 → CitizenMap effect 5 재실행 → fitHwaseong() 호출 → 카메라 복원
+   */
+  const resetToOverview = useCallback(() => {
+    setSelectedId(null);
+    setShowItemsPage(false);
+    setShowList(false);
+    setShowDongPicker(false);
+    setFitPoints(null);
+    setOrigin(null);
+    setOriginLabel(null);
+    prevSheetHeightRef.current = 0;
+    awaitingLocation.current = false;
+    setFocusToken((t) => t + 1);
+  }, []);
+
+  // 이미 '/'에 있는 상태에서 Drawer 등으로 다시 '/'로 네비게이션하면 React가 컴포넌트를
+  // remount하지 않아 state가 유지된다. location.key 변경을 감지해 항상 overview로 복귀한다.
+  const locationKeyRef = useRef(location.key);
+  useEffect(() => {
+    if (location.key === locationKeyRef.current) return;
+    locationKeyRef.current = location.key;
+    resetToOverview();
+  }, [location.key, resetToOverview]);
+
   const panelRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
 
@@ -210,9 +239,14 @@ export default function HomePage() {
           <Menu size={24} aria-hidden />
         </button>
         <div className="flex flex-1 justify-center pr-12">
-          <span className="rounded-full bg-surface/95 px-3 py-1.5 shadow-raise ring-[1.5px] ring-ink-950/85 backdrop-blur-sm">
+          <button
+            type="button"
+            onClick={resetToOverview}
+            aria-label="홈으로 돌아가기 — 지도 초기화"
+            className="pointer-events-auto rounded-full bg-surface/95 px-3 py-1.5 shadow-raise ring-[1.5px] ring-ink-950/85 backdrop-blur-sm transition-colors hover:bg-line-50 focus-ring"
+          >
             <Brand />
-          </span>
+          </button>
         </div>
       </div>
 

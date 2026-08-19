@@ -460,12 +460,17 @@ export default function CitizenMap({
 
     return () => {
       mounted = false;
-      teardownRef.current.forEach((fn) => fn());
-      teardownRef.current = [];
+      // 마커·클러스터·현재위치 오버레이를 먼저 명시적으로 제거한다.
+      // 단순히 ref 를 비우기만 하면 Kakao CustomOverlay 인스턴스가 지도에 남아
+      // 컴포넌트 재마운트 시 새 마커와 겹쳐 보이는 중복 버그가 생긴다.
+      markersRef.current.forEach((m) => m.dispose());
       markersRef.current = [];
       clusterOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
       clusterOverlaysRef.current = [];
+      myLocRef.current?.setMap(null);
       myLocRef.current = null;
+      teardownRef.current.forEach((fn) => fn());
+      teardownRef.current = [];
       boundaryRef.current = null;
       mapRef.current = null;
       mapsRef.current = null;
