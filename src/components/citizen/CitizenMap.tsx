@@ -11,9 +11,24 @@ import type {
 import { MissingKakaoKeyError, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
 import { HWASEONG_FOCUS_BBOX, districtBoundaries } from '../../data/districtBoundaries';
 import type { CitizenPlace } from '../../data/citizenDirectory';
+import {
+  createClusterElement,
+  createMarkerElement,
+  createMyLocElement,
+  markerAriaLabel,
+  markerViewOf,
+  summarizeByDistrict,
+} from './mapMarkers';
 import StaticCitizenMap from './StaticCitizenMap';
 
 type MapPhase = 'loading' | 'ready' | 'missing-key' | 'error';
+
+/** 한 곳으로 카메라를 옮길 때의 방식. */
+export type MapFocusMode =
+  /** 거점 하나가 잘 보이는 줌까지 확대하고 가운데로. 검색 결과처럼 "여기다" 를 말할 때. */
+  | 'fit'
+  /** 줌은 그대로 두고 가운데로만. 목록·카드에서 고른 것처럼 맥락을 잃으면 안 될 때. */
+  | 'pan';
 
 interface CitizenMapProps {
   places: CitizenPlace[];
@@ -21,14 +36,21 @@ interface CitizenMapProps {
   onSelect: (id: string | null) => void;
   /**
    * 추천 순서대로의 거점 id. 1순위 하나가 지도에서 가장 강하게 보이고 나머지는 뒤로 물러난다.
-   * 빈 배열이면 전부 같은 크기의 조용한 점으로 깔린다(첫 화면).
+   * 빈 배열이면 전부 같은 크기의 마커로 깔린다(첫 화면).
    */
   rankedIds?: string[];
   userLocation?: { lat: number; lng: number } | null;
   /** 이 좌표들이 한 화면에 다 보이게 맞춘다. `focusToken` 이 바뀔 때 적용된다. */
   fitPoints?: Array<{ lat: number; lng: number }> | null;
+  /** `fitPoints` 가 한 곳일 때의 이동 방식. 기본은 확대까지 하는 'fit'. */
+  focusMode?: MapFocusMode;
   /** 값이 바뀌면 지도 프레이밍을 다시 적용한다. 같은 대상을 다시 눌러도 움직이게 한다. */
   focusToken?: number;
+  /**
+   * 지금 화면에 들어온 거점 id 목록. 하단 카드 목록이 지도와 같은 것을 보게 하는 통로다.
+   * 카카오 지도가 뜬 뒤에만 호출된다 — 대체 지도에서는 호출자가 "전부 보인다" 로 다룬다.
+   */
+  onVisibleChange?: (ids: string[]) => void;
   /** 하단 시트·액션 영역에 가리지 않도록 확보할 여백(px). */
   bottomInset?: number;
   /** 상단 헤더가 지도를 가리는 높이(px). 가시 지도 영역 중앙 계산에 쓴다. */
@@ -40,6 +62,9 @@ interface MarkerEntry {
   id: string;
   overlay: KakaoCustomOverlay;
   element: HTMLButtonElement;
+  /** 추천 순위가 정해지면 상태 글리프 대신 숫자를 넣는다. */
+  icon: HTMLSpanElement;
+  place: CitizenPlace;
   dispose: () => void;
 }
 
@@ -51,69 +76,33 @@ interface BoundaryShapeGroup {
 
 const RELAYOUT_DEBOUNCE_MS = 160;
 
-/** 이 레벨 이하(=더 확대)에서만 모든 핀의 이름표를 띄운다. 넓게 보면 이름끼리 겹쳐 못 읽는다. */
+/**
+ * 이 레벨 이하(=더 확대)에서만 마커에 상태말("물품 부족")까지 펼친다.
+ * 더 넓게 보면 이름만 남겨 캡슐끼리 겹치는 양을 줄인다.
+ */
 const LABEL_ZOOM_LEVEL = 6;
+
+/**
+ * 이 레벨 이상(=더 축소)에서는 개별 마커를 접고 **구역 묶음 카드**만 남긴다.
+ * 넓게 볼 때 30개 캡슐을 다 뿌리면 서로 겹쳐 아무것도 못 읽는다 —
+ * 그때는 "어느 구에 몇 곳" 이 먼저고, 개별 거점은 한 단계 들어가서 고른다.
+ */
+const CLUSTER_ZOOM_LEVEL = 8;
+
+/** 이 개수 미만인 구역은 묶지 않는다. 한 곳을 숫자 카드로 감추면 오히려 멀어진다. */
+const CLUSTER_MIN_PLACES = 2;
 
 /** 첫 화면·초기화 시 화성시 중심을 보여줄 고정 줌 레벨. */
 const HWASEONG_OVERVIEW_LEVEL = 10;
 
-/** 거점 하나를 선택·포커스할 때 적용할 줌 레벨. 모든 선택 경로(마커 클릭·내 주변 찾기·동네로 찾기·클러스터 해제)가 이 값을 공유한다. */
+/** 거점 하나를 선택·포커스할 때 적용할 줌 레벨. 모든 선택 경로가 이 값을 공유한다. */
 const SITE_FOCUS_LEVEL = 4;
 
 /**
  * 이 레벨보다 더 확대(= 숫자가 작음)된 상태에서는
  * 광역 오버레이(외부 dim + 행정구역 경계선)를 숨긴다.
- * HWASEONG_OVERVIEW_LEVEL(10)과 SITE_FOCUS_LEVEL(4) 사이 중간값.
  */
 const OVERLAY_HIDE_ZOOM = 8;
-
-/**
- * 클러스터링 격자 한 칸의 크기(위경도 도 단위). 화성시 전역에 흩어진 약 30개 거점을
- * 몇 개의 무리로 묶기 위한 값이다 — 거점이 크게 늘면 다시 조정해야 한다.
- */
-const CLUSTER_CELL_DEG = 0.03;
-/** 이 개수 미만이면 클러스터링을 하지 않는다. 적은 핀을 굳이 묶을 이유가 없다. */
-const CLUSTER_MIN_PLACES = 8;
-
-function createPinElement(place: CitizenPlace): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'cj-pin';
-  btn.dataset.selected = 'false';
-  btn.dataset.zoomed = 'false';
-  btn.dataset.clustered = 'false';
-  btn.dataset.availability = place.availability;
-  btn.setAttribute('aria-label', place.displayName);
-
-  const dot = document.createElement('span');
-  dot.className = 'cj-pin-dot';
-
-  const name = document.createElement('span');
-  name.className = 'cj-pin-name';
-  name.textContent = place.displayName;
-
-  btn.append(dot, name);
-  return btn;
-}
-
-/** 격자 칸 하나에 묶인 거점 수를 보여주는 배지. 눌러 확대하면 개별 핀으로 풀린다. */
-function createClusterElement(count: number): HTMLButtonElement {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'cj-cluster';
-  btn.setAttribute('aria-label', `이 근처 거점 ${count}곳 — 눌러서 확대해 보기`);
-  btn.textContent = String(count);
-  return btn;
-}
-
-function createMyLocElement(): HTMLDivElement {
-  const wrap = document.createElement('div');
-  wrap.className = 'cj-my-loc';
-  const dot = document.createElement('div');
-  dot.className = 'cj-my-loc-dot';
-  wrap.appendChild(dot);
-  return wrap;
-}
 
 /** 링의 부호 있는 면적. 양수면 반시계(CCW). */
 function ringSignedArea(ring: [number, number][]): number {
@@ -256,9 +245,10 @@ function panToVisibleCenter(
 /**
  * 시민용 지도.
  *
- * 처음부터 대한민국 전체가 보이지 않게 화성시 범위로 맞춰서 시작하고, 위치를 얻으면
- * 내 위치와 추천 거점이 함께 보이는 화면으로 자연스럽게 옮겨간다. 핀은 한 색으로 조용히
- * 깔리고, 추천이 정해진 뒤에만 1순위 하나가 크게 올라온다.
+ * 이 지도의 목표는 "예쁜 지도" 가 아니라 **누르기 쉬운 지도** 다. 그래서 거점을 작은 점이
+ * 아니라 이름표가 붙은 캡슐 버튼으로 세우고, 캡슐 전체를 하나의 터치 목표로 만든다.
+ * 넓게 볼 때는 캡슐 대신 구역 묶음 카드(`효행구 3곳`)만 남겨 겹침을 없애고,
+ * 지금 화면에 든 거점은 `onVisibleChange` 로 알려 하단 카드 목록과 같은 것을 보게 한다.
  */
 export default function CitizenMap({
   places,
@@ -267,7 +257,9 @@ export default function CitizenMap({
   rankedIds,
   userLocation = null,
   fitPoints = null,
+  focusMode = 'fit',
   focusToken = 0,
+  onVisibleChange,
   bottomInset = 0,
   topInset = 0,
   className = '',
@@ -280,6 +272,8 @@ export default function CitizenMap({
   const myLocRef = useRef<KakaoCustomOverlay | null>(null);
   const boundaryRef = useRef<BoundaryShapeGroup | null>(null);
   const teardownRef = useRef<(() => void)[]>([]);
+  /** 마지막으로 알린 가시 거점 목록. 같은 값을 반복해서 올려보내지 않기 위한 것. */
+  const visibleKeyRef = useRef<string>('');
 
   const [phase, setPhase] = useState<MapPhase>('loading');
   const [retryToken, setRetryToken] = useState(0);
@@ -287,12 +281,16 @@ export default function CitizenMap({
   // 콜백은 ref 로 읽는다 — 부모가 매 렌더 새 함수를 줘도 마커를 다시 만들지 않기 위해서다.
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onVisibleChangeRef = useRef(onVisibleChange);
+  onVisibleChangeRef.current = onVisibleChange;
   const bottomInsetRef = useRef(bottomInset);
   bottomInsetRef.current = bottomInset;
   const topInsetRef = useRef(topInset);
   topInsetRef.current = topInset;
   const fitPointsRef = useRef(fitPoints);
   fitPointsRef.current = fitPoints;
+  const focusModeRef = useRef(focusMode);
+  focusModeRef.current = focusMode;
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
   const rankedIdsRef = useRef(rankedIds ?? []);
@@ -340,10 +338,29 @@ export default function CitizenMap({
   const placesRef = useRef(places);
   placesRef.current = places;
 
+  /** 지금 화면에 들어온 거점을 부모에게 알린다. 하단 카드 목록이 이 값을 그대로 쓴다. */
+  const emitVisible = useCallback(() => {
+    const map = mapRef.current;
+    const notify = onVisibleChangeRef.current;
+    if (!map || !notify) return;
+    const bounds = map.getBounds();
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    const ids = placesRef.current
+      .filter(
+        (p) =>
+          p.lat >= sw.getLat() && p.lat <= ne.getLat() && p.lng >= sw.getLng() && p.lng <= ne.getLng(),
+      )
+      .map((p) => p.id);
+    const key = ids.join('|');
+    if (key === visibleKeyRef.current) return;
+    visibleKeyRef.current = key;
+    notify(ids);
+  }, []);
+
   /**
-   * 넓게 볼 때 겹치는 핀을 격자로 묶어 숫자 배지 하나로 보여준다.
-   * 선택되었거나 추천에 든 거점은 격자에 넣지 않는다 — "지금 이 결과" 는 항상 개별로 보여야 한다.
-   * 충분히 확대하면(zoomed) 클러스터를 전부 풀고 원래 핀으로 되돌린다.
+   * 넓게 볼 때(= CLUSTER_ZOOM_LEVEL 이상) 개별 캡슐을 접고 구(區) 단위 묶음 카드만 남긴다.
+   * 선택되었거나 추천에 든 거점은 접지 않는다 — "지금 이 결과" 는 항상 개별로 보여야 한다.
    */
   const updateClusters = useCallback(() => {
     const maps = mapsRef.current;
@@ -353,55 +370,67 @@ export default function CitizenMap({
     clusterOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
     clusterOverlaysRef.current = [];
 
-    const zoomed = map.getLevel() <= LABEL_ZOOM_LEVEL;
-    const pinned = new Set<string>([...rankedIdsRef.current, ...(selectedIdRef.current ? [selectedIdRef.current] : [])]);
-
-    if (zoomed || markersRef.current.length < CLUSTER_MIN_PLACES) {
+    const detailed = map.getLevel() <= CLUSTER_ZOOM_LEVEL;
+    if (detailed) {
       markersRef.current.forEach(({ element }) => {
         element.dataset.clustered = 'false';
       });
       return;
     }
 
-    const groups = new Map<string, MarkerEntry[]>();
+    const pinned = new Set<string>([
+      ...rankedIdsRef.current,
+      ...(selectedIdRef.current ? [selectedIdRef.current] : []),
+    ]);
+    const byId = new Map(markersRef.current.map((entry) => [entry.id, entry]));
+
+    const groupable: CitizenPlace[] = [];
     markersRef.current.forEach((entry) => {
       if (pinned.has(entry.id)) {
         entry.element.dataset.clustered = 'false';
         return;
       }
-      const place = placesRef.current.find((p) => p.id === entry.id);
-      if (!place) return;
-      const key = `${Math.round(place.lat / CLUSTER_CELL_DEG)}:${Math.round(place.lng / CLUSTER_CELL_DEG)}`;
-      const bucket = groups.get(key);
-      if (bucket) bucket.push(entry);
-      else groups.set(key, [entry]);
+      groupable.push(entry.place);
     });
 
-    groups.forEach((entries) => {
-      if (entries.length < 2) {
-        entries[0].element.dataset.clustered = 'false';
+    summarizeByDistrict(groupable).forEach((summary) => {
+      if (summary.count < CLUSTER_MIN_PLACES) {
+        summary.placeIds.forEach((id) => {
+          const entry = byId.get(id);
+          if (entry) entry.element.dataset.clustered = 'false';
+        });
         return;
       }
-      entries.forEach((entry) => {
-        entry.element.dataset.clustered = 'true';
+      summary.placeIds.forEach((id) => {
+        const entry = byId.get(id);
+        if (entry) entry.element.dataset.clustered = 'true';
       });
 
-      const coords = entries
-        .map((entry) => placesRef.current.find((p) => p.id === entry.id))
-        .filter((p): p is CitizenPlace => Boolean(p));
-      const lat = coords.reduce((sum, p) => sum + p.lat, 0) / coords.length;
-      const lng = coords.reduce((sum, p) => sum + p.lng, 0) / coords.length;
-      const position = new maps.LatLng(lat, lng);
-
-      const element = createClusterElement(entries.length);
+      const element = createClusterElement(summary);
       const onClick = (e: MouseEvent) => {
         e.stopPropagation();
-        map.setLevel(LABEL_ZOOM_LEVEL, { anchor: position, animate: true });
+        // 묶음을 누르면 그 구역 거점들이 개별 캡슐로 풀릴 만큼 확대한다.
+        // 하단 카드 목록도 같은 순간 이 구역 거점들로 바뀐다(onVisibleChange).
+        const bounds = new maps.LatLngBounds();
+        summary.placeIds.forEach((id) => {
+          const place = placesRef.current.find((p) => p.id === id);
+          if (place) bounds.extend(new maps.LatLng(place.lat, place.lng));
+        });
+        if (!bounds.isEmpty()) {
+          map.setBounds(bounds, topInsetRef.current + 40, 56, bottomInsetRef.current + 40, 56);
+        }
+        // setBounds 결과가 여전히 묶음 구간이면 카드를 눌러도 아무 일이 없어 보인다.
+        // 한 단계 더 들어가 반드시 개별 캡슐이 나오게 한다.
+        if (map.getLevel() > CLUSTER_ZOOM_LEVEL) map.setLevel(CLUSTER_ZOOM_LEVEL);
+        syncZoomLabels();
+        updateClusters();
+        updateOverlayVisibility();
+        emitVisible();
       };
       element.addEventListener('click', onClick);
 
       const overlay = new maps.CustomOverlay({
-        position,
+        position: new maps.LatLng(summary.lat, summary.lng),
         content: element,
         yAnchor: 0.5,
         xAnchor: 0.5,
@@ -411,7 +440,7 @@ export default function CitizenMap({
       overlay.setMap(map);
       clusterOverlaysRef.current.push(overlay);
     });
-  }, []);
+  }, [emitVisible, syncZoomLabels, updateOverlayVisibility]);
 
   // 1) SDK 로드 + 지도 생성
   useEffect(() => {
@@ -453,6 +482,11 @@ export default function CitizenMap({
         maps.event.addListener(map, 'zoom_changed', onZoom);
         teardownRef.current.push(() => maps.event.removeListener(map, 'zoom_changed', onZoom));
 
+        // 이동·확대가 끝난 시점에만 목록을 갱신한다 — 드래그 중 매 프레임 리렌더를 피한다.
+        const onIdle = () => emitVisible();
+        maps.event.addListener(map, 'idle', onIdle);
+        teardownRef.current.push(() => maps.event.removeListener(map, 'idle', onIdle));
+
         fitHwaseong();
         setPhase('ready');
       })
@@ -482,6 +516,7 @@ export default function CitizenMap({
       boundaryRef.current = null;
       mapRef.current = null;
       mapsRef.current = null;
+      visibleKeyRef.current = '';
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryToken]);
@@ -494,17 +529,20 @@ export default function CitizenMap({
     if (!maps || !map) return;
 
     markersRef.current = placesRef.current.map((place) => {
-      const element = createPinElement(place);
+      const { root, icon } = createMarkerElement(place);
+      // 캡슐 어디를 눌러도(아이콘·이름·상태말) 같은 선택이 일어난다.
+      // stopPropagation 은 지도 배경 클릭 핸들러가 곧바로 선택을 지우는 것을 막는다.
       const onClick = (e: MouseEvent) => {
         e.stopPropagation();
         onSelectRef.current(place.id);
       };
-      element.addEventListener('click', onClick);
+      root.addEventListener('click', onClick);
 
       const overlay = new maps.CustomOverlay({
         position: new maps.LatLng(place.lat, place.lng),
-        content: element,
-        yAnchor: 0.5,
+        content: root,
+        // 캡슐 아래 꼬리 끝이 실제 좌표를 가리킨다.
+        yAnchor: 1,
         xAnchor: 0.5,
         zIndex: 5,
         clickable: true,
@@ -514,15 +552,19 @@ export default function CitizenMap({
       return {
         id: place.id,
         overlay,
-        element,
+        element: root,
+        icon,
+        place,
         dispose: () => {
-          element.removeEventListener('click', onClick);
+          root.removeEventListener('click', onClick);
           overlay.setMap(null);
         },
       };
     });
     syncZoomLabels();
     updateClusters();
+    visibleKeyRef.current = '';
+    emitVisible();
 
     const created = markersRef.current;
     return () => {
@@ -531,25 +573,33 @@ export default function CitizenMap({
       clusterOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
       clusterOverlaysRef.current = [];
     };
-  }, [phase, placesKey, syncZoomLabels, updateClusters]);
+  }, [phase, placesKey, syncZoomLabels, updateClusters, emitVisible]);
 
   // 3) 선택·추천 표시. 마커를 다시 만들지 않고 data 속성만 바꾼다.
   useEffect(() => {
     if (phase !== 'ready') return;
     const ranked = rankKey ? rankKey.split('|') : [];
-    markersRef.current.forEach(({ id, element, overlay }) => {
+    markersRef.current.forEach(({ id, element, icon, overlay, place }) => {
       const rank = ranked.indexOf(id);
       const selected = id === selectedId;
+      const view = markerViewOf(place);
 
       if (rank >= 0 && rank < 3) element.dataset.rank = String(rank + 1);
       else delete element.dataset.rank;
 
-      // 추천이 정해진 뒤에는 뽑히지 않은 거점을 지우지 않고 뒤로 물린다.
+      // 추천에 든 거점은 아이콘 자리에 순위 숫자를 세운다 — 색이 아니라 숫자로 순서를 말한다.
+      icon.textContent = rank >= 0 && rank < 3 ? String(rank + 1) : view.glyph;
+      element.setAttribute(
+        'aria-label',
+        markerAriaLabel(place, view, rank >= 0 && rank < 3 ? rank + 1 : null),
+      );
+
+      // 추천이 정해진 뒤에도 뽑히지 않은 거점을 지우지 않는다. 흐리게 두되 계속 누를 수 있다.
       element.dataset.dim = String(ranked.length > 0 && rank < 0 && !selected);
       element.dataset.selected = String(selected);
-      overlay.setZIndex(selected ? 12 : rank === 0 ? 10 : rank > 0 ? 8 : 5);
+      overlay.setZIndex(selected ? 40 : rank === 0 ? 30 : rank > 0 ? 20 : 10 - view.priority);
     });
-    // 선택·추천이 바뀌면 격자 구성 대상도 바뀐다 — pinned 목록을 새로 반영해 다시 묶는다.
+    // 선택·추천이 바뀌면 묶음 대상도 바뀐다 — 고정 목록을 새로 반영해 다시 묶는다.
     updateClusters();
     // 거점 선택 여부가 바뀌면 광역 오버레이 표시도 즉시 반영한다.
     updateOverlayVisibility();
@@ -594,9 +644,13 @@ export default function CitizenMap({
     }
 
     if (points.length === 1) {
-      // 단일 거점: 먼저 줌 레벨을 맞춘 뒤,
-      // projection 을 통해 가시 지도 영역(상단 헤더 ~ 하단 패널 사이)의 정중앙에 마커를 위치시킨다.
-      map.setLevel(SITE_FOCUS_LEVEL);
+      if (focusModeRef.current === 'fit') {
+        map.setLevel(SITE_FOCUS_LEVEL);
+      } else if (map.getLevel() > CLUSTER_ZOOM_LEVEL) {
+        // 'pan' 이라도 묶음 구간에 머무르면 주변 거점이 전부 접혀 비교가 안 된다.
+        // 개별 캡슐이 보이는 최소 단계까지만 당긴다.
+        map.setLevel(CLUSTER_ZOOM_LEVEL);
+      }
       const proj = map.getProjection();
       panToVisibleCenter(
         maps, map, proj, container,

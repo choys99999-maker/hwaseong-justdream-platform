@@ -20,6 +20,17 @@ export interface PlaceStatus {
   closed: boolean;
 }
 
+/**
+ * 지도 마커·카드처럼 폭이 좁은 자리에서 쓰는 짧은 상태말.
+ * 문장(`PlaceStatus.label`)을 줄여 쓴 것이지 새 판정이 아니다 — 의미 체계는 하나다.
+ */
+export const STATUS_SHORT_LABEL: Record<StatusTone, string> = {
+  open: '지금 가능',
+  warn: '물품 부족',
+  closed: '운영 종료',
+  unknown: '확인 필요',
+};
+
 function parseHours(hours: string): { open: number; close: number } | null {
   const m = hours.match(/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
   if (!m) return null;

@@ -536,204 +536,357 @@ body {
 
 /*
  * ─────────────────────────────────────────────────────────────────────────────
- * 시민 지도 핀 (CitizenMap).
+ * 시민 지도 마커 (CitizenMap · StaticCitizenMap).
  *
- * 지도가 제품 자체이므로 핀은 조용해야 한다 — 색으로 상태를 알록달록 칠하지 않고
- * 전부 브랜드 파랑 한 색으로 깔되, "지금 여기가 가장 좋다" 는 한 곳만 크기와 숫자로
- * 확실히 앞세운다. 순위는 색이 아니라 크기 + 숫자로 전달하므로 색각 이상에서도 읽힌다.
+ * 예전에는 지름 22px 짜리 컬러 점 하나가 마커였다. 멀리서는 지도 배경에 묻히고,
+ * 가까이서도 점 한가운데를 정확히 눌러야 선택돼 터치 환경에서 사실상 못 쓰는 UI 였다.
+ * 그래서 마커의 단위를 "점" 에서 **이름표가 붙은 캡슐 버튼** 으로 바꿨다.
+ *
+ *   · 캡슐 전체(아이콘 + 이름 + 상태말)가 하나의 터치 목표다. 높이는 48px 이상.
+ *   · 실제 hit area 는 ::before 로 사방 12px 더 넓다 — 손가락이 빗나가도 눌린다.
+ *   · 상태는 색과 함께 서로 다른 글리프(✓ ! ? 휴)로도 말한다(색각 이상 대비).
+ *   · 강조는 중요도 순이다: 물품 부족 > 확인 필요 > 정상 > 운영 종료.
+ *
+ * 마크업 구조·문구의 출처는 `src/components/citizen/mapMarkers.ts` 한 곳이다.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-.cj-pin {
+.cj-marker {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* 지도 위 점이라도 손가락 목표는 44px 이상 확보한다. 보이는 원은 자식 span 이다. */
-  width: 46px;
-  height: 46px;
-  justify-content: center;
+  /*
+   * 좁은 자리(화면 오른쪽 끝 등)에 놓여도 캡슐이 눌려 두 줄로 접히지 않게 한다.
+   * 접히면 꼬리가 좌표에서 밀려나고 터치 목표도 세로로 길쭉하게 일그러진다.
+   */
+  width: max-content;
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
-  white-space: nowrap;
   font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  transition: opacity 200ms ease-out;
+  /* 확대 기준점은 좌표를 가리키는 꼬리 끝 — 선택해도 마커가 좌표에서 미끄러지지 않는다. */
+  transform-origin: bottom center;
+  transition:
+    transform 180ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    opacity 200ms ease-out;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-.cj-pin-dot {
+/*
+ * 보이는 캡슐보다 넓은 투명 터치 영역.
+ * "정확히 눌러야 선택되는" 구조를 없애는 핵심이라 캡슐 크기와 별개로 항상 붙는다.
+ */
+.cj-marker::before {
+  content: '';
+  position: absolute;
+  inset: -12px -12px -14px;
+  border-radius: 34px;
+}
+
+.cj-marker-body {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  /* 주요 터치 목표 48px 규칙을 지도 위에서도 그대로 지킨다. */
+  min-height: 48px;
+  max-width: 232px;
+  padding: 5px 15px 5px 5px;
+  border-radius: 26px;
+  background: #ffffff;
+  border: 2px solid #131c2e;
+  box-shadow: 0 4px 14px rgba(19, 28, 46, 0.28);
+  transition:
+    background-color 180ms ease-out,
+    border-color 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+/* 캡슐 아래 꼬리. 이 끝이 실제 좌표를 가리킨다(CustomOverlay yAnchor: 1). */
+.cj-marker-tail {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 10px solid #131c2e;
+  margin-top: -1px;
+  filter: drop-shadow(0 2px 2px rgba(19, 28, 46, 0.22));
+}
+
+.cj-marker-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
   flex-shrink: 0;
-  border: 3px solid #ffffff;
-  background: #0054a6;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #4e5972;
   color: #ffffff;
-  font-size: 0;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 800;
   line-height: 1;
-  box-shadow: 0 2px 6px rgba(19, 28, 46, 0.40);
   transition:
-    width 220ms ease-out,
-    height 220ms ease-out,
-    font-size 220ms ease-out,
-    box-shadow 180ms ease-out,
-    background-color 180ms ease-out;
+    background-color 180ms ease-out,
+    color 180ms ease-out;
 }
 
-/* 추천 밖으로 밀린 거점 — 지우지 않고 배경으로 물러난다. */
-.cj-pin[data-dim='true'] {
-  opacity: 0.3;
+.cj-marker-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  text-align: left;
+  line-height: 1.25;
 }
 
-/* 클러스터로 묶인 핀은 숨긴다 — 대신 같은 자리에 숫자 배지가 뜬다. */
-.cj-pin[data-clustered='true'] {
+/*
+ * 이름은 항상 보인다 — 예전처럼 "확대해야 이름이 뜨는" 구조는 무엇을 누르는지 알 수 없게 한다.
+ * 길면 한 줄로 줄이고, 전체 이름은 선택 후 하단 시트에서 읽는다.
+ */
+.cj-marker-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #131c2e;
+  max-width: 138px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 180ms ease-out;
+}
+
+/* 상태말은 좁게 볼 때만 접는다. 겹침이 줄고, 필요한 곳(부족·선택·추천)은 늘 펼쳐진다. */
+.cj-marker-status {
+  display: none;
+  margin-top: 1px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #4e5972;
+  max-width: 138px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cj-marker[data-zoomed='true'] .cj-marker-status,
+.cj-marker[data-selected='true'] .cj-marker-status,
+.cj-marker[data-rank] .cj-marker-status,
+.cj-marker[data-tone='warn'] .cj-marker-status {
+  display: block;
+}
+
+.cj-marker[data-selected='true'] .cj-marker-name,
+.cj-marker[data-zoomed='true'] .cj-marker-name {
+  max-width: 186px;
+}
+
+/* ── 상태별 표현 ── 색만이 아니라 아이콘 글리프가 함께 다르다. */
+.cj-marker[data-tone='open'] .cj-marker-icon {
+  background: #157f3d;
+}
+
+.cj-marker[data-tone='warn'] .cj-marker-icon {
+  background: #a5620a;
+}
+
+.cj-marker[data-tone='unknown'] .cj-marker-icon {
+  background: #4e5972;
+}
+
+.cj-marker[data-tone='closed'] .cj-marker-icon {
+  background: #8b93a6;
+}
+
+.cj-marker[data-tone='warn'] .cj-marker-status {
+  color: #834e07;
+}
+
+/* 물품 부족 — 가장 먼저 눈에 띄어야 하는 거점. 앰버 테두리 + 링으로 앞세운다. */
+.cj-marker[data-tone='warn'] .cj-marker-body {
+  border-color: #a5620a;
+  box-shadow:
+    0 0 0 4px rgba(165, 98, 10, 0.18),
+    0 4px 14px rgba(19, 28, 46, 0.28);
+}
+
+.cj-marker[data-tone='warn'] .cj-marker-tail {
+  border-top-color: #a5620a;
+}
+
+/* 운영이 끝난 곳 — 지우지 않되 가장 조용하게. */
+.cj-marker[data-tone='closed'] .cj-marker-body {
+  border-color: #8b93a6;
+  background: #f7f7f5;
+}
+
+.cj-marker[data-tone='closed'] .cj-marker-name {
+  color: #4e5972;
+}
+
+.cj-marker[data-tone='closed'] .cj-marker-tail {
+  border-top-color: #8b93a6;
+}
+
+/* ── 추천 순위 ── 색이 아니라 숫자와 테두리로 말한다. */
+.cj-marker[data-rank] .cj-marker-icon {
+  background: #1266b0;
+}
+
+.cj-marker[data-rank='1'] .cj-marker-body {
+  border-color: #0054a6;
+  box-shadow:
+    0 0 0 5px rgba(0, 84, 166, 0.2),
+    0 6px 18px rgba(19, 28, 46, 0.32);
+}
+
+.cj-marker[data-rank='1'] .cj-marker-icon {
+  background: #0054a6;
+}
+
+.cj-marker[data-rank='1'] .cj-marker-tail {
+  border-top-color: #0054a6;
+}
+
+/* 추천에서 밀린 거점 — 배경으로 물러나되 계속 읽히고 계속 눌린다(예전 0.3 은 사실상 사라짐). */
+.cj-marker[data-dim='true'] {
+  opacity: 0.66;
+}
+
+/* 구역 묶음에 접힌 마커. 같은 자리에 묶음 카드가 대신 선다. */
+.cj-marker[data-clustered='true'] {
   display: none;
 }
 
-/* 물품 부족 거점 — 앰버로 상태를 직관적으로 구분한다. */
-.cj-pin[data-availability='low'] .cj-pin-dot {
-  background: #d97706;
+/* ── 선택 상태 ── 지금 무엇을 보고 있는지 한눈에 알아야 한다. */
+.cj-marker[data-selected='true'] {
+  transform: scale(1.06);
+  opacity: 1;
 }
 
-/* 확인 필요 거점 — 슬레이트로 정상·부족과 확실히 구분한다. */
-.cj-pin[data-availability='unknown'] .cj-pin-dot {
-  background: #64748b;
-}
-
-/* 추천 2·3순위 */
-.cj-pin[data-rank='2'] .cj-pin-dot,
-.cj-pin[data-rank='3'] .cj-pin-dot {
-  width: 32px;
-  height: 32px;
-  border-width: 3px;
-  font-size: 15px;
-  box-shadow: 0 2px 8px rgba(19, 28, 46, 0.34);
-}
-
-/* 1순위 하나만 확실히 크게 + 옅은 링. 화면에서 가장 강한 지도 요소. */
-.cj-pin[data-rank='1'] .cj-pin-dot {
-  width: 38px;
-  height: 38px;
-  border-width: 3px;
-  font-size: 19px;
+.cj-marker[data-selected='true'] .cj-marker-body {
+  background: #0054a6;
+  border-color: #003569;
   box-shadow:
-    0 0 0 6px rgba(0, 84, 166, 0.18),
-    0 3px 10px rgba(19, 28, 46, 0.36);
+    0 0 0 6px rgba(0, 84, 166, 0.3),
+    0 10px 26px rgba(19, 28, 46, 0.42);
 }
 
-.cj-pin[data-selected='true'] .cj-pin-dot {
-  width: 34px;
-  height: 34px;
-  box-shadow:
-    0 0 0 7px rgba(0, 84, 166, 0.38),
-    0 3px 12px rgba(19, 28, 46, 0.42);
+.cj-marker[data-selected='true'] .cj-marker-name {
+  color: #ffffff;
 }
 
-.cj-pin[data-rank='1'][data-selected='true'] .cj-pin-dot {
-  width: 40px;
-  height: 40px;
+.cj-marker[data-selected='true'] .cj-marker-status {
+  color: rgba(255, 255, 255, 0.92);
 }
 
-.cj-pin:focus-visible {
+.cj-marker[data-selected='true'] .cj-marker-icon {
+  background: #ffffff;
+  color: #0054a6;
+}
+
+.cj-marker[data-selected='true'] .cj-marker-tail {
+  border-top-color: #003569;
+}
+
+.cj-marker:active .cj-marker-body {
+  transform: scale(0.97);
+}
+
+.cj-marker:focus-visible {
   outline: none;
 }
 
-.cj-pin:focus-visible .cj-pin-dot {
+.cj-marker:focus-visible .cj-marker-body {
   outline: 3px solid #0054a6;
   outline-offset: 3px;
 }
 
 /*
- * 이름표 — 기본은 숨김. 충분히 확대했거나(data-zoomed) 추천·선택된 핀에서만 뜬다.
- * absolute 라 이름 유무가 핀 높이를 바꾸지 않는다 → 마커가 좌표에서 흔들리지 않는다.
+ * 구역 묶음 카드. 넓게 볼 때 개별 캡슐을 대신한다.
+ * 숫자 배지 하나만 띄우면 "무엇이 몇 개인지" 를 알 수 없어, 구 이름과 부족 거점 수를 함께 낸다.
  */
-.cj-pin-name {
-  display: none;
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 2px;
-  max-width: 124px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-align: center;
-  padding: 3px 8px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 1px 4px rgba(19, 28, 46, 0.2);
-  font-size: 13px;
-  font-weight: 700;
-  color: #131c2e;
-  line-height: 1.3;
-  pointer-events: none;
-}
-
-.cj-pin[data-zoomed='true'] .cj-pin-name,
-.cj-pin[data-rank] .cj-pin-name,
-.cj-pin[data-selected='true'] .cj-pin-name {
-  display: block;
-}
-
-.cj-pin[data-dim='true'] .cj-pin-name {
-  display: none;
-}
-
-.cj-pin[data-selected='true'] .cj-pin-name,
-.cj-pin[data-rank='1'] .cj-pin-name {
-  background: #0054a6;
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 84, 166, 0.4);
-}
-
-/*
- * 클러스터 배지. 넓게 볼 때 겹치는 핀을 대신해 숫자 하나로 보여준다.
- * 핀과 같은 브랜드 파랑을 쓰되 더 큰 원 + 흰 숫자로 "여러 곳이 있다" 는 게 한눈에 읽히게 한다.
- */
-.cj-cluster {
+.cj-cluster-card {
   position: relative;
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 3px solid #ffffff;
-  background: #0054a6;
-  color: #ffffff;
+  gap: 10px;
+  width: max-content;
+  white-space: nowrap;
+  min-height: 56px;
+  padding: 7px 17px 7px 7px;
+  border-radius: 30px;
+  border: 2px solid #131c2e;
+  background: #ffffff;
   font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1;
-  padding: 0;
   cursor: pointer;
-  box-shadow:
-    0 0 0 4px rgba(0, 84, 166, 0.22),
-    0 2px 10px rgba(19, 28, 46, 0.40);
+  box-shadow: 0 6px 20px rgba(19, 28, 46, 0.3);
   transition: transform 150ms ease-out;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* 클러스터 투명 hit area — 시각 원(40px)보다 10px 더 넓어 손가락이 조금 빗나가도 눌린다. */
-.cj-cluster::after {
+/* 묶음 카드도 보이는 것보다 넓게 잡는다. */
+.cj-cluster-card::before {
   content: '';
   position: absolute;
-  inset: -10px;
+  inset: -12px;
+  border-radius: 40px;
 }
 
-.cj-cluster:active {
-  transform: scale(0.94);
+.cj-cluster-count {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #0054a6;
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
 }
 
-.cj-cluster:focus-visible {
+.cj-cluster-text {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  line-height: 1.25;
+}
+
+.cj-cluster-name {
+  font-size: 16.5px;
+  font-weight: 700;
+  color: #131c2e;
+}
+
+.cj-cluster-sub {
+  margin-top: 1px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #4e5972;
+}
+
+/* 부족 거점이 있는 구역은 묶음 단계에서도 먼저 보여야 한다. */
+.cj-cluster-card[data-alert='true'] {
+  border-color: #a5620a;
+}
+
+.cj-cluster-card[data-alert='true'] .cj-cluster-count {
+  background: #a5620a;
+}
+
+.cj-cluster-card[data-alert='true'] .cj-cluster-sub {
+  color: #834e07;
+}
+
+.cj-cluster-card:active {
+  transform: scale(0.96);
+}
+
+.cj-cluster-card:focus-visible {
   outline: 3px solid #0054a6;
   outline-offset: 3px;
 }
@@ -769,8 +922,11 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cj-pin,
-  .cj-pin-dot {
+  .cj-marker,
+  .cj-marker-body,
+  .cj-marker-icon,
+  .cj-marker-name,
+  .cj-cluster-card {
     transition: none;
   }
   .cj-my-loc-dot {

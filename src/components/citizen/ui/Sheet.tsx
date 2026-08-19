@@ -35,8 +35,9 @@ export default function Sheet({
   useEffect(() => {
     const el = ref.current;
     if (!el || !onHeightChange) return;
-    const observer = new ResizeObserver(([entry]) => {
-      onHeightChange(Math.round(entry.contentRect.height));
+    // 시트가 실제로 덮는 높이는 padding 을 포함한 테두리 상자다(contentRect 는 그보다 작다).
+    const observer = new ResizeObserver(() => {
+      onHeightChange(Math.round(el.getBoundingClientRect().height));
     });
     observer.observe(el);
     onHeightChange(Math.round(el.getBoundingClientRect().height));

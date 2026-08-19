@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Navigation } from 'lucide-react';
+import { ChevronRight, Navigation } from 'lucide-react';
 import { kakaoDirectionsUrl } from '../../lib/geo';
 import { formatCheckedAt, todayLocal } from '../../utils/citizenFormat';
 import { distanceText, resolvePlaceStatus, type RankedPlace } from '../../utils/citizenPlace';
@@ -22,9 +22,17 @@ interface Props {
   originLabel: string | null;
   onHeightChange: (height: number) => void;
   onCheckItems: () => void;
+  /** 이 거점 말고 다른 곳을 보고 싶을 때. 지도를 다시 뒤지지 않고 목록으로 넘어간다. */
+  onOpenList: () => void;
 }
 
-export default function PlaceBottomSheet({ place, originLabel, onHeightChange, onCheckItems }: Props) {
+export default function PlaceBottomSheet({
+  place,
+  originLabel,
+  onHeightChange,
+  onCheckItems,
+  onOpenList,
+}: Props) {
   const ref = useRef<HTMLElement>(null);
 
   const status = resolvePlaceStatus(place);
@@ -39,8 +47,10 @@ export default function PlaceBottomSheet({ place, originLabel, onHeightChange, o
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      onHeightChange(Math.round(entry.contentRect.height));
+    // contentRect 는 padding 을 뺀 높이라 시트가 실제로 덮는 넓이보다 작게 나온다.
+    // 그 값을 지도 inset 으로 쓰면 마커·카드가 시트 뒤로 조금씩 잘린다 — 테두리 상자로 잰다.
+    const observer = new ResizeObserver(() => {
+      onHeightChange(Math.round(el.getBoundingClientRect().height));
     });
     observer.observe(el);
     onHeightChange(Math.round(el.getBoundingClientRect().height));
@@ -53,13 +63,13 @@ export default function PlaceBottomSheet({ place, originLabel, onHeightChange, o
       aria-label={`${place.displayName} 요약`}
       className="absolute inset-x-0 bottom-0 z-20 flex flex-col gap-3 rounded-t-sheet bg-surface px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-4 shadow-float"
     >
-      {/* 기관명 + 거리 */}
-      <div className="flex items-baseline justify-between gap-3">
+      {/* 기관명 + 거리. 거리는 숫자만 두지 않고 "어디에서" 인지 함께 말한다. */}
+      <div>
         <h2 className="text-title font-bold leading-tight text-ink-950">{place.displayName}</h2>
         {place.distanceKm !== null && originLabel && (
-          <span className="shrink-0 text-note font-semibold text-ink-600">
-            {distanceText(place.distanceKm)}
-          </span>
+          <p className="mt-1 text-note font-semibold text-ink-600">
+            {originLabel}에서 {distanceText(place.distanceKm)}
+          </p>
         )}
       </div>
 
@@ -89,6 +99,16 @@ export default function PlaceBottomSheet({ place, originLabel, onHeightChange, o
           길찾기
         </Button>
       </div>
+
+      {/* 여기가 아니면 다른 곳 — 지도에서 마커를 다시 찾아 누르게 만들지 않는다. */}
+      <button
+        type="button"
+        onClick={onOpenList}
+        className="tap-md -mt-1 flex w-full items-center justify-center gap-1 text-note font-semibold text-ink-600 hover:text-brand-700 focus-ring"
+      >
+        가까운 다른 곳 보기
+        <ChevronRight size={16} aria-hidden />
+      </button>
     </section>
   );
 }
