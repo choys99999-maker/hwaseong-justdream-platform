@@ -6,6 +6,7 @@ import type {
   KakaoMapsNamespace,
   KakaoPolygon,
   KakaoPolyline,
+  KakaoProjection,
 } from '../../types/kakao';
 import { MissingKakaoKeyError, loadKakaoMaps, resetKakaoMapsLoader } from '../../lib/kakaoMap';
 import { HWASEONG_FOCUS_BBOX, districtBoundaries } from '../../data/districtBoundaries';
@@ -30,6 +31,8 @@ interface CitizenMapProps {
   focusToken?: number;
   /** 하단 시트·액션 영역에 가리지 않도록 확보할 여백(px). */
   bottomInset?: number;
+  /** 상단 헤더가 지도를 가리는 높이(px). 가시 지도 영역 중앙 계산에 쓴다. */
+  topInset?: number;
   className?: string;
 }
 
@@ -40,6 +43,12 @@ interface MarkerEntry {
   dispose: () => void;
 }
 
+interface BoundaryShapeGroup {
+  dim: KakaoPolygon;
+  bounds: KakaoPolyline[];
+  dongLines: KakaoPolyline[];
+}
+
 const RELAYOUT_DEBOUNCE_MS = 160;
 
 /** 이 레벨 이하(=더 확대)에서만 모든 핀의 이름표를 띄운다. 넓게 보면 이름끼리 겹쳐 못 읽는다. */
@@ -47,6 +56,13 @@ const LABEL_ZOOM_LEVEL = 6;
 
 /** 첫 화면·초기화 시 화성시 중심을 보여줄 고정 줌 레벨. */
 const HWASEONG_OVERVIEW_LEVEL = 10;
+
+/**
+ * 이 레벨보다 더 확대(= 숫자가 작음)된 상태에서는
+ * 광역 오버레이(외부 dim + 행정구역 경계선)를 숨긴다.
+ * HWASEONG_OVERVIEW_LEVEL(10)과 거점 포커스 레벨(5) 사이 중간값.
+ */
+const OVERLAY_HIDE_ZOOM = 8;
 
 /**
  * 클러스터링 격자 한 칸의 크기(위경도 도 단위). 화성시 전역에 흩어진 약 30개 거점을
@@ -115,8 +131,7 @@ function orientRing(ring: [number, number][], wantCCW: boolean): [number, number
  * 화성시 외곽에 진한 차콜 선을 추가해 경계를 명확히 한다.
  * 내부 읍·면·동 구분은 얇은 파란 선이 맡는다.
  */
-function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPolygon | KakaoPolyline> {
-  const shapes: Array<KakaoPolygon | KakaoPolyline> = [];
+function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): BoundaryShapeGroup {
   const toPath = (ring: [number, number][]) => ring.map(([lng, lat]) => new maps.LatLng(lat, lng));
 
   const world: [number, number][] = [
@@ -127,7 +142,7 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPol
   ];
   const holes = districtBoundaries.flatMap((d) => d.outline).map((ring) => orientRing(ring, false));
   // 화성시 외부 전체를 어둡게 — 내부는 기존 지도 밝기 그대로 유지
-  const mask = new maps.Polygon({
+  const dim = new maps.Polygon({
     path: [toPath(orientRing(world, true)), ...holes.map(toPath)],
     strokeWeight: 0,
     strokeOpacity: 0,
@@ -135,10 +150,10 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPol
     fillOpacity: 0.52,
     zIndex: 1,
   });
-  mask.setMap(map);
-  shapes.push(mask);
+  dim.setMap(map);
 
   // 화성시 외곽 경계선 — 진한 차콜로 내/외부 경계를 명확히 그린다
+  const bounds: KakaoPolyline[] = [];
   districtBoundaries.forEach((district) => {
     district.outline.forEach((ring) => {
       const outline = new maps.Polyline({
@@ -150,11 +165,12 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPol
         zIndex: 4,
       });
       outline.setMap(map);
-      shapes.push(outline);
+      bounds.push(outline);
     });
   });
 
   // 내부 읍·면·동 경계 — 조용한 파란 선으로 구역만 알린다
+  const dongLines: KakaoPolyline[] = [];
   districtBoundaries.forEach((district) => {
     district.areas.forEach((area) => {
       area.polygons.forEach((polygon) => {
@@ -170,14 +186,63 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): Array<KakaoPol
             zIndex: 3,
           });
           line.setMap(map);
-          shapes.push(line);
+          dongLines.push(line);
         });
         void inner;
       });
     });
   });
 
-  return shapes;
+  return { dim, bounds, dongLines };
+}
+
+/** dim / 경계선 / 동 경계선 한꺼번에 보이기/숨기기. setMap 재생성 없이 opacity 만 토글해 깜박임을 없앤다. */
+function setBoundaryVisible(group: BoundaryShapeGroup, visible: boolean) {
+  group.dim.setOptions({ fillOpacity: visible ? 0.52 : 0 });
+  group.bounds.forEach((p) => p.setOptions({ strokeOpacity: visible ? 0.85 : 0 }));
+  group.dongLines.forEach((p) => p.setOptions({ strokeOpacity: visible ? 0.22 : 0 }));
+}
+
+/**
+ * 지도 projection 을 이용해 단일 거점을 "실제 가시 지도 영역"의 정중앙에 배치한다.
+ *
+ * panTo 는 컨테이너 전체(=하단 패널 포함)의 중앙을 기준으로 이동하기 때문에
+ * 마커가 패널 뒤로 가려지거나 화면 아래쪽에 치우친다.
+ * 여기서는 setCenter 로 먼저 대상 좌표를 컨테이너 정중앙에 놓은 뒤,
+ * projection 으로 "topInset·bottomInset 을 뺀 가시 영역 중앙 픽셀"에 해당하는
+ * 지도 좌표를 구하고, panTo 로 그 좌표로 부드럽게 이동한다.
+ */
+function panToVisibleCenter(
+  maps: KakaoMapsNamespace,
+  map: KakaoMap,
+  proj: KakaoProjection,
+  container: HTMLElement,
+  lat: number,
+  lng: number,
+  topInset: number,
+  bottomInset: number,
+) {
+  const coord = new maps.LatLng(lat, lng);
+  // 우선 대상 좌표를 컨테이너 정중앙에 배치 (애니메이션 없이 즉시)
+  map.setCenter(coord);
+
+  const containerH = container.offsetHeight;
+  const containerW = container.offsetWidth;
+  // 가시 지도 영역의 Y 중앙 (topInset ~ containerH-bottomInset 사이의 중앙)
+  const visibleCenterY = topInset + (containerH - topInset - bottomInset) / 2;
+  const dy = Math.round(containerH / 2 - visibleCenterY); // = (bottomInset - topInset) / 2
+
+  if (Math.abs(dy) <= 1) {
+    // 오프셋이 무시할 정도로 작으면 그냥 panTo
+    map.panTo(coord);
+    return;
+  }
+
+  // setCenter 후에는 coord 가 (containerW/2, containerH/2) 에 위치한다.
+  // 가시 중앙(visibleCenterY)에 coord 를 두려면 지도 center 를
+  // (containerW/2, containerH/2 + dy) 픽셀에 해당하는 지도 좌표로 이동해야 한다.
+  const shiftedCenter = proj.coordsFromContainerPoint({ x: containerW / 2, y: containerH / 2 + dy });
+  map.panTo(shiftedCenter);
 }
 
 /**
@@ -196,6 +261,7 @@ export default function CitizenMap({
   fitPoints = null,
   focusToken = 0,
   bottomInset = 0,
+  topInset = 0,
   className = '',
 }: CitizenMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -204,7 +270,7 @@ export default function CitizenMap({
   const markersRef = useRef<MarkerEntry[]>([]);
   const clusterOverlaysRef = useRef<KakaoCustomOverlay[]>([]);
   const myLocRef = useRef<KakaoCustomOverlay | null>(null);
-  const shapesRef = useRef<Array<KakaoPolygon | KakaoPolyline>>([]);
+  const boundaryRef = useRef<BoundaryShapeGroup | null>(null);
   const teardownRef = useRef<(() => void)[]>([]);
 
   const [phase, setPhase] = useState<MapPhase>('loading');
@@ -215,6 +281,8 @@ export default function CitizenMap({
   onSelectRef.current = onSelect;
   const bottomInsetRef = useRef(bottomInset);
   bottomInsetRef.current = bottomInset;
+  const topInsetRef = useRef(topInset);
+  topInsetRef.current = topInset;
   const fitPointsRef = useRef(fitPoints);
   fitPointsRef.current = fitPoints;
   const selectedIdRef = useRef(selectedId);
@@ -247,6 +315,18 @@ export default function CitizenMap({
     markersRef.current.forEach(({ element }) => {
       element.dataset.zoomed = String(zoomed);
     });
+  }, []);
+
+  /**
+   * 선택 상태 또는 줌 레벨에 따라 광역 오버레이(외부 dim + 행정구역선)를 보이거나 숨긴다.
+   * 거점을 선택했거나 충분히 확대한 상태에서는 오버레이가 불필요하고 지도를 복잡하게 만든다.
+   */
+  const updateOverlayVisibility = useCallback(() => {
+    const map = mapRef.current;
+    const boundary = boundaryRef.current;
+    if (!map || !boundary) return;
+    const show = selectedIdRef.current === null && map.getLevel() > OVERLAY_HIDE_ZOOM;
+    setBoundaryVisible(boundary, show);
   }, []);
 
   const placesRef = useRef(places);
@@ -342,10 +422,15 @@ export default function CitizenMap({
         });
         mapRef.current = map;
 
-        shapesRef.current = drawBoundaries(maps, map);
+        boundaryRef.current = drawBoundaries(maps, map);
         teardownRef.current.push(() => {
-          shapesRef.current.forEach((s) => s.setMap(null));
-          shapesRef.current = [];
+          const b = boundaryRef.current;
+          if (b) {
+            b.dim.setMap(null);
+            b.bounds.forEach((s) => s.setMap(null));
+            b.dongLines.forEach((s) => s.setMap(null));
+            boundaryRef.current = null;
+          }
         });
 
         const onBgClick = () => onSelectRef.current(null);
@@ -355,6 +440,7 @@ export default function CitizenMap({
         const onZoom = () => {
           syncZoomLabels();
           updateClusters();
+          updateOverlayVisibility();
         };
         maps.event.addListener(map, 'zoom_changed', onZoom);
         teardownRef.current.push(() => maps.event.removeListener(map, 'zoom_changed', onZoom));
@@ -380,6 +466,7 @@ export default function CitizenMap({
       clusterOverlaysRef.current.forEach((overlay) => overlay.setMap(null));
       clusterOverlaysRef.current = [];
       myLocRef.current = null;
+      boundaryRef.current = null;
       mapRef.current = null;
       mapsRef.current = null;
     };
@@ -451,7 +538,9 @@ export default function CitizenMap({
     });
     // 선택·추천이 바뀌면 격자 구성 대상도 바뀐다 — pinned 목록을 새로 반영해 다시 묶는다.
     updateClusters();
-  }, [phase, selectedId, rankKey, placesKey, updateClusters]);
+    // 거점 선택 여부가 바뀌면 광역 오버레이 표시도 즉시 반영한다.
+    updateOverlayVisibility();
+  }, [phase, selectedId, rankKey, placesKey, updateClusters, updateOverlayVisibility]);
 
   // 4) 현재 위치
   useEffect(() => {
@@ -482,21 +571,32 @@ export default function CitizenMap({
     if (phase !== 'ready') return;
     const maps = mapsRef.current;
     const map = mapRef.current;
-    if (!maps || !map) return;
+    const container = containerRef.current;
+    if (!maps || !map || !container) return;
 
     const points = fitPointsRef.current;
     if (!points || points.length === 0) {
       fitHwaseong();
       return;
     }
+
     if (points.length === 1) {
-      map.setLevel(5, { animate: true });
-      map.panTo(new maps.LatLng(points[0].lat, points[0].lng));
+      // 단일 거점: 먼저 줌 레벨을 맞춘 뒤,
+      // projection 을 통해 가시 지도 영역(상단 헤더 ~ 하단 패널 사이)의 정중앙에 마커를 위치시킨다.
+      map.setLevel(5);
+      const proj = map.getProjection();
+      panToVisibleCenter(
+        maps, map, proj, container,
+        points[0].lat, points[0].lng,
+        topInsetRef.current, bottomInsetRef.current,
+      );
       return;
     }
+
+    // 복수 포인트: setBounds 의 asymmetric padding 으로 가시 영역에 맞춘다.
     const bounds = new maps.LatLngBounds();
     points.forEach((p) => bounds.extend(new maps.LatLng(p.lat, p.lng)));
-    map.setBounds(bounds, 72, 56, bottomInsetRef.current + 28, 56);
+    map.setBounds(bounds, topInsetRef.current + 28, 56, bottomInsetRef.current + 28, 56);
   }, [phase, focusToken, fitHwaseong]);
 
   // 6) 컨테이너 크기 변화 → 지도 재배치

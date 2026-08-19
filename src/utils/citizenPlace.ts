@@ -97,6 +97,47 @@ export function rankPlaces(places: CitizenPlace[], origin: LatLng | null, now: D
     });
 }
 
+export interface DonationTarget {
+  place: RankedPlace;
+  /** AI가 인식한 품목 중 이 거점에서 부족한 품목명. fallback(가장 가까운 거점)이면 null. */
+  matchedItem: string | null;
+}
+
+function itemNameMatches(placeName: string, donatedName: string): boolean {
+  const a = placeName.trim().toLowerCase();
+  const b = donatedName.trim().toLowerCase();
+  return a.includes(b) || b.includes(a);
+}
+
+/**
+ * 기부 대상 거점 추천.
+ *
+ * 1순위: donated 품목 중 하나가 `level === 'few'`(부족)인 거점 → 그 중 가장 가까운 곳.
+ * fallback: 해당 품목이 부족한 거점이 없으면 기존처럼 가장 가까운 거점.
+ */
+export function findDonationTarget(
+  places: CitizenPlace[],
+  origin: LatLng | null,
+  donatedItemNames: string[],
+): DonationTarget | null {
+  if (places.length === 0) return null;
+  const ranked = rankPlaces(places, origin);
+
+  if (donatedItemNames.length > 0) {
+    for (const place of ranked) {
+      const match = place.items.find(
+        (item) =>
+          item.level === 'few' &&
+          donatedItemNames.some((name) => itemNameMatches(item.name, name)),
+      );
+      if (match) return { place, matchedItem: match.name };
+    }
+  }
+
+  const fallback = ranked[0] ?? null;
+  return fallback ? { place: fallback, matchedItem: null } : null;
+}
+
 /** 홈이 지도 위에 세우는 추천. 3곳을 넘기지 않는다 — 고를 것이 많으면 고르지 못한다. */
 export function recommendPlaces(
   places: CitizenPlace[],

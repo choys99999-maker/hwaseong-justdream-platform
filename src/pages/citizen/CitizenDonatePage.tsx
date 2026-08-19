@@ -5,7 +5,7 @@ import Button from '../../components/citizen/ui/Button';
 import { ChoiceGroup, Field, Select, TextInput } from '../../components/citizen/ui/Form';
 import { DonePanel, ErrorNote, Loading } from '../../components/citizen/ui/Feedback';
 import { useCitizenPlaces } from '../../hooks/useCitizenPlaces';
-import { distanceText, recommendPlaces } from '../../utils/citizenPlace';
+import { distanceText, findDonationTarget } from '../../utils/citizenPlace';
 import { kakaoDirectionsUrl } from '../../lib/geo';
 import { AREA_LIST } from '../../data/mockSites';
 import {
@@ -61,10 +61,12 @@ export default function CitizenDonatePage() {
 
   const { places } = useCitizenPlaces();
   const area = useMemo(() => AREA_LIST.find((a) => a.area === region) ?? null, [region]);
-  const target = useMemo(() => {
+  const donationTarget = useMemo(() => {
     if (!area || method !== 'SELF_DELIVER') return null;
-    return recommendPlaces(places, { lat: area.lat, lng: area.lng }, 1)[0] ?? null;
-  }, [area, method, places]);
+    return findDonationTarget(places, { lat: area.lat, lng: area.lng }, aiItems.map((i) => i.name));
+  }, [area, method, places, aiItems]);
+  const target = donationTarget?.place ?? null;
+  const targetMatchedItem = donationTarget?.matchedItem ?? null;
 
   async function handlePick(file: File | undefined) {
     if (!file) return;
@@ -238,8 +240,13 @@ export default function CitizenDonatePage() {
 
             {method === 'SELF_DELIVER' && target && (
               <div className="rounded-card border border-brand-200 bg-brand-50 p-4">
-                <p className="text-note font-bold text-brand-700">여기로 가져다주세요</p>
+                <p className="text-note font-bold text-brand-700">
+                  {targetMatchedItem ? '이 물품이 필요한 거점' : '여기로 가져다주세요'}
+                </p>
                 <p className="mt-1 text-section text-ink-950">{target.displayName}</p>
+                {targetMatchedItem && (
+                  <p className="mt-0.5 text-body text-brand-600">{targetMatchedItem} 부족</p>
+                )}
                 {target.distanceKm !== null && (
                   <p className="mt-1 text-body text-ink-600">
                     {region}에서 {distanceText(target.distanceKm)}

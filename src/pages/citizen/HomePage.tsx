@@ -45,12 +45,14 @@ export default function HomePage() {
   const [focusToken, setFocusToken] = useState(0);
   const [sheetHeight, setSheetHeight] = useState(0);
   const [panelHeight, setPanelHeight] = useState(200);
+  const [topInset, setTopInset] = useState(60);
   // 시트 높이가 크게 바뀌면(확장·축소) 카메라를 재프레이밍해 마커가 시트 뒤에 가리지 않게 한다.
   const prevSheetHeightRef = useRef(0);
 
   // 위치 요청이 "내 주변 찾기" 버튼에서 시작된 것인지 표시한다. 자동으로 위치를 묻지 않는다.
   const awaitingLocation = useRef(false);
   const panelRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
 
   const ranked = useMemo(() => rankPlaces(places, origin), [places, origin]);
   const recommended = useMemo(() => ranked.slice(0, 3), [ranked]);
@@ -165,6 +167,16 @@ export default function HomePage() {
     return () => observer.disconnect();
   }, [selected, showList]);
 
+  // 상단 헤더 높이를 재서 지도 topInset 으로 넘긴다 — 가시 지도 영역 중앙 계산에 쓴다.
+  useLayoutEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(([entry]) => setTopInset(Math.round(entry.contentRect.height)));
+    obs.observe(el);
+    setTopInset(Math.round(el.getBoundingClientRect().height));
+    return () => obs.disconnect();
+  }, []);
+
   const sheetOpen = Boolean(selected) || showList;
   const locating = geo.status === 'locating';
   const locationBlocked = geo.status === 'denied' || geo.status === 'unsupported' || geo.status === 'error';
@@ -183,11 +195,12 @@ export default function HomePage() {
         fitPoints={fitPoints}
         focusToken={focusToken}
         bottomInset={sheetOpen ? sheetHeight : panelHeight}
+        topInset={topInset}
         className="absolute inset-0"
       />
 
       {/* ── 상단 ── 햄버거 + 화성특례시 BI. 여기 말고는 아무것도 두지 않는다. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 pt-[max(8px,env(safe-area-inset-top))]">
+      <div ref={headerRef} className="pointer-events-none absolute inset-x-0 top-0 z-30 flex items-center gap-2 px-2 py-2 pt-[max(8px,env(safe-area-inset-top))]">
         <button
           type="button"
           onClick={openDrawer}

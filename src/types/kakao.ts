@@ -21,6 +21,18 @@ export interface KakaoSetLevelOptions {
   animate?: boolean | { duration?: number };
 }
 
+export interface KakaoPoint {
+  x: number;
+  y: number;
+}
+
+export interface KakaoProjection {
+  /** 지도 컨테이너 내 화면 픽셀 좌표 → 지도 좌표 변환 */
+  coordsFromContainerPoint(point: KakaoPoint): KakaoLatLng;
+  /** 지도 좌표 → 컨테이너 내 화면 픽셀 좌표 변환 */
+  containerPointFromCoords(latlng: KakaoLatLng): KakaoPoint;
+}
+
 export interface KakaoMap {
   setBounds(bounds: KakaoLatLngBounds, paddingTop?: number, paddingRight?: number, paddingBottom?: number, paddingLeft?: number): void;
   setCenter(latlng: KakaoLatLng): void;
@@ -33,6 +45,8 @@ export interface KakaoMap {
   getLevel(): number;
   relayout(): void;
   addControl(control: KakaoZoomControl, position: unknown): void;
+  /** 현재 지도의 좌표↔화면픽셀 변환기 */
+  getProjection(): KakaoProjection;
 }
 
 export interface KakaoPolygonOptions {

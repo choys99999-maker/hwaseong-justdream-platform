@@ -650,8 +650,10 @@ body {
   transform: translateX(-50%);
   margin-top: 2px;
   max-width: 124px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: center;
   padding: 3px 8px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.96);
