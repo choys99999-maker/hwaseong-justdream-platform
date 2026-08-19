@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ChevronRight, Sparkles } from 'lucide-react';
+import { ChevronRight, Package } from 'lucide-react';
 import SiteStatusBadge from '../../components/common/SiteStatusBadge';
 import SiteDetailDrawer from '../../components/sites/SiteDetailDrawer';
 import InventoryUpdateModal from '../../components/inventory/InventoryUpdateModal';
@@ -191,7 +191,7 @@ export default function SiteOperationsPage() {
       onClick={() => setUpdateOpen(true)}
       className="ad-lift inline-flex items-center gap-1.5 rounded-xl bg-[#004696] px-4 py-2.5 text-[13.5px] font-semibold text-white hover:bg-[#00356F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] focus-visible:ring-offset-2"
     >
-      <Sparkles size={15} /> AI 재고 업데이트
+      <Package size={15} /> 재고 관리
     </button>
   );
 

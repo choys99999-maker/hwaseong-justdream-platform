@@ -37,7 +37,7 @@ export default function InventoryUpdateModal({ onClose, onApplied }: InventoryUp
         <div
           role="dialog"
           aria-modal="true"
-          aria-label="AI 재고 업데이트"
+          aria-label="재고 관리"
           onClick={(e) => e.stopPropagation()}
           className="ad-rise flex w-full max-w-[820px] flex-col overflow-hidden rounded-[22px] bg-white shadow-2xl"
           style={{ maxHeight: '86vh' }}

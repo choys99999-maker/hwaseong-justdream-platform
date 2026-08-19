@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Check, Circle, FileSpreadsheet, Loader2, RotateCcw, Sparkles } from 'lucide-react';
+import { Check, Circle, FileSpreadsheet, Loader2, RotateCcw, Sparkles, Upload } from 'lucide-react';
 import QuickInventoryInput from './QuickInventoryInput';
 import InventoryExcelApply from './InventoryExcelApply';
 import InventoryUpdateConfirm from './InventoryUpdateConfirm';
@@ -246,17 +246,12 @@ export default function InventoryUpdatePanel({ inventory, onApplied, onClose }: 
 
   return (
     <div className="space-y-5">
-      {mode === 'quick' && (
-        <div>
-          <h2 className="flex items-center gap-1.5 text-[17px] font-bold text-slate-900">
-            <Sparkles size={18} className="text-[#004696]" /> AI 재고 업데이트
-          </h2>
-          <p className="mt-1 text-sm text-slate-500">
-            말하듯 입력하면 AI가 품목과 수량을 자동으로 정리합니다.
-          </p>
-        </div>
-      )}
+      {/* ── 모달 제목 ── */}
+      <div>
+        <h2 className="text-[17px] font-bold text-slate-900">재고 관리</h2>
+      </div>
 
+      {/* ── 거점 선택 ── */}
       <label className="block">
         <span className="mb-1.5 block text-sm font-semibold text-slate-700">거점</span>
         <select
@@ -274,38 +269,17 @@ export default function InventoryUpdatePanel({ inventory, onApplied, onClose }: 
         </select>
       </label>
 
-      {mode === 'quick' ? (
-        <>
-          {/* ── AI 자연어 입력 ── */}
-          <QuickInventoryInput
-            knownItems={knownItems}
-            disabled={!org}
-            onRead={handleRead}
-            onAnalyzingChange={setAnalyzing}
-          />
-
-          {/* ── 대량 수정 ── */}
-          <div className="rounded-2xl bg-[#F7F9FC] px-5 py-4">
-            <p className="text-sm font-semibold text-slate-700">대량 수정이 필요한가요?</p>
-            <p className="mt-1 text-sm text-slate-500">
-              기존 Excel 파일을 그대로 업로드해 여러 품목을 한 번에 반영할 수 있습니다.
-            </p>
-            <button
-              type="button"
-              disabled={!org}
-              onClick={() => {
-                setMode('excel');
-                reset();
-              }}
-              className="mt-2.5 inline-flex items-center gap-1.5 text-sm font-medium text-[#004696] transition-colors hover:underline disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696]"
-            >
-              <FileSpreadsheet size={15} /> Excel 업로드
-            </button>
-          </div>
-        </>
-      ) : (
+      {/* ── Excel 업로드 (메인) ── */}
+      {mode === 'excel' ? (
         <section className="space-y-2.5">
-          <h3 className="text-sm font-semibold text-slate-800">Excel로 한 번에 반영</h3>
+          <div>
+            <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+              <Upload size={15} className="text-[#004696]" /> Excel 업로드
+            </p>
+            <p className="mt-0.5 text-sm text-slate-500">
+              기존 Excel 파일을 업로드하면 여러 품목의 재고를 한 번에 반영할 수 있습니다.
+            </p>
+          </div>
           <InventoryExcelApply
             disabled={!org}
             onRead={handleRead}
@@ -313,6 +287,62 @@ export default function InventoryUpdatePanel({ inventory, onApplied, onClose }: 
               setMode('quick');
               reset();
             }}
+          />
+        </section>
+      ) : (
+        <section>
+          <div className="mb-3">
+            <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+              <Upload size={15} className="text-[#004696]" /> Excel 업로드
+            </p>
+            <p className="mt-0.5 text-sm text-slate-500">
+              기존 Excel 파일을 업로드하면 여러 품목의 재고를 한 번에 반영할 수 있습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={!org}
+            onClick={() => {
+              setMode('excel');
+              reset();
+            }}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#004696] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#00356F] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] focus-visible:ring-offset-2"
+          >
+            <FileSpreadsheet size={15} /> Excel 파일 업로드
+          </button>
+        </section>
+      )}
+
+      {/* ── 구분선 ── */}
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center" aria-hidden>
+          <div className="w-full border-t border-slate-200" />
+        </div>
+        <div className="relative flex justify-center">
+          <span className="bg-white px-3 text-xs text-slate-400">또는</span>
+        </div>
+      </div>
+
+      {/* ── 간편 재고 입력 · AI (보조) ── */}
+      {mode === 'quick' && (
+        <section className="space-y-3">
+          <div>
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+              간편 재고 입력
+              <span className="inline-flex items-center gap-0.5 rounded-full bg-[#EAF3FC] px-2 py-0.5 text-[11px] font-medium text-[#004696]">
+                <Sparkles size={10} /> AI
+              </span>
+            </p>
+            <p className="mt-0.5 text-sm text-slate-500">
+              간단한 재고 변경은 문장으로 입력할 수 있습니다.
+            </p>
+          </div>
+          <QuickInventoryInput
+            knownItems={knownItems}
+            disabled={!org}
+            onRead={handleRead}
+            onAnalyzingChange={setAnalyzing}
+            secondaryButton
           />
         </section>
       )}

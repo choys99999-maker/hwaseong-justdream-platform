@@ -19,6 +19,8 @@ interface QuickInventoryInputProps {
   onRead: (lines: InventoryUpdateLine[], notice: string | null) => void;
   /** AI가 분석 중인 동안 true. 부모가 이 시간 동안 전용 화면을 보여준다. */
   onAnalyzingChange: (analyzing: boolean) => void;
+  /** true면 AI 버튼을 보조(secondary) 스타일로 표시한다. */
+  secondaryButton?: boolean;
 }
 
 /**
@@ -32,6 +34,7 @@ export default function QuickInventoryInput({
   disabled,
   onRead,
   onAnalyzingChange,
+  secondaryButton = false,
 }: QuickInventoryInputProps) {
   const [text, setText] = useState('');
   const [reading, setReading] = useState(false);
@@ -125,9 +128,13 @@ export default function QuickInventoryInput({
           type="button"
           onClick={() => void handleRead()}
           disabled={disabled || reading || text.trim() === ''}
-          className="inline-flex h-12 items-center gap-1.5 rounded-xl bg-[#004696] px-6 text-sm font-bold text-white transition-colors hover:bg-[#00356F] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] focus-visible:ring-offset-2"
+          className={
+            secondaryButton
+              ? 'inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] focus-visible:ring-offset-2'
+              : 'inline-flex h-12 items-center gap-1.5 rounded-xl bg-[#004696] px-6 text-sm font-bold text-white transition-colors hover:bg-[#00356F] disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#004696] focus-visible:ring-offset-2'
+          }
         >
-          <Sparkles size={16} />
+          <Sparkles size={16} className={secondaryButton ? 'text-[#004696]' : ''} />
           {reading ? '정리하는 중...' : 'AI로 재고 정리하기'}
         </button>
       </div>
