@@ -58,6 +58,8 @@ export interface KakaoPolygonOptions {
   fillColor?: string;
   fillOpacity?: number;
   zIndex?: number;
+  /** false 로 설정하면 폴리곤이 마우스/터치 이벤트를 가로채지 않는다. */
+  clickable?: boolean;
 }
 
 export interface KakaoPolygon {

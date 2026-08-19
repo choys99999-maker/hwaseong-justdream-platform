@@ -149,13 +149,10 @@ export default function HomePage() {
       setSelectedId(id);
       // 새 장소를 고를 때 높이 ref 를 초기화 — 시트가 열리는 첫 순간의 높이 변화로 이중 re-frame 이 발생하지 않도록.
       prevSheetHeightRef.current = 0;
-      if (!id) return;
-      const place = places.find((p) => p.id === id);
-      if (!place) return;
-      setFitPoints(origin ? [origin, { lat: place.lat, lng: place.lng }] : [{ lat: place.lat, lng: place.lng }]);
-      setFocusToken((t) => t + 1);
+      // 마커 직접 클릭 시 카메라를 이동하지 않는다 — 바텀시트만 연다.
+      // 내 주변 찾기 / 동네로 찾기 결과 이동은 applyOrigin 이 담당한다.
     },
-    [places, origin],
+    [],
   );
 
   /** 시트를 내리면 액션 영역으로 돌아간다. 지도는 보고 있던 자리를 그대로 둔다. */

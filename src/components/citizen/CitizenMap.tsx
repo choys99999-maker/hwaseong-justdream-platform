@@ -145,6 +145,9 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): BoundaryShapeG
   ];
   const holes = districtBoundaries.flatMap((d) => d.outline).map((ring) => orientRing(ring, false));
   // 화성시 외부 전체를 어둡게 — 내부는 기존 지도 밝기 그대로 유지
+  // clickable: false — 이 폴리곤이 클릭/터치 이벤트를 가로채지 않도록 한다.
+  // 폴리곤이 이벤트를 소비하면 지도 드래그 시작점이 외부 영역에 있을 때 드래그가 안 되거나
+  // 마커 클릭이 차단될 수 있다.
   const dim = new maps.Polygon({
     path: [toPath(orientRing(world, true)), ...holes.map(toPath)],
     strokeWeight: 0,
@@ -152,6 +155,7 @@ function drawBoundaries(maps: KakaoMapsNamespace, map: KakaoMap): BoundaryShapeG
     fillColor: '#0a121c',
     fillOpacity: 0.52,
     zIndex: 1,
+    clickable: false,
   });
   dim.setMap(map);
 
