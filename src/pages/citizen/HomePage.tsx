@@ -11,6 +11,7 @@ import Sheet from '../../components/citizen/ui/Sheet';
 import { StatusChip } from '../../components/citizen/ui/StatusLine';
 import { useCitizenShell } from '../../components/layout/CitizenLayout';
 import { useCitizenPlaces } from '../../hooks/useCitizenPlaces';
+import { useDemoMode } from '../../hooks/useDemoMode';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { distanceText, rankPlaces, resolvePlaceStatus, type RankedPlace } from '../../utils/citizenPlace';
 import type { LatLng } from '../../lib/geo';
@@ -31,6 +32,7 @@ export default function HomePage() {
   const navigate = useNavigate();
   const { openDrawer } = useCitizenShell();
   const geo = useGeolocation();
+  const { isDemoMode } = useDemoMode();
   const { places } = useCitizenPlaces();
 
   const [origin, setOrigin] = useState<LatLng | null>(null);
@@ -73,7 +75,18 @@ export default function HomePage() {
     [places],
   );
 
+  // 시연 모드에서는 GPS를 우회하고 1번 거점(동탄6동 협의체)으로 직접 이동한다.
+  const DEMO_SITE_ID = 'justdream-22';
+
   function handleFindNearby() {
+    if (isDemoMode) {
+      const demoSite = places.find((p) => p.id === DEMO_SITE_ID) ?? null;
+      setShowList(false);
+      setSelectedId(DEMO_SITE_ID);
+      setFitPoints(demoSite ? [{ lat: demoSite.lat, lng: demoSite.lng }] : null);
+      setFocusToken((t) => t + 1);
+      return;
+    }
     if (geo.status === 'granted' && geo.coords) {
       applyOrigin(geo.coords, '내 위치');
       return;
