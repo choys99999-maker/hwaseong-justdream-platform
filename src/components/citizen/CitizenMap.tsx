@@ -57,10 +57,13 @@ const LABEL_ZOOM_LEVEL = 6;
 /** 첫 화면·초기화 시 화성시 중심을 보여줄 고정 줌 레벨. */
 const HWASEONG_OVERVIEW_LEVEL = 10;
 
+/** 거점 하나를 선택·포커스할 때 적용할 줌 레벨. 모든 선택 경로(마커 클릭·내 주변 찾기·동네로 찾기·클러스터 해제)가 이 값을 공유한다. */
+const SITE_FOCUS_LEVEL = 4;
+
 /**
  * 이 레벨보다 더 확대(= 숫자가 작음)된 상태에서는
  * 광역 오버레이(외부 dim + 행정구역 경계선)를 숨긴다.
- * HWASEONG_OVERVIEW_LEVEL(10)과 거점 포커스 레벨(5) 사이 중간값.
+ * HWASEONG_OVERVIEW_LEVEL(10)과 SITE_FOCUS_LEVEL(4) 사이 중간값.
  */
 const OVERLAY_HIDE_ZOOM = 8;
 
@@ -588,7 +591,7 @@ export default function CitizenMap({
     if (points.length === 1) {
       // 단일 거점: 먼저 줌 레벨을 맞춘 뒤,
       // projection 을 통해 가시 지도 영역(상단 헤더 ~ 하단 패널 사이)의 정중앙에 마커를 위치시킨다.
-      map.setLevel(5);
+      map.setLevel(SITE_FOCUS_LEVEL);
       const proj = map.getProjection();
       panToVisibleCenter(
         maps, map, proj, container,
