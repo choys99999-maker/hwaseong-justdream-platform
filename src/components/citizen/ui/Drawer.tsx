@@ -198,22 +198,27 @@ export default function Drawer({ open, onClose }: { open: boolean; onClose: () =
             </span>
           </a>
           {/*
-            발표자·운영 담당자용 진입로. 시민이 쓸 기능이 아니라서 메뉴 목록과 분리하고
-            가장 낮은 시각적 위계로 둔다.
+            심사위원이 다른 화면을 탐색할 수 있도록 돕는 데모 전용 진입로.
+            시민 기능보다 위계가 낮아야 하므로 메뉴 목록과 분리해 최하단에 둔다.
           */}
           <div className="my-3 h-px bg-line-100" aria-hidden />
-          <div>
-            <p className="px-1 text-[11px] font-medium uppercase tracking-wide text-ink-300">
-              DEMO · 역할 전환
+          <div className="rounded-xl border border-brand-100 bg-brand-50 px-4 py-3">
+            <p className="text-[11px] font-semibold tracking-wide text-brand-500">심사위원용 데모</p>
+            <p className="mt-2 text-[11px] text-ink-400">현재 화면</p>
+            <p className="mt-0.5 text-body font-bold text-ink-900">
+              👤 {DEMO_ROLE_LABELS[currentDemoRole]} 화면
             </p>
             <button
               type="button"
               onClick={() => setDemoOpen(true)}
-              className="tap-md mt-1 flex w-full items-center justify-between gap-2 rounded-control px-1 py-2 text-left text-note text-ink-400 transition-colors hover:text-ink-600 focus-ring"
+              className="mt-2.5 flex min-h-[48px] w-full items-center justify-between gap-2 rounded-control border border-brand-200 bg-white px-4 font-semibold text-brand-700 transition-colors hover:border-brand-300 hover:bg-brand-50 active:bg-brand-100 focus-ring"
             >
-              <span>👤 {DEMO_ROLE_LABELS[currentDemoRole]}</span>
-              <ChevronRight size={14} className="shrink-0 text-ink-300" aria-hidden />
+              <span>다른 화면 보기</span>
+              <ChevronRight size={16} className="shrink-0" aria-hidden />
             </button>
+            <p className="mt-2 text-center text-[11px] leading-relaxed text-ink-400">
+              시민 · 현장 담당자 · 시청 관리자 화면을 직접 확인할 수 있습니다.
+            </p>
           </div>
         </div>
 

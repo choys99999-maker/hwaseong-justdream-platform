@@ -50,11 +50,9 @@ export default function DemoRoleSheet({ open, onClose }: DemoRoleSheetProps) {
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="demo-role-sheet-title" className="text-section text-ink-950">
-          시연 역할 전환
+          다른 화면 보기
         </h2>
-        <p className="mt-1 text-note text-ink-600">
-          공모전 시연용 기능입니다. 실제 서비스에서는 계정 권한에 따라 화면이 자동 설정됩니다.
-        </p>
+        <p className="mt-1 text-note text-ink-600">확인하고 싶은 화면을 선택해주세요.</p>
 
         <div className="mt-4 flex flex-col gap-2">
           {DEMO_ROLES.map((role) => {
@@ -73,7 +71,7 @@ export default function DemoRoleSheet({ open, onClose }: DemoRoleSheetProps) {
                 }`}
               >
                 <span className="min-w-0">
-                  <p className="text-body font-bold text-ink-950">{DEMO_ROLE_LABELS[role.key]}</p>
+                  <p className="text-body font-bold text-ink-950">{DEMO_ROLE_LABELS[role.key]} 화면</p>
                   <p className="text-note text-ink-600">{role.description}</p>
                 </span>
                 {isCurrent && (

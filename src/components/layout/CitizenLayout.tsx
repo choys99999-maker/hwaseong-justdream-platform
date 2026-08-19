@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Outlet, useOutletContext } from 'react-router-dom';
 import Drawer from '../citizen/ui/Drawer';
+import DemoGuideModal from '../demo/DemoGuideModal';
 
 interface CitizenShell {
   openDrawer: () => void;
@@ -31,6 +32,7 @@ export default function CitizenLayout() {
         </main>
       </div>
       <Drawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <DemoGuideModal />
     </div>
   );
 }
